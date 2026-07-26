@@ -32,8 +32,15 @@
  * inner loop. Everything a caller can observe is pure and total.
  *
  * If somebody proposes replacing these loops, the answer is: benchmark first,
- * and put the benchmark in the repository. See docs/design-notes.md, regression
- * `noise-octave-loop-is-imperative`.
+ * and put the benchmark in the repository. THE BENCHMARK IS NOW IN THE
+ * REPOSITORY — `scripts/bench-noise.ts`, run with `pnpm bench`. Every rewrite
+ * named above is implemented there and timed against this loop. Measured on an
+ * M4 Max under Node 22.23.1, 4 octaves, 200k samples, median of five whole
+ * runs: `Effect.reduce` 6.6x, `Array.from().reduce` 2.8x, effect's
+ * `Array.reduce` 1.3x. That last figure is smaller than this comment used to
+ * imply and is recorded honestly; it is still the innermost loop of world
+ * generation. See docs/design-notes.md, regression
+ * `noise-octave-loop-is-imperative`, and docs/testing.md §7.
  */
 import type { NoiseFn2D } from './perlin'
 

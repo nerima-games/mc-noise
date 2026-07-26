@@ -12,6 +12,7 @@
 | `pnpm test` | vitest。`@effect/vitest` の `it.effect` が主 API |
 | `pnpm test:coverage` | カバレッジ計測（閾値は未設定。§3 参照） |
 | `pnpm verify` | 上記 4 つを直列実行。**CI と同じ内容** |
+| `pnpm bench` | ベンチマーク（`scripts/bench-noise.ts`）。**`verify` には入らない**（§7） |
 
 セットアップ:
 
@@ -130,3 +131,124 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
 | `test/octaves.test.ts` | `octaveNoise2D` の値域と退化ケース、定数カーネルの代数、`signedFbm2D` の符号保持と NaN 保護、`noise2d`/`noise3d` の正規化、空間連続性 |
 | `test/public-api.test.ts` | barrel の export、**ゴールデン値**、格子点で 0、半整数格子の既知アーティファクト、チャンネル salt の固定 |
 | `test/check-dependency-whitelist.test.ts` | 16 リポジトリ roster の完全性、非循環、体験モジュール間エッジ 0、kit の devDependency 専用性、推移閉包の拒否、`Date.now()` 禁止、import 抽出 |
+
+## 7. ベンチマーク（`pnpm bench`）
+
+### なぜ必要か
+
+`domain/octaves.ts` の冒頭はこう終わっている:
+
+> もし誰かがこのループの置換を提案したら、答えは「先にベンチマークを書き、それをリポジトリに入れろ」である。
+
+**リポジトリにベンチマークが無かったので、この一文は借用書だった。**
+plan.md §5.2 はこの例外を「実測で確定した」と書いているが、5 つの例外のうち
+オクターブループは**コメント 1 つしか防護が無い**——最も弱い状態にあった。
+`scripts/bench-noise.ts` はその借用書を清算する。コメントが名指しする書き換えは
+**全部その場に実装してあり**、本物と並べて計測される。
+fold を提案するレビュアーには、主張ではなく数字が返る。
+
+### 何を測っているか
+
+手法は参照実装の `scripts/bench-terrain.ts` のもの——**ウォームアップののち 9 回計測しその中央値**。
+9 という数（メッシングの 7 ではなく）は、これが terrain 側のワークロードだからそのまま踏襲した。
+
+チャンクという単位は mc-noise には無いので、per-chunk の単位は
+**1 チャンク分の地形サンプリングが要求する 16×16 = 256 カラム**とした。
+これは実在する量である（mc-worldgen の `generateChunk` はちょうどその回数だけカラムを引く）。
+これにより x81（renderDistance=4）という枠組みが両リポジトリで同じ意味を持つ。
+
+シードは定数 `20260726`。時計も未シードの PRNG も無い。
+
+### 計測前に**等価性**を検査している
+
+5 つの綴り（出荷版・凍結コピー・`Array.from().reduce`・effect の `Array.reduce`・`Effect.reduce`）が
+1024 座標で**ビット単位で一致する**ことを、どれかを計測する前に確認する。
+一致しない 2 つの関数を比べたベンチマークは何のベンチマークでもないし、
+この検査は書き換えが「都合よく簡略化されていない」ことの担保でもある。
+
+### 絶対値ではなく**比**を検査する
+
+「0.0075 ms/chunk」という絶対値は記録した機械を写しているだけである。捕まえたいのは
+**「3 倍遅くなった」**のほうなので、2 種類の比を使う:
+
+| 種類 | 定義 | 機械依存性 | 既定 tolerance |
+| --- | --- | --- | --- |
+| **guard** | 同一プロセス・同一データ上での 2 実装の A/B 比 | **無い**（機械が約分される） | 1.30x。ただし shipped-vs-frozen は 1.15x |
+| **workload** | 実測値 ÷ 同じ run 内で測った yardstick | 近似的にしか無い | 2.00x |
+
+`scripts/bench-baseline.json` がコミットされた baseline で、記録は
+**5 回の通し実行の中央値**であり 1 回の実行ではない。
+
+### 実測値（Apple M4 Max / Node 22.23.1、5 回通しの中央値、4 オクターブ・20 万サンプル）
+
+| guard | 比 |
+| --- | --- |
+| `octave-loop/effect-reduce-vs-imperative` | **6.6x** |
+| `octave-loop/array-from-reduce-vs-imperative` | **2.8x** |
+| `octave-loop/effect-array-reduce-vs-imperative` | **1.3x** |
+| `octave-loop/shipped-vs-frozen-imperative` | 0.84（ゲート。詳細は下） |
+
+**design-notes N-1 の表の訂正**: 3 つの書き換えは「すべてコストだけを増やす」という記述は正しいが、
+**増え方が桁で違う**。`Effect.reduce`（オクターブごとに fiber step）は 6.6 倍、
+`Array.from().reduce` は 2.8 倍、しかし **effect の `Array.reduce` は 1.3 倍にとどまる**。
+1.3 倍は「無視してよい」という意味ではない——これはワールド生成の最内ループである——が、
+「桁違いに遅い」ではない。数字を持っておくほうが、持たずに主張するより強い。
+
+### ゲート（shipped-vs-frozen）が 1.00 ではなく 0.84 である理由
+
+このゲートは出荷している `octaveNoise2D` を、**その現在の形をそのまま凍結したコピー**と比較する。
+凍結コピーはこのモジュールのローカルにあり、V8 はモジュール境界を越える import より
+ローカルのほうを少しよくインライン化する。0.84 はその差であって `octaveNoise2D` の性質ではない。
+重要なのは**その値が安定していること**で、5 回通しの散らばりはファイル中で最小の **1%** である。
+
+書き換え版と比較するだけでは不十分である: 比はどちらの辺が変わっても同じ向きに動くので、
+`octaveNoise2D` 自身が fold になったら「書き換えは N 倍遅い」という比は
+すべて 1 に近づくだけで、tolerance の内側に収まってしまいうる。
+
+### ゲートが実際に落ちることの確認
+
+`domain/octaves.ts` の `octaveNoise2D` を effect の `Array.reduce` で書き換えて実行した:
+
+```
+REGRESSED  octave-loop/shipped-vs-frozen-imperative       observed 0.629  baseline 0.841  (0.75x)
+REGRESSED  octave-loop/effect-array-reduce-vs-imperative  observed 0.971  baseline 1.309  (0.74x)
+REGRESSED  octave-loop/effect-reduce-vs-imperative        observed 5.022  baseline 6.560  (0.77x)
+REGRESSED  sample/octave2d-per-chunk-columns              observed 3.500  baseline 1.458  (2.40x)
+```
+
+4 件の regression と exit 1。**これは 3 つの書き換えのうち最も安いもの**（1.3 倍）であり、
+guard tolerance が 1.30 のままなら 0.79x でぎりぎり通過していた。
+shipped-vs-frozen に専用の 1.15 を与えているのはこのためである
+（そのゲートの散らばりは 1% なので、締めても揺れない）。
+なお workload `sample/octave2d-per-chunk-columns` は独立に 2.4 倍で捕まえており、
+2 系統の冗長性が実際に効いている。
+
+### ベンチが**できない**こと
+
+wall-clock は粗い道具である。tolerance より安い書き換えはすり抜けうるし、
+閾値をどう選んでも線が動くだけでその性質は消えない。
+**綴りの不変条件は型システムと design-notes の名前付き回帰テストの仕事**であって、
+このファイルはそれに値札を付ける。どちらか一方を他方の理由で消してはならない。
+
+### `verify` に入っていない理由と、CI について
+
+これらのリポジトリは public で、CI は **`pull_request` ごとに**走る。
+ベンチマークは 8 秒前後だが、共有ランナーの実時間は負荷で揺れる——
+つまり workload 比は CI ではここで測ったより不安定になる。
+
+**推奨**: 現時点で CI ジョブを足す必要は無い。
+`domain/` に触る PR で人間が走らせるものとして扱い、
+足すとしても `push` on `main` か nightly（`pull_request` ではなく）にして、
+guard だけを見る形が妥当である。
+mc-noise はゲートとして最も筋がよい（散らばりが小さく、シードが定数で、
+ワークロードが数秒で終わる）ので、3 リポジトリのうち最初に CI に載せるならここである。
+
+### baseline の更新手順
+
+```console
+$ pnpm bench --update-baseline
+```
+
+`BENCH_MACHINE` 環境変数に機械の説明を入れると `recordedOn` に記録される。
+**更新は必ず、何がどう動いたかをコミットメッセージに書いて行うこと。**
+baseline を黙って上書きするのは、ベンチマークを削除するのと同じである。
