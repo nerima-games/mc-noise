@@ -1,6 +1,6 @@
 # アーキテクチャ
 
-- 上位仕様: `/Users/take/Documents/plan.md`（§2 全体像、§3.2 mc-noise）
+- 上位仕様: plan.md（**非公開**。§2 全体像、§3.2 mc-noise）
 - 参照実装: `takeokunn/ts-minecraft`（凍結。仕様書兼テストオラクル）
 
 ## 1. なぜ 16 リポジトリなのか

@@ -1,7 +1,7 @@
 # 公開 API
 
 - 出典: plan.md §3.2 + **参照実装の実コードによる検証**
-- 参照実装ルート: `/Users/take/ghq/github.com/takeokunn/ts-minecraft`（以下パスはこれ相対）
+- 参照実装ルート: `<reference-impl>`（以下パスはこれ相対）
 
 plan.md の API スケッチと参照実装の実装は一致しない箇所がある。
 本書は**実コードで確認した事実**を一次資料とし、差分は理由付きで明示する。
