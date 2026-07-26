@@ -43,7 +43,7 @@
 1. `tsconfig.build.json` の `noEmit` を外し、`dist/` に `.js` + `.d.ts` + source map を出す
 2. `package.json` の `exports` を `dist/` に向ける（`files` も同様）
 3. `prepublishOnly` で `pnpm verify` を強制
-4. CI に publish job を追加（`.github/workflows/ci.yaml` は現在 typecheck / lint / check:deps / test / coverage のみ）
+4. CI に publish job を追加（`.github/workflows/ci.yaml` は現在 typecheck / lint / check:deps / api:check / test / coverage のみ）
 5. changesets 運用に切り替え（plan.md §6 Step 3）
 
 ## 4. 公開先: GitHub Packages
@@ -131,10 +131,46 @@ Step 0 の実装として GitHub Packages を選んである。組織 `nerima-ga
 
 plan.md §6 Step 0-3 は「初回コミットに ... APIロックファイル（公開APIのレポートを diff レビュー）」を求める。
 
-**現時点では実装されていない。** 代わりに `test/public-api.test.ts` が
-barrel の export を明示的に列挙してピン留めしている。
-これは API ロックの貧者版であり、シグネチャの変更は捕まえられない（名前の消失だけを捕まえる）。
+**実装済みである。** リポジトリ直下の `api-lock.md`（公開宣言 24 件）が公開面の正本で、
+生成器は `scripts/api-lock.ts`。16 リポジトリに byte-identical で vendor する方式は
+`scripts/check-dependency-whitelist.ts` と同じで、編集してよいのは `REPOSITORY_POLICY` だけである。
 
-plan.md §9 の未決事項に「API ロックファイルのツール選定（api-extractor 相当の Effect-TS 互換手段）」が
-挙がっており、選定後にここへ入れる。最も重要なのは mc-sim（依存ハブ）だが、
-mc-noise も mc-worldgen が pin する以上は必要である。
+| 項目 | 内容 |
+| --- | --- |
+| 検査 | `pnpm api:check` — `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了 |
+| 更新 | `pnpm api:update` |
+| 配線 | `pnpm verify` の `check:deps` と `test` の間、および CI の独立ステップ |
+| 追加依存 | **なし**（`typescript` は既に devDependency） |
+
+plan.md §9 の未決事項「API ロックファイルのツール選定（api-extractor 相当の Effect-TS 互換手段）」は
+これで決着した。`@microsoft/api-extractor` は mc-kernel の実コードで試したうえで却下してある
+（決め手は `Context.Tag` のサービスクラスが写らないこと）。理由と実測は
+mc-kernel の `docs/versioning.md` §7 が正本なので、ここでは繰り返さない。
+
+**mc-noise では偶然だが強く効く。** 上の §5 が MAJOR 一覧の 2 番目に置いている
+「チャンネル salt（`CHANNEL_SALT`）」は、`as const` のリテラル型として `api-lock.md` に
+そのまま写っている:
+
+```ts
+const CHANNEL_SALT: {
+    readonly base2d: 2654435761;
+    readonly base3d: 2654435769;
+    readonly continentalness: 3144134277;
+    // erosion / weirdness / jaggedness も同様（全 6 チャンネル）
+};
+```
+
+salt を 1 つでも書き換えれば `pnpm api:check` が非ゼロで落ちる。
+seed → 値の写像を変える変更は「テストを走らせるまで気づかない」ものではなくなり、
+`pnpm verify` の `test` より**前**の段で止まる。`PERMUTATION_SIZE = 256` も同じく値ごと写る。
+
+**写らないものは正直に書く。** `CHANNEL_PARAMS` は `Readonly<Record<NoiseChannel, OctaveParams>>` としか
+記録されないので、§5 が MAJOR としている octaves / persistence / lacunarity の変更はロックには映らない。
+PRNG（`mulberry32`）・fade 曲線・勾配集合・振幅スケールも関数本体の話であり、同様に映らない。
+これらを機械的に検出するのは引き続き `test/public-api.test.ts` のゴールデン値である。
+**ロックは形を、ゴールデン値は写像そのものを見る。**
+
+その `test/public-api.test.ts` は残っているし、消す理由もない。
+barrel の export 名を明示的に列挙してピン留めし、**名前の消失**を実行時に落とす役目もそのままである。
+シグネチャの変更を捕まえるのが `api-lock.md` の側で、両者は補完関係にある。
+mc-worldgen がこのリポジトリを pin する以上、この二重の網が要る。
