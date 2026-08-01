@@ -37,6 +37,7 @@ describe('public API surface', () => {
         'signedFbm2D',
         // field
         'CHANNEL_PARAMS',
+        'createIsotropicNoiseField',
         'createNoiseField',
       ]
       const actual = new Set(Object.keys(noise))

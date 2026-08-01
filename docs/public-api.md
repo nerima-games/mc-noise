@@ -54,7 +54,13 @@ export type NoisePrimitives = Readonly<{
 
 ```typescript
 export const createNoiseField = (seed: NoiseSeed): NoiseField
+export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 ```
+
+`createNoiseField` は保存済みworld向けのlegacy 4勾配写像を維持する。
+`createIsotropicNoiseField` は `raw2d`、`noise2d`、`octave2d`、全channelへ8勾配
+isotropic kernelを一貫して適用する新規world向けAPIである。`raw3d` / `noise3d` は共通の
+3D kernelを使う。どちらを選んだかはworld metadataへ保存すること。
 
 ## 2. 型
 
@@ -249,6 +255,7 @@ export type NoiseField = {
   readonly channel: (name: NoiseChannel) => NoiseFn2D                          // 符号付き [-1, 1]
 }
 export const createNoiseField = (seed: NoiseSeed): NoiseField
+export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 ```
 

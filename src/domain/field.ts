@@ -33,7 +33,13 @@
  * loudly — see docs/testing.md.
  */
 import { DEFAULT_OCTAVE_PARAMS, normalizeNoise, octaveNoise2D, signedFbm2D, type OctaveParams } from './octaves'
-import { createPerlinNoise2D, createPerlinNoise3D, type NoiseFn2D, type NoiseFn3D } from './perlin'
+import {
+  createPerlinNoise2D,
+  createPerlinNoise2DIsotropic,
+  createPerlinNoise3D,
+  type NoiseFn2D,
+  type NoiseFn3D,
+} from './perlin'
 import { deriveSeed, mulberry32, NOISE_CHANNELS, type NoiseChannel, type NoiseSeed } from './seed'
 
 /**
@@ -75,14 +81,16 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>> = {
  * few microseconds; making them lazy would introduce a mutable cache into a
  * value that is otherwise trivially shareable across workers.
  */
-export const createNoiseField = (seed: NoiseSeed): NoiseField => {
-  const raw2d = createPerlinNoise2D(mulberry32(deriveSeed(seed, 'base2d')))
+type Noise2DFactory = typeof createPerlinNoise2D
+
+const createNoiseFieldWith2DKernel = (seed: NoiseSeed, createNoise2D: Noise2DFactory): NoiseField => {
+  const raw2d = createNoise2D(mulberry32(deriveSeed(seed, 'base2d')))
   const raw3d = createPerlinNoise3D(mulberry32(deriveSeed(seed, 'base3d')))
 
   const channels = new Map<NoiseChannel, NoiseFn2D>(
     NOISE_CHANNELS.map((name) => [
       name,
-      signedFbm2D(createPerlinNoise2D(mulberry32(deriveSeed(seed, name))), CHANNEL_PARAMS[name]),
+      signedFbm2D(createNoise2D(mulberry32(deriveSeed(seed, name))), CHANNEL_PARAMS[name]),
     ]),
   )
 
@@ -98,3 +106,16 @@ export const createNoiseField = (seed: NoiseSeed): NoiseField => {
     channel: (name) => channels.get(name) ?? fallback,
   }
 }
+
+export const createNoiseField = (seed: NoiseSeed): NoiseField =>
+  createNoiseFieldWith2DKernel(seed, createPerlinNoise2D)
+
+/**
+ * Build a field whose 2D samplers use the eight-gradient isotropic kernel.
+ *
+ * This is opt-in because its seed-to-value mapping differs from
+ * `createNoiseField`. The 3D kernel is unchanged. Persist the factory choice
+ * alongside a world seed so reopening a world cannot silently change terrain.
+ */
+export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField =>
+  createNoiseFieldWith2DKernel(seed, createPerlinNoise2DIsotropic)
