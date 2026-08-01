@@ -96,7 +96,7 @@ export const deriveSeed = (seed: NoiseSeed, channel: NoiseChannel): NoiseSeed =>
  * for the few hundred draws needed to build a permutation table.
  *
  * The bit twiddling is the specification, not an optimisation — see the
- * `no-bitwise: off` note in oxlint.json.
+ * `no-bitwise: off` note in .oxlintrc.json.
  */
 export const mulberry32 = (seed: NoiseSeed): RandFn => {
   let state = toUint32(seed)

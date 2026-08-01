@@ -7,7 +7,7 @@
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト・ツール）の両方 |
-| `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 66 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
+| `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ。このフラグが無かった頃は実質その3つしかゲートになっていなかった） |
 | `pnpm test` | vitest。`@effect/vitest` の `it.effect` が主 API |
 | `pnpm test:coverage` | カバレッジ計測。4 指標 99% のしきい値ゲート付き（§3 参照） |
 | `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。**CI と同じ内容**（カバレッジは別ステップ、§3） |
@@ -135,7 +135,7 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
 9. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
 
 依存ホワイトリスト検査（旧 `pnpm check:deps`）と API ロック検査（旧 `pnpm api:check`）は
-org 標準から撤去された。前者の実効機構は `oxlint.json` の `no-restricted-imports` に
+org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の `no-restricted-imports` に
 一本化され、`pnpm lint`（手順6）に吸収されている。後者は自動ツールを廃止し、
 破壊的変更の判定は人間のレビューと `test/public-api.test.ts` のゴールデン値に委ねている
 （[versioning.md](./versioning.md) §6）。

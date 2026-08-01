@@ -174,7 +174,7 @@ mc-worldgen がチャンク生成のときに呼ぶ純粋関数だからであ�
 ## 6. 依存の実効機構（§2.3-5）
 
 **旧 `scripts/check-dependency-whitelist.ts`（+ `test/check-dependency-whitelist.test.ts` +
-`pnpm check:deps`）は org 標準から撤去された。** 実効機構は各リポジトリの `oxlint.json` の
+`pnpm check:deps`）は org 標準から撤去された。** 実効機構は各リポジトリの `.oxlintrc.json` の
 `no-restricted-imports` に一本化されており、`pnpm lint` がその役割を吸収する
 （[DEPENDENCY_POLICY.md §5](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#5-実効機構-oxlint-の-no-restricted-imports)、
 [PACKAGE_STANDARD.md「`scripts/check-dependency-whitelist.ts` の廃止」](https://github.com/nerima-games/.github/blob/main/PACKAGE_STANDARD.md#scriptscheck-dependency-whitelistts-の廃止)）。
@@ -183,13 +183,13 @@ mc-worldgen がチャンク生成のときに呼ぶ純粋関数だからであ�
 
 | ルール | 内容 | 現在の実効機構 |
 | --- | --- | --- |
-| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `oxlint.json` の `no-restricted-imports`（`^@nerima-games/(?!mc-kernel\b).+`） |
+| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `.oxlintrc.json` の `no-restricted-imports`（`patterns[].group: ["@nerima-games/*", "!@nerima-games/mc-kernel"]`。DEPENDENCY_POLICY.md の例が示す `regex` キーは oxlint 1.76.0 では単独でも `group` と併用しても一致せず無効になることを実測済みのため、`group` のみを使っている） |
 | 循環禁止 | 例外リストを設けない | レビュー（DEPENDENCY_POLICY.md §2） |
 | 推移閉包の禁止 | A→B、B→C のとき A は C を import できない | レビュー（DEPENDENCY_POLICY.md §2） |
-| kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要 | `oxlint.json` のパターンが `mc-kernel` を除外 |
+| kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要 | `.oxlintrc.json` のパターンが `mc-kernel` を除外 |
 | 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない | レビュー（自動チェックなし、DEPENDENCY_POLICY.md §5） |
 | kit は devDependency 専用 | §5.2 のとおり（mc-noise は kit 自体を使わない） | レビュー |
-| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | **代替なし**（oxlint 0.12 未実装、各リポジトリの裁量。`oxlint.json` 冒頭コメント参照） |
+| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | **代替なし**（oxlint 0.12 未実装、各リポジトリの裁量。`.oxlintrc.json` 冒頭コメント参照） |
 
 `Date.now()` 禁止がまだ oxlint に無いのは、oxlint 0.12 が `no-restricted-syntax` も
 `no-restricted-properties` も実装しておらず、`no-restricted-globals` も一覧に出るだけで
