@@ -120,8 +120,9 @@ Step 0 の実装として GitHub Packages を選んである。組織 `nerima-ga
 
 がセットで必要である。
 
-既知の MAJOR 候補: `design-notes.md` N-8（半整数格子での勾配退化）の修正。
-勾配集合を 4 方向から 12 方向に増やす変更であり、意図的な MAJOR bump まで保留している。
+`design-notes.md` N-8（半整数格子での勾配退化）は既存写像を変更せず、8方向の
+`createPerlinNoise2DIsotropic` を追加することで対処した。既存worldはlegacy APIを維持し、
+新規worldだけが永続化したカーネル選択に基づいてopt-inするため、これは加算的変更である。
 
 ### MINOR
 

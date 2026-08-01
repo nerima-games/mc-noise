@@ -27,6 +27,7 @@ describe('public API surface', () => {
         'PERMUTATION_SIZE',
         'buildPermutation',
         'createPerlinNoise2D',
+        'createPerlinNoise2DIsotropic',
         'createPerlinNoise3D',
         // octaves
         'normalizeNoise',
