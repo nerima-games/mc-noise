@@ -15,8 +15,8 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, FastCheck } from 'effect'
-import { createNoiseField } from '../domain/field'
-import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32 } from '../domain/seed'
+import { createNoiseField } from '../src/domain/field'
+import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32 } from '../src/domain/seed'
 
 /** Seeds across the whole uint32 range, including both boundaries. */
 const arbitrarySeed = FastCheck.integer({ min: 0, max: 4294967295 }).map((value) => NoiseSeed(value))

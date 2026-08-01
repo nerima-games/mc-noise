@@ -26,8 +26,8 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, FastCheck } from 'effect'
-import { PERMUTATION_SIZE, buildPermutation } from '../domain/perlin'
-import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32, toUint32 } from '../domain/seed'
+import { PERMUTATION_SIZE, buildPermutation } from '../src/domain/perlin'
+import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32, toUint32 } from '../src/domain/seed'
 
 const UINT32_MODULUS = 4294967296
 

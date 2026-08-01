@@ -55,7 +55,7 @@ import {
   octaveNoise2D,
   type NoiseFn2D,
   type OctaveParams,
-} from '../index'
+} from '../src/index'
 import {
   checkGuards,
   checkWorkloads,

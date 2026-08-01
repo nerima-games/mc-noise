@@ -15,7 +15,8 @@
 将来的には `mc-kernel` に依存する（4 階層アーキテクチャの安定ライブラリ層）。
 現時点で宣言していないのは、まだ何も publish されていないためである
 （bottom-up に publish してから pin する方式）。
-意図されたグラフは `scripts/check-dependency-whitelist.ts` の roster と
+意図されたグラフは [`DEPENDENCY_POLICY.md`](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md)
+（実効機構は `.oxlintrc.json` の `no-restricted-imports`）と
 [`docs/architecture.md`](./docs/architecture.md) に記録してある。
 
 ## このリポジトリの位置づけ
@@ -64,15 +65,12 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11 を用意する
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json` と `tsconfig.test.json` の両方を型検査 |
-| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 66 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
+| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ。このフラグが無かった頃は実質その3つしかゲートになっていなかった） |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |
-| `pnpm test:coverage` | カバレッジ計測（閾値は未設定。後述） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止の検査 |
-| `pnpm api:check` | `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了（[`docs/versioning.md`](./docs/versioning.md) §6） |
-| `pnpm api:update` | `api-lock.md` を書き直す。公開面を変える PR は結果を同じ PR に含める |
-| `pnpm verify` | `typecheck && lint && check:deps && api:check && test`。CI と同じ内容 |
+| `pnpm test:coverage` | カバレッジ計測。4 指標 99% のしきい値ゲート（`vitest.config.ts`）付き |
+| `pnpm verify` | `typecheck && lint && test`。CI の必須ゲートと同じ内容（カバレッジは別ステップ） |
 
 ## 使い方
 
@@ -120,9 +118,12 @@ field.channel('continentalness')(100, 200)  // 符号付き [-1, 1]、スプラ�
 - **ビルド／publish はまだない。** `package.json` の `exports` は TypeScript ソースを直接指している。
   GitHub Packages への publish パイプラインは完成条件を満たした時点で追加する。
   それまで `version` は `0.x` に留める（mc-worldgen が実際に消費して契約を確認したら 1.0.0 にする）。
-- **カバレッジ閾値は未設定。** 参照実装は 99% を強制しているが、スケルトンに閾値を課しても意味がない。
-  計測とレポートは常に動かしており、99% ゲートは完成条件到達時に
-  `vitest.config.ts` と CI の両方で有効化する。
+- **カバレッジ 4 指標 99% ゲートは有効化済み。** 組織としての即時・全リポジトリ一律の決定
+  （TEST_STANDARD.md §3）により、猶予期間なく `vitest.config.ts` と CI の両方で有効化した。
+  有効化時点の実測は statements 100%・lines 100%・**functions 95.45%（21/22）**・
+  **branches 84.85%（56/66）**で、functions と branches が 99% 未達のため CI は赤くなる。
+  これはしきい値を緩める理由ではなく、追跡対象の未完了作業として扱う
+  （MIGRATION_RUNBOOK.md 手順7 が明示的に受容している既知の結果と同じ扱い）。
 
 ## License
 

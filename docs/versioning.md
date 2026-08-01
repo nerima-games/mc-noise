@@ -18,7 +18,13 @@
 
 ## 2. なぜ今は publish しないのか（plan.md §6 Step 0-2）
 
-> **npm公開・バージョンbump運用は界面安定（4週間APIロック無変更）まで開始しない**
+**1.0.0 への昇格に、日数計測ベースの自動ゲートは存在しない。** かつては「4週間 API 無変更で凍結」
+という freeze-clock 言語がここにあったが、その仕組み（`api-lock.md` + `scripts/api-lock.ts`）は
+org 標準から撤去された（[API_STANDARD.md §4](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md#4-自動-apiロックスナップショットツールは使わない)）。
+1.0.0 への昇格は maintainer(take) の裁量判断のみで行う
+（[RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断)）。
+実質的なトリガーは「上位階層（`mc-worldgen`）が実際にこのリポジトリを消費し、動作確認を終える」ことだが、
+それをもって自動的に 1.0.0 へ上がるわけではない。
 
 16 リポジトリが互いを pin したバージョンで参照し合っている状態で界面が動くと、
 1 つの変更が bump の連鎖を引き起こす。初期は全界面が高 churn なので、これは常時起きる。
@@ -30,8 +36,9 @@
 したがって現在の `package.json` は:
 
 - `dependencies` に `effect` だけを宣言する。`@nerima-games/*` は 1 つも入っていない。
-- `exports` は **TypeScript ソースを直接指す**（`./index.ts`）。ビルド成果物ではない。
-- ビルド / publish パイプラインは存在しない。
+- `exports` は **TypeScript ソースを直接指す**（`./src/index.ts`）。ビルド成果物ではない。
+- ビルド / publish パイプラインは存在しない。バージョニングと CHANGELOG 生成は `@changesets/cli`
+  に一本化されている（[RELEASE_STANDARD.md §1](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#1-changesets-導入)、`.changeset/config.json`）。
 
 ## 3. ビルドと publish は完成条件到達時に追加する
 
@@ -43,7 +50,7 @@
 1. `tsconfig.build.json` の `noEmit` を外し、`dist/` に `.js` + `.d.ts` + source map を出す
 2. `package.json` の `exports` を `dist/` に向ける（`files` も同様）
 3. `prepublishOnly` で `pnpm verify` を強制
-4. CI に publish job を追加（`.github/workflows/ci.yaml` は現在 typecheck / lint / check:deps / api:check / test / coverage のみ）
+4. CI に publish job を追加（`.github/workflows/ci.yaml` は現在 typecheck / lint / test / coverage のみ）
 5. changesets 運用に切り替え（plan.md §6 Step 3）
 
 ## 4. 公開先: GitHub Packages
@@ -127,50 +134,26 @@ Step 0 の実装として GitHub Packages を選んである。組織 `nerima-ga
 - ドキュメント、コメント、テスト
 - 観測可能な値を変えない内部リファクタ（**ゴールデン値テストが green のままであること**が判定基準）
 
-## 6. API ロックファイル
+## 6. API ロックファイルは廃止された
 
-plan.md §6 Step 0-3 は「初回コミットに ... APIロックファイル（公開APIのレポートを diff レビュー）」を求める。
+plan.md §6 Step 0-3 はかつて「初回コミットに ... APIロックファイル（公開APIのレポートを diff
+レビュー）」を求めていたが、この自前の自動 API スナップショット/diff 機構（`api-lock.md` +
+`scripts/api-lock.ts` + `pnpm api:check` / `api:update`）は org 標準から全廃された
+（[API_STANDARD.md §4](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md#4-自動-apiロックスナップショットツールは使わない)）。
+`@microsoft/api-extractor` はかつて mc-kernel の実コードで試したうえで却下されている
+（決め手は `Context.Tag` のサービスクラスが写らないこと）。今後この種の仕組みを復活させる提案は
+まずこの経緯と API_STANDARD.md §4 の決定を踏まえること。
 
-**実装済みである。** リポジトリ直下の `api-lock.md`（公開宣言 24 件）が公開面の正本で、
-生成器は `scripts/api-lock.ts`。16 リポジトリに byte-identical で vendor する方式は
-`scripts/check-dependency-whitelist.ts` と同じで、編集してよいのは `REPOSITORY_POLICY` だけである。
+破壊的変更の判定は、今後は**人間のレビュー**（[API_STANDARD.md §3](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md#3-破壊的変更-vs-加算的変更)）
+と、機械的に検出できる部分については引き続き `test/public-api.test.ts` のゴールデン値に委ねる。
 
-| 項目 | 内容 |
-| --- | --- |
-| 検査 | `pnpm api:check` — `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了 |
-| 更新 | `pnpm api:update` |
-| 配線 | `pnpm verify` の `check:deps` と `test` の間、および CI の独立ステップ |
-| 追加依存 | **なし**（`typescript` は既に devDependency） |
+**`test/public-api.test.ts` は残っているし、消す理由もない。** barrel の export 名を明示的に
+列挙してピン留めし、**名前の消失**を実行時に落とす役目はそのままである。上の §5 が MAJOR 一覧に
+挙げる「seed → 値の写像」（PRNG・fade 曲線・勾配集合・振幅スケール・チャンネル salt・
+`CHANNEL_PARAMS` の octaves / persistence / lacunarity）は、シグネチャの見た目を変えずに値だけが
+変わりうるため、api-lock のような型シグネチャの diff では最初から検出できていなかった。
+これを機械的に検出するのは一貫して `test/public-api.test.ts` のゴールデン値であり、その役割は
+api-lock の廃止によって変わらない。**ゴールデン値は写像そのものを見る。**
 
-plan.md §9 の未決事項「API ロックファイルのツール選定（api-extractor 相当の Effect-TS 互換手段）」は
-これで決着した。`@microsoft/api-extractor` は mc-kernel の実コードで試したうえで却下してある
-（決め手は `Context.Tag` のサービスクラスが写らないこと）。理由と実測は
-mc-kernel の `docs/versioning.md` §7 が正本なので、ここでは繰り返さない。
-
-**mc-noise では偶然だが強く効く。** 上の §5 が MAJOR 一覧の 2 番目に置いている
-「チャンネル salt（`CHANNEL_SALT`）」は、`as const` のリテラル型として `api-lock.md` に
-そのまま写っている:
-
-```ts
-const CHANNEL_SALT: {
-    readonly base2d: 2654435761;
-    readonly base3d: 2654435769;
-    readonly continentalness: 3144134277;
-    // erosion / weirdness / jaggedness も同様（全 6 チャンネル）
-};
-```
-
-salt を 1 つでも書き換えれば `pnpm api:check` が非ゼロで落ちる。
-seed → 値の写像を変える変更は「テストを走らせるまで気づかない」ものではなくなり、
-`pnpm verify` の `test` より**前**の段で止まる。`PERMUTATION_SIZE = 256` も同じく値ごと写る。
-
-**写らないものは正直に書く。** `CHANNEL_PARAMS` は `Readonly<Record<NoiseChannel, OctaveParams>>` としか
-記録されないので、§5 が MAJOR としている octaves / persistence / lacunarity の変更はロックには映らない。
-PRNG（`mulberry32`）・fade 曲線・勾配集合・振幅スケールも関数本体の話であり、同様に映らない。
-これらを機械的に検出するのは引き続き `test/public-api.test.ts` のゴールデン値である。
-**ロックは形を、ゴールデン値は写像そのものを見る。**
-
-その `test/public-api.test.ts` は残っているし、消す理由もない。
-barrel の export 名を明示的に列挙してピン留めし、**名前の消失**を実行時に落とす役目もそのままである。
-シグネチャの変更を捕まえるのが `api-lock.md` の側で、両者は補完関係にある。
-mc-worldgen がこのリポジトリを pin する以上、この二重の網が要る。
+mc-worldgen がこのリポジトリを pin する以上、公開シグネチャの破壊的変更はレビューで、
+写像そのものの破壊的変更はゴールデン値で捕まえる、という二本立てになる。
