@@ -80,7 +80,7 @@ graph BT
 
 実線 = 実行時依存（`dependencies`）、点線 = プレビュー起動時のみ（`devDependencies`）。
 plan.md §2.1 は 15 リポジトリを図示しているが、Step 0 で **mc-dev-meta**（開発用 workspace、実行時依存なし）が加わるため、
-`scripts/check-dependency-whitelist.ts` が保持する roster は **16 行**である。
+DEPENDENCY_POLICY.md が記録する許可グラフは **16 行**である（旧 `scripts/check-dependency-whitelist.ts` の roster から引き継いだもの。§6 参照）。
 
 ## 4. このリポジトリの位置
 
@@ -110,9 +110,9 @@ plan.md §3.2 が「seed→値のインターフェースは凍結扱い」と�
 「採掘 → インベントリに入る」は mx-gameplay が mx-ui を呼ぶのではなく、
 mc-sim の `InventoryService` を経由して実現する。
 
-このルールは `scripts/check-dependency-whitelist.ts` の roster にそのまま埋め込まれており、
-`test/check-dependency-whitelist.test.ts` の
-「has no edges between experience modules」がアサーションとして保持している。
+このルールは DEPENDENCY_POLICY.md の許可グラフに埋め込まれている（§6 参照。かつては
+`scripts/check-dependency-whitelist.ts` の roster と `test/check-dependency-whitelist.test.ts` の
+「has no edges between experience modules」が機械的に保持していたが、両ファイルは撤去された）。
 
 安定ライブラリ層は名詞でも動詞でもなく**関数**である。状態を持たず、サービスを提供せず、
 `Layer` を公開しない。この層に `Ref` が現れたら設計を疑うこと。
@@ -130,7 +130,8 @@ mc-playground-kit は「ミニ平地ワールド + カメラ + レンダラ + �
 したがって:
 
 - `mc-playground-kit` が `dependencies` に現れたら CI は失敗する
-  （`check-dependency-whitelist.ts` の `DEV_ONLY_PACKAGES`、rule 6）。
+  （旧 `check-dependency-whitelist.ts` の `DEV_ONLY_PACKAGES`、rule 6 が担っていた検査。
+  撤去済みで、現在はレビューで守る、DEPENDENCY_POLICY.md §3）。
 - 出荷ソース（`index.ts` と `domain/`）からの import も失敗する。
 - roster では **ノードとしては存在する**（kit 自身は worldgen / sim / render に実行時依存する）が、
   **どの行のターゲットにも現れない**。devDependency は実行時の辺を作らないので、循環にも参加しない。
@@ -170,27 +171,31 @@ mc-worldgen がチャンク生成のときに呼ぶ純粋関数だからであ�
 参照実装の轍: 合成層に 13k LOC のルールが堆積し、E2E でしか検証できなくなった。
 「mc-compose の追加コードは Layer 合成と stage 順序表だけ」がレビュー規範である。
 
-## 6. 依存ホワイトリスト CI（§2.3-5）
+## 6. 依存の実効機構（§2.3-5）
 
-`scripts/check-dependency-whitelist.ts` は 16 リポジトリ共通のテンプレートである。
-移植時に書き換えるのは冒頭で囲ってある `REPOSITORY_POLICY` の `thisPackage` だけでよい
-（`dependencyGraph` は roster 全体なので全コピーで同一）。
+**旧 `scripts/check-dependency-whitelist.ts`（+ `test/check-dependency-whitelist.test.ts` +
+`pnpm check:deps`）は org 標準から撤去された。** 実効機構は各リポジトリの `oxlint.json` の
+`no-restricted-imports` に一本化されており、`pnpm lint` がその役割を吸収する
+（[DEPENDENCY_POLICY.md §5](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#5-実効機構-oxlint-の-no-restricted-imports)、
+[PACKAGE_STANDARD.md「`scripts/check-dependency-whitelist.ts` の廃止」](https://github.com/nerima-games/.github/blob/main/PACKAGE_STANDARD.md#scriptscheck-dependency-whitelistts-の廃止)）。
+以下は旧スクリプトが機械的に強制していた規則で、その内容自体は変わっていない
+（許可グラフの正典は [DEPENDENCY_POLICY.md](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md)）。
 
-| ルール | 内容 |
-| --- | --- |
-| ハード失敗 | 違反があれば必ず非ゼロ終了する。参照実装の `check-package-dag.ts` は警告を出して常に 0 で終了していた。失敗できないゲートはドキュメントであってゲートではない |
-| 循環禁止 | 例外リストを設けない。参照実装は「co-evolution ペア」として 6 つの循環を合法化していた |
-| 推移閉包の禁止 | A→B、B→C のとき A は C を import できない。mx-gameplay は mc-sim が mc-physics に依存しているという理由で mc-physics を import することはできない |
-| kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要（許可の例外であって、パッケージングの例外ではない） |
-| 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない |
-| kit は devDependency 専用 | §5.2 のとおり |
-| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する |
+| ルール | 内容 | 現在の実効機構 |
+| --- | --- | --- |
+| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `oxlint.json` の `no-restricted-imports`（`^@nerima-games/(?!mc-kernel\b).+`） |
+| 循環禁止 | 例外リストを設けない | レビュー（DEPENDENCY_POLICY.md §2） |
+| 推移閉包の禁止 | A→B、B→C のとき A は C を import できない | レビュー（DEPENDENCY_POLICY.md §2） |
+| kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要 | `oxlint.json` のパターンが `mc-kernel` を除外 |
+| 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない | レビュー（自動チェックなし、DEPENDENCY_POLICY.md §5） |
+| kit は devDependency 専用 | §5.2 のとおり（mc-noise は kit 自体を使わない） | レビュー |
+| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | **代替なし**（oxlint 0.12 未実装、各リポジトリの裁量。`oxlint.json` 冒頭コメント参照） |
 
-`Date.now()` 禁止が lint ではなくスクリプト側にあるのは、oxlint 0.12 が
-`no-restricted-syntax` も `no-restricted-properties` も実装しておらず、
-`no-restricted-globals` も一覧に出るだけで実装されていないためである（0.12.0 で実測確認済み）。
-Clock Port の実装アダプタだけは実クロックを 1 回読む必要があるので、
-その行に `mc-kernel-allow-time-source` コメントを付けると除外される。
+`Date.now()` 禁止がまだ oxlint に無いのは、oxlint 0.12 が `no-restricted-syntax` も
+`no-restricted-properties` も実装しておらず、`no-restricted-globals` も一覧に出るだけで
+実装されていないためである（0.12.0 で実測確認済み）。旧スクリプトの撤去に伴い、この禁止は
+現時点で自動検査の対象外になった（org 標準として個別スクリプトの復活は要求しない、
+PACKAGE_STANDARD.md 同節）。
 
 ## 7. スケルトン段階の依存宣言について
 
@@ -200,7 +205,7 @@ Clock Port の実装アダプタだけは実クロックを 1 回読む必要が
 1. まだ何も publish されていない（bottom-up に publish してから pin する方式）。
 2. スケルトンには import すべき兄弟コードがまだ存在しない。
 
-意図されたグラフは `check-dependency-whitelist.ts` の roster と本ドキュメントに記録されている。
+意図されたグラフは DEPENDENCY_POLICY.md と本ドキュメントに記録されている。
 グラフは仕様であり、最初の publish より前に循環検出を意味あるものにしているのはこの記録である。
 
 ## 参照

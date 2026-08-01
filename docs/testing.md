@@ -8,12 +8,9 @@
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト・ツール）の両方 |
 | `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 66 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止 |
-| `pnpm api:check` | `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了（[versioning.md](./versioning.md) §6） |
-| `pnpm api:update` | `api-lock.md` を書き直す |
 | `pnpm test` | vitest。`@effect/vitest` の `it.effect` が主 API |
-| `pnpm test:coverage` | カバレッジ計測（閾値は未設定。§3 参照） |
-| `pnpm verify` | `typecheck` / `lint` / `check:deps` / `api:check` / `test` を直列実行。**CI と同じ内容** |
+| `pnpm test:coverage` | カバレッジ計測。4 指標 99% のしきい値ゲート付き（§3 参照） |
+| `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。**CI と同じ内容**（カバレッジは別ステップ、§3） |
 | `pnpm bench` | ベンチマーク（`scripts/bench-noise.ts`）。**`verify` には入らない**（§7） |
 
 セットアップ:
@@ -65,21 +62,35 @@ mc-noise で最も価値が高いのは**決定論のプロパティテスト**�
 `design-notes.md` の各項目には**回帰テスト名**が振ってあり、ソースのコメントからも
 同じ名前で参照している。テストを消すときは design-notes 側も同時に更新すること。
 
-## 3. カバレッジ閾値は**まだ**有効化していない
+## 3. カバレッジ閾値は有効化済み(即時ロールアウト、完成条件を待たない)
 
-参照実装は branches / functions / lines / statements すべてに **99%** を強制している。
-本リポジトリは計測とレポートは常に動かしているが、**閾値は設定していない**。
-
-理由（`vitest.config.ts` のコメントにも記載）:
-スケルトンに閾値を課しても意味がない。第一版のモジュール数個で自明に満たされてしまい、
-実装の質については何も言わない数字になる。
-
-**99% ゲートは完成条件（§4）に到達した時点で、`vitest.config.ts` と CI の両方で有効化する。**
+組織としての決定（TEST_STANDARD.md §3）により、branches / functions / lines / statements の
+4 指標すべてに **99%** のしきい値を、猶予期間や段階ロールアウトなしに全 16 リポジトリへ即時適用した。
+これはかつてこの節が書いていた「完成条件に到達してから有効化する」という方針を上書きする。
+スケルトンの完成度に関わらず有効化するのが組織としての決定であり、実装の質を数字で
+先取りするものではない。
 
 ```typescript
-// vitest.config.ts に追加する行
+// vitest.config.ts（有効化済み）
 thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
 ```
+
+**有効化した時点(2026-08-01)の実測**は次の通り。functions と branches が未達で CI は赤くなる。
+これはしきい値を緩める理由ではなく、追跡対象の未完了作業として扱う
+（MIGRATION_RUNBOOK.md 手順7 が明示的に受容している既知の結果と同じ扱い）。
+
+| 指標 | 実測 |
+| --- | --- |
+| statements | 100%（219/219） |
+| lines | 100% |
+| functions | **95.45%（21/22）** — 未達 |
+| branches | **84.85%（56/66）** — 未達 |
+
+未達の内訳（`pnpm test:coverage` の出力より）: `domain/field.ts` の `fallback` 関数（1関数）と、
+`domain/perlin.ts` の到達していない分岐（`gradient2d`/`gradient3d` の一部ケースなど）。
+§2 が言う「少数の誠実なテスト」の方針に従い、まず「このテストは本当に必要な仕様を守っているか」
+「この分岐は本当に到達可能か」を問うこと（型が排除している到達不能分岐なら、テストを足すのではなく
+分岐そのものを削るのが正しい対処、TEST_STANDARD.md §3.2 参照）。
 
 ## 4. 完成条件
 
@@ -102,30 +113,32 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
   - `computeTerrainChannels` 相当（疎グリッド + 双線形補間）を入れるかどうかの判断。
     入れるならベンチマークを先にリポジトリに置くこと
 
-到達時に行うこと:
+到達時に行うこと（99% 閾値の有効化自体は §3 の通り組織決定で前倒し済み）:
 
-1. `vitest.config.ts` と `.github/workflows/ci.yaml` で 99% 閾値を有効化
-2. ビルド / publish パイプラインを追加（`versioning.md` §3）
-3. `0.x` → `1.0.0`（mc-worldgen が実際に消費して契約を確認したら）
+1. ビルド / publish パイプラインを追加（`versioning.md` §3）
+2. `0.x` → `1.0.0`（mc-worldgen が実際に消費して契約を確認したら、maintainer の裁量判断で。
+   `versioning.md` §2）
 
 ## 5. CI
 
 `.github/workflows/ci.yaml` は `pnpm verify` と同じ内容を job のステップに展開したものである
 （失敗箇所が step 名で分かるようにするため）:
 
-1. Checkout
-2. Setup pnpm（`pnpm/action-setup@v4`）
-3. Setup Node.js 22（pnpm キャッシュ有効）
-4. `pnpm install --frozen-lockfile`
+1. Checkout（`actions/checkout` — commit SHA 固定、`persist-credentials: false`）
+2. Setup pnpm（`pnpm/action-setup` — commit SHA 固定）
+3. Setup Node.js 24（pnpm キャッシュ有効。`actions/setup-node` — commit SHA 固定）
+4. `pnpm install --frozen-lockfile --ignore-scripts`
 5. `pnpm typecheck`
 6. `pnpm lint`
-7. `pnpm check:deps` —— **ハードゲート**。参照実装の `check-package-dag.ts` と違い、
-   違反があれば必ず非ゼロ終了する
-8. `pnpm api:check`（step 名は `API lock`）—— **ハードゲート**。`api-lock.md` が
-   現在の公開 API と食い違えば非ゼロ終了する（[versioning.md](./versioning.md) §6）
-9. `pnpm test`
-10. `pnpm test:coverage`（閾値なし。§3）
-11. カバレッジレポートを artifact に upload（7 日保持）
+7. `pnpm test`
+8. `pnpm test:coverage` —— **ハードゲート**。4 指標 99% しきい値（§3）を下回ると非ゼロ終了する
+9. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
+
+依存ホワイトリスト検査（旧 `pnpm check:deps`）と API ロック検査（旧 `pnpm api:check`）は
+org 標準から撤去された。前者の実効機構は `oxlint.json` の `no-restricted-imports` に
+一本化され、`pnpm lint`（手順6）に吸収されている。後者は自動ツールを廃止し、
+破壊的変更の判定は人間のレビューと `test/public-api.test.ts` のゴールデン値に委ねている
+（[versioning.md](./versioning.md) §6）。
 
 ## 6. 現時点のテスト一覧
 
