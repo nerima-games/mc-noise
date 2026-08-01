@@ -1,0 +1,193 @@
+{
+  "$schema": "https://oxc-project.github.io/oxc/schema/linter.json",
+  // *** FOLLOW-UP FIX (2026-08-01): this file used to be named `oxlint.json`
+  // (no leading dot) and was NEVER auto-discovered by oxlint 1.76.0. ***
+  // Verified empirically: with the old filename, `oxlint --print-config` from
+  // the repository root (no `-c` flag, i.e. exactly how `pnpm lint` invokes
+  // it) returned oxlint's bare built-in defaults, not this file's rules —
+  // `oxlint --help` documents the config flag's default value as
+  // `./.oxlintrc.json`, not `oxlint.json`. In other words: every custom rule
+  // in this file — including the pre-existing `effect` default-import ban and
+  // the `no-restricted-imports` Tier1 dependency rule below — was silently
+  // never enforced by `pnpm lint` or CI. This predated the org-standard
+  // migration and was not specific to mc-noise; every repository using the
+  // `oxlint.json` filename convention (see the PACKAGE_STANDARD.md /
+  // DEPENDENCY_POLICY.md examples, which showed `oxlint.json`) was affected.
+  //
+  // Renaming to `.oxlintrc.json` alone was not sufficient. Two more fixes were
+  // required, verified empirically against the pinned `oxlint@1.76.0`, before
+  // `oxlint --print-config` would actually load and print this file's custom
+  // rules: (1) `no-restricted-imports` needs the nested
+  // `["error", {"paths": [...], "patterns": [...]}]` options-object form — a
+  // bare `{"name"/"regex"}` object passed as a second array element (the
+  // shape this file previously used) is silently ignored; and (2) a block of
+  // `eslint`-plugin style/formatting rules this file used to set (`indent`,
+  // `comma-dangle`, `array-bracket-spacing`, `no-tabs`, etc.) no longer exist
+  // in oxlint 1.76.0 (oxlint moved formatting out of the linter into a
+  // separate, still-experimental formatter) and caused a hard config-parse
+  // failure — with them present, `oxlint --print-config` refused to parse at
+  // all and `pnpm lint` silently fell back to bare built-in defaults, so
+  // removing them was not optional: no custom rule, including
+  // `no-restricted-imports`, could load while they remained. They have been
+  // removed below; the `style` category default (`"style": "warn"`) still
+  // covers whichever of those concerns oxlint's own built-in style rules
+  // still express.
+  //
+  // oxlint is the ONLY lint/format configuration in this repository.
+  // There is deliberately no prettier, no biome and no .editorconfig.
+  //
+  // NOTE on the `Date.now()` ban (see README 現状):
+  // oxlint 0.12 does not implement `no-restricted-syntax` or `no-restricted-properties`,
+  // and while `no-restricted-globals` is listed by `oxlint --rules` it is not implemented
+  // either (no checkmark). Verified empirically against oxlint 0.12.0: a file containing
+  // `Date.now()` produces 0 diagnostics under all three rules. `scripts/check-dependency-whitelist.ts`,
+  // which used to enforce this, has been removed org-wide (PACKAGE_STANDARD.md /
+  // DEPENDENCY_POLICY.md): the cross-repo dependency check it also performed is now
+  // handled by the `no-restricted-imports` rule below, and this repository does not
+  // currently have a replacement for the time-source ban (each repository's own
+  // discretion per DEPENDENCY_POLICY.md §5). When oxlint gains `no-restricted-syntax`,
+  // add the ban here.
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "settings": {
+    "typescript": {
+      "version": "5.9"
+    }
+  },
+  "plugins": [],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "warn",
+    "restriction": "warn"
+  },
+  "rules": {
+    // TypeScript-specific rules
+    // Prefer `type` over `interface` for pure data types (Schema.Struct pattern).
+    "@typescript-eslint/consistent-type-definitions": ["warn", "type"],
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-floating-promises": "warn",
+    "@typescript-eslint/no-misused-new": "warn",
+    "@typescript-eslint/no-unnecessary-type-assertion": "warn",
+    "@typescript-eslint/no-var-requires": "warn",
+    "@typescript-eslint/prefer-enum-initializers": "warn",
+    "@typescript-eslint/prefer-for-of": "warn",
+    "@typescript-eslint/prefer-literal-enum-member": "warn",
+
+    // Correctness
+    "no-array-constructor": "warn",
+    "no-empty": "warn",
+    "no-eq-null": "warn",
+    "no-extra-boolean-cast": "warn",
+    "no-fallthrough": "warn",
+    "no-irregular-whitespace": "warn",
+    "no-self-compare": "warn",
+    "no-throw-literal": "warn",
+    "no-unreachable": "warn",
+    "use-isnan": "warn",
+    "valid-typeof": "warn",
+
+    // Suspicious
+    "no-console": "warn",
+    "no-debugger": "warn",
+    "no-empty-function": "warn",
+    "no-empty-pattern": "warn",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-redeclare": "warn",
+    "no-shadow": "warn",
+    "no-unreachable-loop": "warn",
+    "no-unused-private-class-members": "warn",
+
+    // Performance
+    "no-await-in-loop": "warn",
+    "no-loop-func": "warn",
+    "no-promise-executor-return": "warn",
+    "no-sync": "warn",
+
+    // Style
+    // NOTE: this block used to also set ~29 `eslint`-plugin formatting rules
+    // (`array-bracket-spacing`, `block-spacing`, `brace-style`, `camelcase`,
+    // `comma-dangle`, `comma-spacing`, `comma-style`, `computed-property-spacing`,
+    // `eol-last`, `func-call-spacing`, `indent`, `key-spacing`, `keyword-spacing`,
+    // `linebreak-style`, `lines-between-class-members`, `no-mixed-spaces-and-tabs`,
+    // `no-new-object`, `no-tabs`, `no-trailing-spaces`, `no-whitespace-before-property`,
+    // `object-curly-spacing`, `one-var`, `operator-linebreak`, `padded-blocks`,
+    // `quote-props`, `semi-spacing`, `space-before-blocks`, `space-infix-ops`,
+    // `space-unary-ops`, `spaced-comment`). None of these exist as rule names
+    // in oxlint 1.76.0 (oxlint moved formatting out of the linter into a
+    // separate, still-experimental formatter). Verified empirically: with any
+    // of them present, `oxlint --print-config` and `oxlint` both hard-fail to
+    // parse this config file ("Rule 'X' not found in plugin 'eslint'") and
+    // fall back to bare built-in defaults — meaning no custom rule in this
+    // file, including `no-restricted-imports` below, was actually being
+    // loaded. They have been removed; formatting is no longer this
+    // repository's concern via oxlint (there is still no prettier, no biome,
+    // no .editorconfig — see the top-of-file note). The `style` category
+    // default (`"style": "warn"`) still covers whichever style rules oxlint
+    // 1.76.0 still implements under that category.
+    "no-array-method-this-argument": "warn",
+    // PERFORMANCE / CORRECTNESS EXCEPTION — see docs/design-notes.md.
+    // The seed hash (mulberry32) and the permutation-table index are defined in
+    // terms of uint32 wrapping arithmetic: `>>> 0`, `^`, `| 1`, `& 255`. Those
+    // are not a micro-optimisation, they are the specification of the function.
+    // Rewriting them with arithmetic operators would change the values the seed
+    // produces, and the seed -> value mapping is a frozen contract (plan.md §3.2).
+    "no-bitwise": "off",
+
+    // Restriction
+    "default-case": "warn",
+    "default-case-last": "warn",
+    "no-empty-character-class": "warn",
+    // Declared for intent and for the day oxlint implements it; inert in 0.12
+    // (see the NOTE at the top of this file).
+    "no-restricted-globals": ["warn", "name", "open", "close", "event"],
+    // NOTE: the options must be a single nested object,
+    // `["error", {"paths": [...], "patterns": [...]}]` — a bare
+    // `{"name"/"regex"}` object passed as its own array element (what this
+    // file previously had for the `effect` entry) is silently not registered.
+    // Within `patterns`, use `group` (glob, with `!` negation for the
+    // mc-kernel exemption), not `regex`. DEPENDENCY_POLICY.md's Tier1 example
+    // uses `regex`, but oxlint 1.76.0 (this repository's pinned version)
+    // silently does not match against a `regex`-only pattern — verified
+    // empirically: it produces zero diagnostics for a matching import.
+    // IMPORTANT, also verified empirically: putting `regex` and `group` on
+    // the *same* pattern entry does not "fail open" to the working `group`
+    // key — it silently disables matching entirely, same as `regex` alone.
+    // So `regex` must not be present here at all, not even alongside `group`
+    // as a defensive fallback; `group` must be the pattern's only match key.
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "effect",
+            "message": "Please use named imports from 'effect' package",
+            "importNames": ["default"]
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["@nerima-games/*", "!@nerima-games/mc-kernel"],
+            "message": "mc-noise is a Tier1 library (DEPENDENCY_POLICY.md) and must not depend on any other @nerima-games/* package. mc-kernel is universally importable and exempt."
+          }
+        ]
+      }
+    ],
+    "prefer-template": "warn",
+
+    // Disabled rules (conflict with project style)
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "no-case-declarations": "off",
+    "no-constant-condition": "off",
+    "no-param-reassign": "off",
+    "no-plusplus": "off"
+  },
+  "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
+}

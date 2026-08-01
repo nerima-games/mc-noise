@@ -10,10 +10,10 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, FastCheck } from 'effect'
-import { createNoiseField } from '../domain/field'
-import { clampSigned, normalizeNoise, octaveNoise2D, signedFbm2D } from '../domain/octaves'
-import { createPerlinNoise2D } from '../domain/perlin'
-import { mulberry32, NoiseSeed } from '../domain/seed'
+import { createNoiseField } from '../src/domain/field'
+import { clampSigned, normalizeNoise, octaveNoise2D, signedFbm2D } from '../src/domain/octaves'
+import { createPerlinNoise2D } from '../src/domain/perlin'
+import { mulberry32, NoiseSeed } from '../src/domain/seed'
 
 const arbitrarySeed = FastCheck.integer({ min: 0, max: 4294967295 }).map((value) => NoiseSeed(value))
 const arbitraryCoordinate = FastCheck.double({ min: -1024, max: 1024, noNaN: true, noDefaultInfinity: true })

@@ -62,7 +62,7 @@ plan.md §3.x の「設計注意」を、参照実装の証拠（file:line）付
   `// Hot loop: kept as 'for' to match the previous performance ... The loop body stays imperative for throughput.`
 - `packages/world/application/noise-service.ts:26-29`:
   ``// `let` here, not `Ref`: the surrounding methods are all `Effect.sync` / closures over this binding...``
-- lint 側の許可: `oxlint.json:131` に `"no-plusplus": "off"`
+- lint 側の許可: `.oxlintrc.json:190` に `"no-plusplus": "off"`
 
 ### なぜ「修正」してはいけないのか
 
