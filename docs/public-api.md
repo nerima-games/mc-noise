@@ -242,6 +242,17 @@ export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D
 これはチャンネルごとの**チューニング値**（continentalness は 1.4、erosion / weirdness は 1.3）であり、
 凍結対象のノイズ関数ではなく地形調整に属する。掛けたい側が掛ければよい。
 
+### Value noise API
+
+`domain/value-noise.ts` は、worldgen の地形・バイオーム用に決定論的な連続値ノイズを提供する。
+`channelSeed` と `latticeValue` は同じ seed と座標から常に同じ値を返し、`valueNoise2D` は
+smoothstep 補間で格子点を補間する。`fbm2D` は `ValueNoiseFbmOptions` で octaves・frequency・
+persistence をまとめて受け取る。
+
+このAPIは既存の Perlin API を変更しない加算的変更であり、0.x の方針に従って `0.1.x` から
+`0.2.0` へ上げる。worldgen の互換実装と同じ写像を固定し、公開パッケージへ移行した後も
+地形 golden が変わらないことを契約テストで確認する。
+
 ## 6. `NoiseField`（本リポジトリの入口）
 
 ```typescript

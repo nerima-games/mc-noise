@@ -35,6 +35,11 @@ describe('public API surface', () => {
         'DEFAULT_OCTAVE_PARAMS',
         'octaveNoise2D',
         'signedFbm2D',
+        // value noise
+        'channelSeed',
+        'latticeValue',
+        'valueNoise2D',
+        'fbm2D',
         // field
         'CHANNEL_PARAMS',
         'createIsotropicNoiseField',
