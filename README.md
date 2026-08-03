@@ -110,7 +110,7 @@ field.channel('continentalness')(100, 200)  // 符号付き [-1, 1]、スプラ�
   低レベル利用には `createPerlinNoise2DIsotropic` も使える。world metadata には
   factory の選択を保存し、再生成時も同じものを選ぶこと。
   詳細と選択基準は [`docs/design-notes.md`](./docs/design-notes.md) N-8。
-- **`toPV` / 疎グリッド + 双線形補間 / バッチヘルパは未移植。**
+- **`toPV` / 疎グリッド + 双線形補間は未移植。** 汎用2Dノイズのバッチ／グリッドサンプリングは `sampleNoise2DBatch` と `sampleNoise2DGrid` で提供する。
   前者は地形の形の話（mc-worldgen 寄り）、後者 2 つは性能最適化なので
   ベンチマークを用意してから入れる。
 - **Simplex ノイズは無い。** plan.md は「Perlin/Simplex系」と書くが、

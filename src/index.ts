@@ -16,5 +16,6 @@
 export * from './domain/field'
 export * from './domain/octaves'
 export * from './domain/perlin'
+export * from './domain/sampling'
 export * from './domain/seed'
 export * from './domain/value-noise'
