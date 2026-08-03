@@ -54,7 +54,13 @@ export type NoisePrimitives = Readonly<{
 
 ```typescript
 export const createNoiseField = (seed: NoiseSeed): NoiseField
+export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 ```
+
+`createNoiseField` は保存済みworld向けのlegacy 4勾配写像を維持する。
+`createIsotropicNoiseField` は `raw2d`、`noise2d`、`octave2d`、全channelへ8勾配
+isotropic kernelを一貫して適用する新規world向けAPIである。`raw3d` / `noise3d` は共通の
+3D kernelを使う。どちらを選んだかはworld metadataへ保存すること。
 
 ## 2. 型
 
@@ -166,8 +172,14 @@ export const createPerlinNoise3D = (rand?: RandFn): NoiseFn3D => {
 export const PERMUTATION_SIZE = 256
 export const buildPermutation = (rand: RandFn): Uint8Array
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D
+export const createPerlinNoise2DIsotropic = (rand: RandFn): NoiseFn2D
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D
 ```
+
+`createPerlinNoise2D` は4対角勾配を使うlegacyカーネルであり、保存済みworldとの互換性のため
+seed→値を維持する。`createPerlinNoise2DIsotropic` は8つの単位勾配（軸4 + 対角4）を使う
+opt-inカーネルで、半整数座標の退化と方向バイアスを抑える。新規worldで採用する場合は、
+再生成時にも同じカーネルを選べるようカーネル識別子を保存すること。
 
 permutation table は Fisher-Yates で作る。参照実装 `perlin.ts:6-17`:
 
@@ -243,6 +255,7 @@ export type NoiseField = {
   readonly channel: (name: NoiseChannel) => NoiseFn2D                          // 符号付き [-1, 1]
 }
 export const createNoiseField = (seed: NoiseSeed): NoiseField
+export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 ```
 

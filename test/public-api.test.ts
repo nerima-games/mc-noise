@@ -27,6 +27,7 @@ describe('public API surface', () => {
         'PERMUTATION_SIZE',
         'buildPermutation',
         'createPerlinNoise2D',
+        'createPerlinNoise2DIsotropic',
         'createPerlinNoise3D',
         // octaves
         'normalizeNoise',
@@ -36,6 +37,7 @@ describe('public API surface', () => {
         'signedFbm2D',
         // field
         'CHANNEL_PARAMS',
+        'createIsotropicNoiseField',
         'createNoiseField',
       ]
       const actual = new Set(Object.keys(noise))

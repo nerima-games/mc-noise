@@ -38,6 +38,9 @@ const PERMUTATION_MASK = PERMUTATION_SIZE - 1
 /** 2D unit gradients have magnitude 1; the noise maximum is 1/sqrt(2). */
 const AMPLITUDE_SCALE_2D = Math.SQRT2
 
+/** Diagonal components for the isotropic 8-direction kernel. */
+const INVERSE_SQRT2 = Math.SQRT1_2
+
 /** 3D maximum is 1/sqrt(3) under the same argument. */
 const AMPLITUDE_SCALE_3D = Math.sqrt(3)
 
@@ -84,6 +87,62 @@ const gradient2d = (hash: number, x: number, z: number): number => {
   }
 }
 
+/** Unit-length axis and diagonal gradients, selected uniformly by three hash bits. */
+const gradient2dIsotropic = (hash: number, x: number, z: number): number => {
+  switch (hash & 7) {
+    case 0:
+      return x
+    case 1:
+      return -x
+    case 2:
+      return z
+    case 3:
+      return -z
+    case 4:
+      return (x + z) * INVERSE_SQRT2
+    case 5:
+      return (-x + z) * INVERSE_SQRT2
+    case 6:
+      return (x - z) * INVERSE_SQRT2
+    default:
+      return (-x - z) * INVERSE_SQRT2
+  }
+}
+
+const createPerlinNoise2DWithGradient = (
+  rand: RandFn,
+  gradient: (hash: number, x: number, z: number) => number,
+): NoiseFn2D => {
+  const permutation = buildPermutation(rand)
+
+  return (x, z) => {
+    const floorX = Math.floor(x)
+    const floorZ = Math.floor(z)
+    const cellX = floorX & PERMUTATION_MASK
+    const cellZ = floorZ & PERMUTATION_MASK
+    const fracX = x - floorX
+    const fracZ = z - floorZ
+    const easedX = fade(fracX)
+    const easedZ = fade(fracZ)
+
+    const rowA = ((permutation[cellX] ?? 0) + cellZ) & PERMUTATION_MASK
+    const rowB = ((permutation[(cellX + 1) & PERMUTATION_MASK] ?? 0) + cellZ) & PERMUTATION_MASK
+
+    const bottom = lerp(
+      gradient(permutation[rowA] ?? 0, fracX, fracZ),
+      gradient(permutation[rowB] ?? 0, fracX - 1, fracZ),
+      easedX,
+    )
+    const top = lerp(
+      gradient(permutation[(rowA + 1) & PERMUTATION_MASK] ?? 0, fracX, fracZ - 1),
+      gradient(permutation[(rowB + 1) & PERMUTATION_MASK] ?? 0, fracX - 1, fracZ - 1),
+      easedX,
+    )
+
+    return lerp(bottom, top, easedZ) * AMPLITUDE_SCALE_2D
+  }
+}
+
 /** 3D gradient dot product over the 12 edge-midpoint vectors of a cube. */
 const gradient3d = (hash: number, x: number, y: number, z: number): number => {
   const h = hash & 15
@@ -102,33 +161,17 @@ const gradient3d = (hash: number, x: number, y: number, z: number): number => {
  * `noise2d(seed, x, y, z)` signature.
  */
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
-  const permutation = buildPermutation(rand)
-
-  return (x, z) => {
-    const cellX = Math.floor(x) & PERMUTATION_MASK
-    const cellZ = Math.floor(z) & PERMUTATION_MASK
-    const fracX = x - Math.floor(x)
-    const fracZ = z - Math.floor(z)
-    const easedX = fade(fracX)
-    const easedZ = fade(fracZ)
-
-    const rowA = ((permutation[cellX] ?? 0) + cellZ) & PERMUTATION_MASK
-    const rowB = ((permutation[(cellX + 1) & PERMUTATION_MASK] ?? 0) + cellZ) & PERMUTATION_MASK
-
-    const bottom = lerp(
-      gradient2d(permutation[rowA] ?? 0, fracX, fracZ),
-      gradient2d(permutation[rowB] ?? 0, fracX - 1, fracZ),
-      easedX,
-    )
-    const top = lerp(
-      gradient2d(permutation[(rowA + 1) & PERMUTATION_MASK] ?? 0, fracX, fracZ - 1),
-      gradient2d(permutation[(rowB + 1) & PERMUTATION_MASK] ?? 0, fracX - 1, fracZ - 1),
-      easedX,
-    )
-
-    return lerp(bottom, top, easedZ) * AMPLITUDE_SCALE_2D
-  }
+  return createPerlinNoise2DWithGradient(rand, gradient2d)
 }
+
+/**
+ * A less directionally biased 2D kernel with eight unit gradients.
+ *
+ * This is opt-in because selecting it changes the frozen seed-to-value mapping.
+ * Existing worlds must continue to use `createPerlinNoise2D`.
+ */
+export const createPerlinNoise2DIsotropic = (rand: RandFn): NoiseFn2D =>
+  createPerlinNoise2DWithGradient(rand, gradient2dIsotropic)
 
 /** A 3D Perlin sampler. Same contract as `createPerlinNoise2D`. */
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {

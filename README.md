@@ -75,9 +75,10 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11 を用意する
 ## 使い方
 
 ```typescript
-import { createNoiseField, NoiseSeed } from '@nerima-games/mc-noise'
+import { createIsotropicNoiseField, NoiseSeed } from '@nerima-games/mc-noise'
 
-const field = createNoiseField(NoiseSeed(20260726))
+// 新規 world は半整数格子の退化を避ける isotropic field を推奨する。
+const field = createIsotropicNoiseField(NoiseSeed(20260726))
 
 field.raw2d(12.37, -7.13)                   // 符号付き ≈[-1, 1]
 field.noise2d(12.37, -7.13)                 // 正規化 [0, 1]
@@ -101,11 +102,14 @@ field.channel('continentalness')(100, 200)  // 符号付き [-1, 1]、スプラ�
   地形プレビューを持ったあとに、1 回で決めること。
 - **`jaggedness` の salt だけ参照実装と違う。** 理由は
   [`docs/public-api.md`](./docs/public-api.md) §3。
-- **既知のアーティファクト: 半整数格子で値が 0 になりやすい。**
+- **legacyカーネルの既知のアーティファクト: 半整数格子で値が 0 になりやすい。**
   4 勾配の 2D Perlin の構造的な性質である。**ブロック中心は `.5` なので、
   「ブロック中心でノイズをサンプルする」と地形に格子模様が出る。**
-  修正（12 勾配化）は凍結された写像の変更なので、意図的な MAJOR bump まで保留している。
-  詳細と回避策は [`docs/design-notes.md`](./docs/design-notes.md) N-8。
+  凍結された写像を保つため `createNoiseField` は維持し、8方向の
+  `createIsotropicNoiseField` を新規world向けのopt-in APIとして提供する。
+  低レベル利用には `createPerlinNoise2DIsotropic` も使える。world metadata には
+  factory の選択を保存し、再生成時も同じものを選ぶこと。
+  詳細と選択基準は [`docs/design-notes.md`](./docs/design-notes.md) N-8。
 - **`toPV` / 疎グリッド + 双線形補間 / バッチヘルパは未移植。**
   前者は地形の形の話（mc-worldgen 寄り）、後者 2 つは性能最適化なので
   ベンチマークを用意してから入れる。
