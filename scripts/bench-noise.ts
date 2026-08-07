@@ -94,6 +94,7 @@ const SAMPLES = 200_000
 
 const FIELD = createNoiseField(SEED)
 const BASE_NOISE: NoiseFn2D = FIELD.raw2d
+const BASE_NOISE_3D = FIELD.raw3d
 
 /**
  * Anything a measured loop computes has to be observed somewhere, or a
@@ -367,6 +368,18 @@ const rawSampling = (): void => {
   sink += total
 }
 
+const raw3dSampling = (): void => {
+  let total = 0
+  for (let column = 0; column < COLUMNS_PER_CHUNK; column += 1) {
+    total += BASE_NOISE_3D(
+      (column & 15) * 1.7,
+      ((column >> 4) & 15) * 0.9,
+      column * 0.11,
+    )
+  }
+  sink += total
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -450,6 +463,12 @@ const main = async (): Promise<number> => {
       msPerUnit: measure(rawSampling, options(200, 400)),
       unit: 'chunk',
       detail: '256 single-octave Perlin samples',
+    },
+    {
+      name: 'sample/raw3d-per-chunk-columns',
+      msPerUnit: measure(raw3dSampling, options(200, 400)),
+      unit: 'chunk',
+      detail: '256 single-octave 3D Perlin samples',
     },
     {
       name: 'sample/octave2d-per-chunk-columns',

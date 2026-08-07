@@ -179,12 +179,15 @@ export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {
   const at = (index: number): number => permutation[index & PERMUTATION_MASK] ?? 0
 
   return (x, y, z) => {
-    const cellX = Math.floor(x) & PERMUTATION_MASK
-    const cellY = Math.floor(y) & PERMUTATION_MASK
-    const cellZ = Math.floor(z) & PERMUTATION_MASK
-    const fracX = x - Math.floor(x)
-    const fracY = y - Math.floor(y)
-    const fracZ = z - Math.floor(z)
+    const floorX = Math.floor(x)
+    const floorY = Math.floor(y)
+    const floorZ = Math.floor(z)
+    const cellX = floorX & PERMUTATION_MASK
+    const cellY = floorY & PERMUTATION_MASK
+    const cellZ = floorZ & PERMUTATION_MASK
+    const fracX = x - floorX
+    const fracY = y - floorY
+    const fracZ = z - floorZ
     const easedX = fade(fracX)
     const easedY = fade(fracY)
     const easedZ = fade(fracZ)
