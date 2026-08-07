@@ -46,13 +46,18 @@ export const valueNoise2D = (seed: number, x: number, z: number, frequency: numb
 }
 
 export const fbm2D = (seed: number, x: number, z: number, options: ValueNoiseFbmOptions): number => {
+  const octaveSeeds: Array<number> = []
+  for (let octave = 0; octave < options.octaves; octave += 1) {
+    octaveSeeds.push(channelSeed(seed, `octave-${String(octave)}`))
+  }
+
   let total = 0
   let amplitude = 1
   let frequency = options.frequency
   let normalisation = 0
 
   for (let octave = 0; octave < options.octaves; octave += 1) {
-    total += valueNoise2D(channelSeed(seed, `octave-${String(octave)}`), x, z, frequency) * amplitude
+    total += valueNoise2D(octaveSeeds[octave]!, x, z, frequency) * amplitude
     normalisation += amplitude
     amplitude *= options.persistence
     frequency *= 2
