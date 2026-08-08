@@ -3,6 +3,7 @@
 # Tool caches
 .serena/
 .sisyphus/
+.worktrees/
 
 # devenv / direnv
 .devenv/
