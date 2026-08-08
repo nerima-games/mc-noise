@@ -77,7 +77,7 @@ describe('createPerlinNoise2DIsotropic', () => {
           const derivative =
             (noise(x + step * dx, z + step * dz) - noise(x - step * dx, z - step * dz)) /
             (2 * step)
-          sums[directionIndex] = sums[directionIndex]! + derivative * derivative
+          sums[directionIndex]! += derivative * derivative
         })
       }
       const variances = sums.map((sum) => sum / 10_000)

@@ -1,5 +1,14 @@
 import type { NoiseFn2D } from './perlin'
 
+/** The boundary a value must exceed to count as positive in `requirePositiveInteger`/`requirePositiveFinite`. */
+const POSITIVE_BOUNDARY = 0
+/** Default grid origin when `originX`/`originZ` is omitted: the coordinate space's zero point. */
+const DEFAULT_GRID_ORIGIN = 0
+/** Default grid step when `stepX`/`stepZ` is omitted: one noise sample per grid cell. */
+const DEFAULT_GRID_STEP = 1
+/** The amount each loop index advances per iteration. */
+const LOOP_STEP = 1
+
 export type NoisePoint2D = Readonly<{
   readonly x: number
   readonly z: number
@@ -24,7 +33,7 @@ type NormalizedNoiseGrid2DOptions = Readonly<{
 }>
 
 const requirePositiveInteger = (name: string, value: number): number => {
-  if (!Number.isInteger(value) || value <= 0) {
+  if (!Number.isInteger(value) || value <= POSITIVE_BOUNDARY) {
     throw new RangeError(`${name} must be a positive integer, received ${value}`)
   }
   return value
@@ -39,7 +48,7 @@ const requireFinite = (name: string, value: number): number => {
 
 const requirePositiveFinite = (name: string, value: number): number => {
   requireFinite(name, value)
-  if (value <= 0) {
+  if (value <= POSITIVE_BOUNDARY) {
     throw new RangeError(`${name} must be positive, received ${value}`)
   }
   return value
@@ -48,10 +57,10 @@ const requirePositiveFinite = (name: string, value: number): number => {
 const normalizeGridOptions = (options: NoiseGrid2DOptions): NormalizedNoiseGrid2DOptions => {
   const width = requirePositiveInteger('width', options.width)
   const depth = requirePositiveInteger('depth', options.depth)
-  const originX = options.originX ?? 0
-  const originZ = options.originZ ?? 0
-  const stepX = options.stepX ?? 1
-  const stepZ = options.stepZ ?? 1
+  const originX = options.originX ?? DEFAULT_GRID_ORIGIN
+  const originZ = options.originZ ?? DEFAULT_GRID_ORIGIN
+  const stepX = options.stepX ?? DEFAULT_GRID_STEP
+  const stepZ = options.stepZ ?? DEFAULT_GRID_STEP
   return {
     depth,
     originX: requireFinite('originX', originX),
@@ -67,7 +76,7 @@ export const sampleNoise2DBatch = (
   points: ReadonlyArray<NoisePoint2D>,
 ): Float32Array => {
   const samples = new Float32Array(points.length)
-  for (let index = 0; index < points.length; index += 1) {
+  for (let index = 0; index < points.length; index += LOOP_STEP) {
     const point = points[index]
     if (!point) {
       throw new RangeError(`points[${index}] is missing`)
@@ -81,9 +90,9 @@ export const sampleNoise2DGrid = (noise: NoiseFn2D, options: NoiseGrid2DOptions)
   const { depth, originX, originZ, stepX, stepZ, width } = normalizeGridOptions(options)
 
   const samples = new Float32Array(width * depth)
-  for (let zIndex = 0; zIndex < depth; zIndex += 1) {
+  for (let zIndex = 0; zIndex < depth; zIndex += LOOP_STEP) {
     const z = originZ + zIndex * stepZ
-    for (let xIndex = 0; xIndex < width; xIndex += 1) {
+    for (let xIndex = 0; xIndex < width; xIndex += LOOP_STEP) {
       const x = originX + xIndex * stepX
       samples[zIndex * width + xIndex] = noise(x, z)
     }

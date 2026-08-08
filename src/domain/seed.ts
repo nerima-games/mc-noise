@@ -37,6 +37,11 @@ import { Brand } from 'effect'
 export type NoiseSeed = number & Brand.Brand<'NoiseSeed'>
 
 const UINT32_MODULUS = 4294967296
+/** Shift distance of zero: `>>> UINT32_COERCION_SHIFT` forces the uint32 bit pattern without moving any bits. */
+const UINT32_COERCION_SHIFT = 0
+
+/** Coerce a number to its uint32 bit pattern via an unsigned right shift by zero. */
+const asUint32 = (value: number): number => value >>> UINT32_COERCION_SHIFT
 
 /**
  * Construct a seed from any integer. Values outside uint32 wrap rather than
@@ -50,7 +55,7 @@ export const NoiseSeed = Brand.refined<NoiseSeed>(
 )
 
 /** Normalise an already-validated seed into the uint32 range. */
-export const toUint32 = (seed: NoiseSeed): number => seed >>> 0
+export const toUint32 = (seed: NoiseSeed): number => asUint32(seed)
 
 /**
  * A pure source of uniform values in [0, 1). Deliberately a plain closure and
@@ -73,8 +78,8 @@ export const CHANNEL_SALT = {
   base3d: 0x9e3779b9,
   continentalness: 0xbb67ae85,
   erosion: 0x3c6ef372,
-  weirdness: 0xa54ff53a,
   jaggedness: 0x510e527f,
+  weirdness: 0xa54ff53a,
 } as const satisfies Readonly<Record<string, number>>
 
 export type NoiseChannel = keyof typeof CHANNEL_SALT
@@ -85,10 +90,10 @@ export const NOISE_CHANNELS: ReadonlyArray<NoiseChannel> = Object.keys(
 
 /** The per-channel seed derived from a world seed. Deterministic and total. */
 export const deriveSeed = (seed: NoiseSeed, channel: NoiseChannel): NoiseSeed =>
-  NoiseSeed((toUint32(seed) ^ CHANNEL_SALT[channel]) >>> 0)
+  NoiseSeed(asUint32(toUint32(seed) ^ CHANNEL_SALT[channel]))
 
 /**
- * mulberry32 — a 32-bit state PRNG.
+ * The mulberry32 PRNG — a 32-bit state generator.
  *
  * Chosen over `Math.random` for the obvious reason (it is seedable) and over a
  * cryptographic generator for the equally obvious one (this is terrain, not
@@ -96,15 +101,25 @@ export const deriveSeed = (seed: NoiseSeed, channel: NoiseChannel): NoiseSeed =>
  * for the few hundred draws needed to build a permutation table.
  *
  * The bit twiddling is the specification, not an optimisation — see the
- * `no-bitwise: off` note in .oxlintrc.json.
+ * `no-bitwise: off` note in .oxlintrc.json. The constants below (the state
+ * increment and the shift/mask pairs) are mulberry32's own fixed reference
+ * constants, not tunable parameters: changing any of them produces a
+ * different (and unvalidated) generator, not a faster mulberry32.
  */
+const MULBERRY32_STATE_INCREMENT = 0x6d2b79f5
+const MULBERRY32_SHIFT_A = 15
+const MULBERRY32_ODD_MASK = 1
+const MULBERRY32_SHIFT_B = 7
+const MULBERRY32_MIX_MASK = 61
+const MULBERRY32_SHIFT_C = 14
+
 export const mulberry32 = (seed: NoiseSeed): RandFn => {
   let state = toUint32(seed)
   return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / UINT32_MODULUS
+    state = asUint32(state + MULBERRY32_STATE_INCREMENT)
+    let mixed = state
+    mixed = Math.imul(mixed ^ (mixed >>> MULBERRY32_SHIFT_A), mixed | MULBERRY32_ODD_MASK)
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> MULBERRY32_SHIFT_B), mixed | MULBERRY32_MIX_MASK)
+    return asUint32(mixed ^ (mixed >>> MULBERRY32_SHIFT_C)) / UINT32_MODULUS
   }
 }

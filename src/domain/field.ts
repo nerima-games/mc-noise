@@ -32,15 +32,15 @@
  * is not a refactor. Golden-value tests exist to make an accidental one fail
  * loudly — see docs/testing.md.
  */
-import { DEFAULT_OCTAVE_PARAMS, normalizeNoise, octaveNoise2D, signedFbm2D, type OctaveParams } from './octaves'
+import { DEFAULT_OCTAVE_PARAMS, type OctaveParams, normalizeNoise, octaveNoise2D, signedFbm2D } from './octaves'
+import { NOISE_CHANNELS, type NoiseChannel, type NoiseSeed, deriveSeed, mulberry32 } from './seed'
 import {
+  type NoiseFn2D,
+  type NoiseFn3D,
   createPerlinNoise2D,
   createPerlinNoise2DIsotropic,
   createPerlinNoise3D,
-  type NoiseFn2D,
-  type NoiseFn3D,
 } from './perlin'
-import { deriveSeed, mulberry32, NOISE_CHANNELS, type NoiseChannel, type NoiseSeed } from './seed'
 
 /**
  * A fully seeded set of samplers.
@@ -67,10 +67,10 @@ export type NoiseField = {
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>> = {
   base2d: DEFAULT_OCTAVE_PARAMS,
   base3d: DEFAULT_OCTAVE_PARAMS,
-  continentalness: { octaves: 4, persistence: 0.5, lacunarity: 2 },
-  erosion: { octaves: 3, persistence: 0.5, lacunarity: 2 },
-  weirdness: { octaves: 3, persistence: 0.5, lacunarity: 2 },
-  jaggedness: { octaves: 1, persistence: 0.5, lacunarity: 2 },
+  continentalness: { lacunarity: 2, octaves: 4, persistence: 0.5 },
+  erosion: { lacunarity: 2, octaves: 3, persistence: 0.5 },
+  jaggedness: { lacunarity: 2, octaves: 1, persistence: 0.5 },
+  weirdness: { lacunarity: 2, octaves: 3, persistence: 0.5 },
 }
 
 /**
@@ -83,6 +83,9 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>> = {
  */
 type Noise2DFactory = typeof createPerlinNoise2D
 
+/** Signed-noise fallback for a channel name outside `NOISE_CHANNELS` — the origin of the [-1, 1] range. */
+const UNKNOWN_CHANNEL_VALUE = 0
+
 const createNoiseFieldWith2DKernel = (seed: NoiseSeed, createNoise2D: Noise2DFactory): NoiseField => {
   const raw2d = createNoise2D(mulberry32(deriveSeed(seed, 'base2d')))
   const raw3d = createPerlinNoise3D(mulberry32(deriveSeed(seed, 'base3d')))
@@ -94,16 +97,16 @@ const createNoiseFieldWith2DKernel = (seed: NoiseSeed, createNoise2D: Noise2DFac
     ]),
   )
 
-  const fallback: NoiseFn2D = () => 0
+  const fallback: NoiseFn2D = () => UNKNOWN_CHANNEL_VALUE
 
   return {
-    seed,
-    raw2d,
-    raw3d,
+    channel: (name) => channels.get(name) ?? fallback,
     noise2d: (x, z) => normalizeNoise(raw2d(x, z)),
     noise3d: (x, y, z) => normalizeNoise(raw3d(x, y, z)),
     octave2d: (x, z, params = DEFAULT_OCTAVE_PARAMS) => octaveNoise2D(raw2d, x, z, params),
-    channel: (name) => channels.get(name) ?? fallback,
+    raw2d,
+    raw3d,
+    seed,
   }
 }
 
