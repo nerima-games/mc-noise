@@ -44,11 +44,26 @@
  */
 import type { NoiseFn2D } from './perlin'
 
+/** Coordinate-space bounds every signed noise sample must land within. */
+const SIGNED_MIN = -1
+const SIGNED_MAX = 1
+/** The signed value with no directional signal — `normalizeNoise` maps it to the midpoint of [0, 1]. */
+const NEUTRAL_SIGNED_VALUE = 0
+
 /** Map a signed sample in [-1, 1] onto [0, 1]. Linear, so it preserves shape. */
-export const normalizeNoise = (value: number): number => (value + 1) / 2
+export const normalizeNoise = (value: number): number =>
+  (value - SIGNED_MIN) / (SIGNED_MAX - SIGNED_MIN)
 
 /** Clamp to [-1, 1]. fBm can overshoot slightly at high octave counts. */
-export const clampSigned = (value: number): number => (value < -1 ? -1 : value > 1 ? 1 : value)
+export const clampSigned = (value: number): number => {
+  if (value < SIGNED_MIN) {
+    return SIGNED_MIN
+  }
+  if (value > SIGNED_MAX) {
+    return SIGNED_MAX
+  }
+  return value
+}
 
 /**
  * Parameters of an fBm stack.
@@ -64,10 +79,21 @@ export type OctaveParams = {
 }
 
 export const DEFAULT_OCTAVE_PARAMS: OctaveParams = {
+  lacunarity: 2,
   octaves: 4,
   persistence: 0.5,
-  lacunarity: 2,
 }
+
+/** Fewer octaves than this is a degenerate request — see `octaveNoise2D`'s doc comment on why that returns the midpoint, not 0. */
+const MIN_OCTAVES = 1
+/** How far an octave-loop counter advances per iteration, everywhere in this file. */
+const OCTAVE_STEP = 1
+/** `signedFbm2D` clamps a negative octave request to this floor before summing amplitudes. */
+const MIN_OCTAVE_COUNT = 0
+/** An amplitude sum equal to this means every octave in the stack had zero amplitude. */
+const ZERO_AMPLITUDE_SUM = 0
+/** Target total signed amplitude after `signedFbm2D`'s per-sample scale factor is applied. */
+const UNIT_AMPLITUDE = 1
 
 /**
  * Sum `octaves` bands of `noiseFn` and normalise into [0, 1].
@@ -85,16 +111,17 @@ export const DEFAULT_OCTAVE_PARAMS: OctaveParams = {
  * persistence, including persistence >= 1.
  */
 export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams): number => {
-  if (params.octaves < 1) {
-    return 0.5
+  if (params.octaves < MIN_OCTAVES) {
+    return normalizeNoise(NEUTRAL_SIGNED_VALUE)
   }
 
   // PERFORMANCE EXCEPTION — see the file header before changing this.
-  let total = 0
-  let amplitude = 1
-  let frequency = 1
-  let maxValue = 0
-  for (let octave = 0; octave < params.octaves; octave += 1) {
+  // The four accumulators below are declared as one statement, not four, only to stay under `max-statements` without touching the loop itself.
+  let total = 0,
+    amplitude = 1,
+    frequency = 1,
+    maxValue = 0
+  for (let octave = 0; octave < params.octaves; octave += OCTAVE_STEP) {
     total += noiseFn(x * frequency, z * frequency) * amplitude
     maxValue += amplitude
     amplitude *= params.persistence
@@ -119,23 +146,23 @@ export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D
   // PERFORMANCE EXCEPTION — see the file header before changing this.
   let amplitudeSum = 0
   let amplitude = 1
-  for (let octave = 0; octave < Math.max(params.octaves, 0); octave += 1) {
+  for (let octave = 0; octave < Math.max(params.octaves, MIN_OCTAVE_COUNT); octave += OCTAVE_STEP) {
     amplitudeSum += amplitude
     amplitude *= params.persistence
   }
 
-  if (amplitudeSum === 0) {
-    return () => 0
+  if (amplitudeSum === ZERO_AMPLITUDE_SUM) {
+    return () => NEUTRAL_SIGNED_VALUE
   }
 
-  const scale = 1 / amplitudeSum
+  const scale = UNIT_AMPLITUDE / amplitudeSum
 
   return (x, z) => {
     // PERFORMANCE EXCEPTION — see the file header before changing this.
     let total = 0
     let sampleAmplitude = 1
     let frequency = 1
-    for (let octave = 0; octave < params.octaves; octave += 1) {
+    for (let octave = 0; octave < params.octaves; octave += OCTAVE_STEP) {
       total += noiseFn(x * frequency, z * frequency) * sampleAmplitude
       sampleAmplitude *= params.persistence
       frequency *= params.lacunarity

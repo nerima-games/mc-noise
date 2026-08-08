@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import { createIsotropicNoiseField, createNoiseField } from '../src/domain/field'
-import { NOISE_CHANNELS, NoiseSeed } from '../src/domain/seed'
+import { NOISE_CHANNELS, NoiseSeed, type NoiseChannel } from '../src/domain/seed'
 
 const SAMPLE_COORDINATES = [
   [0.5, 0.5],
@@ -62,6 +62,25 @@ describe('createIsotropicNoiseField', () => {
       const field = createNoiseField(NoiseSeed(20260726))
       expect(field.raw2d(12.37, -7.13)).toBe(0.20774690518930813)
       expect(field.channel('erosion')(100.37, 200.13)).toBe(0.2726603117072621)
+    }),
+  )
+
+  it.effect('falls back to the neutral signed value for a channel name outside NOISE_CHANNELS', () =>
+    Effect.sync(() => {
+      // `channel`'s type restricts callers to `NoiseChannel`, but that boundary
+      // is a TypeScript-only guarantee: a caller who computes a channel name
+      // dynamically (e.g. from external config) and passes it through a cast
+      // is not excluded by the type system the way an out-of-range permutation
+      // index is, so this fallback is genuinely reachable and worth testing
+      // rather than deleting. It is shared by both field constructors since
+      // both go through `createNoiseFieldWith2DKernel`.
+      const outOfDomain = 'not-a-real-channel' as unknown as NoiseChannel
+      const legacy = createNoiseField(NoiseSeed(20260726))
+      const isotropic = createIsotropicNoiseField(NoiseSeed(20260726))
+
+      expect(legacy.channel(outOfDomain)(0, 0)).toBe(0)
+      expect(legacy.channel(outOfDomain)(123.45, -67.89)).toBe(0)
+      expect(isotropic.channel(outOfDomain)(123.45, -67.89)).toBe(0)
     }),
   )
 })

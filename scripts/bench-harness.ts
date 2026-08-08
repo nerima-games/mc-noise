@@ -264,11 +264,11 @@ export const formatGuard = (guard: Guard): string =>
  * one-time cost multiplied by 81 would be a lie).
  */
 export const formatWorkload = (workload: Workload): string =>
-  `  ${pad(workload.name, 44)} ${workload.msPerUnit.toFixed(4)} ms/${workload.unit}` +
-  (workload.unit === 'chunk'
-    ? `   x${String(CHUNKS_ON_LOAD)} = ${(workload.msPerUnit * CHUNKS_ON_LOAD).toFixed(1)} ms`
-    : '') +
-  (workload.detail === undefined ? '' : `   (${workload.detail})`)
+  `  ${pad(workload.name, 44)} ${workload.msPerUnit.toFixed(4)} ms/${workload.unit}${
+    workload.unit === 'chunk'
+      ? `   x${String(CHUNKS_ON_LOAD)} = ${(workload.msPerUnit * CHUNKS_ON_LOAD).toFixed(1)} ms`
+      : ''
+  }${workload.detail === undefined ? '' : `   (${workload.detail})`}`
 
 export const formatCheck = (result: CheckResult): string => {
   const marker = result.status === 'ok' ? 'ok       ' : result.status === 'new' ? 'NEW      ' : 'REGRESSED'

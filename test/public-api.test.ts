@@ -40,6 +40,9 @@ describe('public API surface', () => {
         'latticeValue',
         'valueNoise2D',
         'fbm2D',
+        // Sampling
+        'sampleNoise2DBatch',
+        'sampleNoise2DGrid',
         // field
         'CHANNEL_PARAMS',
         'createIsotropicNoiseField',

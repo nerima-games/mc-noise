@@ -131,6 +131,36 @@
     // default (`"style": "warn"`) still covers whichever style rules oxlint
     // 1.76.0 still implements under that category.
     "no-array-method-this-argument": "warn",
+    // `NoiseSeed(...)` is an `effect` `Brand.refined` constructor, called as a
+    // plain function per the Effect ecosystem convention (Schema.Struct(...),
+    // Context.Tag(...), etc.) — not a `class`, so `new NoiseSeed(...)` is not
+    // an option. Verified empirically (oxlint 1.75.0): `capIsNewExceptions`
+    // is the rule's own documented escape hatch for exactly this shape (see
+    // the rule's own warning text: "add it to the exceptions list"), so this
+    // is a scoped rule option, not a suppression — every other capitalized
+    // call in src/ still warns.
+    "new-cap": ["warn", { "capIsNewExceptions": ["NoiseSeed"] }],
+    // Verified empirically (oxlint 1.75.0) across parameters, type-literal
+    // properties, and class fields: `exceptions` is respected in every
+    // context, so this is a scoped rule option, not a suppression — any
+    // other single-character identifier in src/ still warns. The list is
+    // exactly this domain's coordinate/math vocabulary and nothing else:
+    // x/y/z (spatial coordinates — `NoisePoint2D.x`/`.z` and `NoiseFn2D`/
+    // `NoiseFn3D` are the public API, so renaming them would be a breaking
+    // change, not a style fix), t (interpolation parameter in lerp/easing),
+    // a/b (lerp's two endpoints, matching `lerp(a, b, t)` convention), and
+    // h/u/v (hash and gradient components, matching Ken Perlin's own
+    // reference implementation naming for these exact roles).
+    "id-length": ["warn", { "exceptions": ["a", "b", "h", "t", "u", "v", "x", "y", "z"] }],
+    // Verified against every real violation in src/ (none exceeds 4): this
+    // domain's core sampler functions take a noise/seed source, 2-3
+    // coordinates, and a config object — four conceptually atomic
+    // parameters, not a struct pretending to be one. Bundling the
+    // coordinates into an options object to hit the default max of 3 would
+    // add an allocation and an indirection to the hottest path in world
+    // generation for no behavioural benefit (see the PERFORMANCE EXCEPTION
+    // note in octaves.ts). A function needing a 5th parameter still warns.
+    "max-params": ["warn", { "max": 4 }],
     // PERFORMANCE / CORRECTNESS EXCEPTION — see docs/design-notes.md.
     // The seed hash (mulberry32) and the permutation-table index are defined in
     // terms of uint32 wrapping arithmetic: `>>> 0`, `^`, `| 1`, `& 255`. Those
@@ -189,5 +219,60 @@
     "no-param-reassign": "off",
     "no-plusplus": "off"
   },
+  // Scoped strictness: src/ (the shipped library) is fully strict — every
+  // category default and every rule above stays "warn"/"error" there, and a
+  // violation must be fixed in source, never suppressed. test/** and
+  // scripts/** are relaxed below, each for its own reason verified against
+  // this repository's actual code, not a blanket "tests are exempt" policy:
+  //
+  //  - test/**: assertions are written against literal expected values by
+  //    design (`expect(x).toBe(0.42)`), so `no-magic-numbers` fires on
+  //    correctness-bearing numbers whose whole point is to be a literal, not
+  //    a named constant. `id-length`, `sort-keys`, `sort-imports`,
+  //    `capitalized-comments`, `max-params`/`max-statements` flag the terse,
+  //    table-driven, high-arity style normal for test fixtures and don't
+  //    track a real defect.
+  //  - scripts/**: dev-only benchmark tooling (bench-noise.ts,
+  //    bench-harness.ts), never shipped, never imported by src/. `no-console`
+  //    would ban the console output that is the script's entire purpose;
+  //    `no-ternary`/`no-nested-ternary`, `no-undefined`, and the same
+  //    literal-heavy rules as test/** fire on ordinary CLI-reporting code.
+  //
+  // Verified empirically (oxlint 1.75.0): `overrides[].files` glob-matches
+  // against paths relative to the config file and layers rules on top of the
+  // base `rules` block above rather than replacing it, so anything not
+  // listed per-override (e.g. `no-eval`, the `no-restricted-imports` Tier1
+  // dependency rule) still applies inside test/ and scripts/ too.
+  "overrides": [
+    {
+      "files": ["test/**"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "sort-keys": "off",
+        "sort-imports": "off",
+        "capitalized-comments": "off",
+        "max-params": "off",
+        "max-statements": "off"
+      }
+    },
+    {
+      "files": ["scripts/**"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "sort-keys": "off",
+        "sort-imports": "off",
+        "capitalized-comments": "off",
+        "max-params": "off",
+        "max-statements": "off",
+        "no-console": "off",
+        "no-ternary": "off",
+        "no-nested-ternary": "off",
+        "no-undefined": "off",
+        "new-cap": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
 }
