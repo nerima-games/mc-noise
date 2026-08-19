@@ -33,16 +33,188 @@ describe('public API surface', () => {
         'normalizeNoise',
         'clampSigned',
         'DEFAULT_OCTAVE_PARAMS',
+        'computeOctaveNoise',
         'octaveNoise2D',
         'signedFbm2D',
+        // Minecraft-facing primitive assembly
+        'createNoisePrimitives',
+        'WEYL_C',
+        'WEYL_E',
+        'WEYL_W',
+        'WEYL_J',
+        'WEYL_3D',
+        'noise2DBatchXY',
+        'octaveNoise2DBatchXY',
+        'noise3DBatchXYZ',
+        'noise2DBatch',
+        'octaveNoise2DBatch',
+        'CHUNK_COLUMN_SAMPLE_COUNT',
+        'TERRAIN_SAMPLE_STEP',
+        'computeTerrainChannels',
+        'toPV',
         // value noise
         'channelSeed',
         'latticeValue',
         'valueNoise2D',
         'fbm2D',
+        // transforms
+        'peaksAndValleysFromWeirdness',
+        // splines
+        'createSpline',
+        'evaluateSpline',
         // Sampling
+        'sampleNoise3DBatch',
+        'sampleNoise3DGrid',
+        'sampleNoise3DInterpolatedGrid',
         'sampleNoise2DBatch',
         'sampleNoise2DGrid',
+        'sampleNoise2DInterpolatedGrid',
+        'sampleNoise2DChunk',
+        'sampleNoise3DChunk',
+        // Simplex and DensityFunction
+        'createSimplexNoise2D',
+        'createSimplexNoise3D',
+        'createDensityNoiseSource',
+        'densityConstant',
+        'densityZero',
+        'densityCoordinate',
+        'densityNoise',
+        'densityShift',
+        'densityShiftA',
+        'densityShiftB',
+        'densityShiftedNoise',
+        'densityShiftedNoise2D',
+        'densityNoiseInRange',
+        'densityMappedNoise',
+        'densityMap',
+        'densityMapRange',
+        'densityLerp',
+        'densityLinearOperation',
+        'densityWeirdScaledSampler',
+        'densityEndIslands',
+        'densityBinary',
+        'densityAdd',
+        'densityMul',
+        'densityMin',
+        'densityMax',
+        'densityUnary',
+        'densityAbs',
+        'densitySquare',
+        'densityCube',
+        'densityHalfNegative',
+        'densityQuarterNegative',
+        'densitySqueeze',
+        'densityInvert',
+        'densityClamp',
+        'densityRangeChoice',
+        'densityYClampedGradient',
+        'densitySpline',
+        'densityInterpolated',
+        'densityFlatCache',
+        'densityCache2D',
+        'densityCacheOnce',
+        'densityCacheAllInCell',
+        'densityBlendDensity',
+        'densityBlendAlpha',
+        'densityBlendOffset',
+        'interpolated',
+        'flatCache',
+        'cache2d',
+        'cacheOnce',
+        'cacheAllInCell',
+        'blendDensity',
+        'blendAlpha',
+        'blendOffset',
+        'createDensityEvaluationContext',
+        'createDensityEvaluationSession',
+        'densityBounds',
+        'evaluateDensityFunction',
+        'computeDensityFunction',
+        'fillDensityFunctionArray',
+        'mapAllDensityFunction',
+        'densityFunctionMinValue',
+        'densityFunctionMaxValue',
+        'createDensityFunctionRuntime',
+        'createDensityFunctionNode',
+        // Official DensityFunctions factory names
+        'zero',
+        'constant',
+        'noise',
+        'shift',
+        'shiftA',
+        'shiftB',
+        'add',
+        'mul',
+        'min',
+        'max',
+        'weirdScaledSampler',
+        'endIslands',
+        'lerp',
+        'DensityMappedType',
+        'map',
+        'mappedNoise',
+        'rangeChoice',
+        'shiftedNoise2d',
+        'createDensitySpline',
+        'spline',
+        'yClampedGradient',
+        // Official routing and evaluation context
+        'isDensityFunction',
+        'requireDensityFunction',
+        'NOISE_ROUTER_CHANNELS',
+        'createNoiseRouter',
+        'requireNoiseRouter',
+        'isNoiseRouter',
+        'mapNoiseRouter',
+        'mapAllNoiseRouter',
+        'createNoiseRouterRuntime',
+        'evaluateNoiseRouter',
+        'CLIMATE_PARAMETER_COUNT',
+        'CLIMATE_HYPERCUBE_DIMENSION',
+        'CLIMATE_QUANTIZATION_FACTOR',
+        'CLIMATE_CHANNELS',
+        'quantizeCoord',
+        'unquantizeCoord',
+        'createClimateParameterFromQuantized',
+        'climateParameter',
+        'climateParameterRange',
+        'isClimateParameter',
+        'requireClimateParameter',
+        'climateParameterSpan',
+        'point',
+        'span',
+        'createClimateParameterSpace',
+        'createClimateParameterPointFromQuantized',
+        'isClimateParameterPoint',
+        'requireClimateParameterPoint',
+        'climateParameters',
+        'parameters',
+        'parameterPoint',
+        'createClimateTargetPointFromQuantized',
+        'climateTarget',
+        'target',
+        'isClimateTargetPoint',
+        'climateParameterDistance',
+        'climateParameterSpace',
+        'climateParameterPointFitness',
+        'createClimateParameterList',
+        'requireClimateParameterList',
+        'findClimateValueIndex',
+        'findClimateValue',
+        'findClimateValueBruteForce',
+        'createClimateSampler',
+        'createClimateSamplerRuntime',
+        'empty',
+        'requireClimateSampler',
+        'isClimateSampler',
+        'sampleClimate',
+        'sampleClimateAt',
+        'findClimateSpawnPosition',
+        'findSpawnPosition',
+        'createBlender',
+        'emptyBlender',
+        'requireBlender',
+        'createDensityEvaluationContextFromBlender',
         // field
         'CHANNEL_PARAMS',
         'createIsotropicNoiseField',
@@ -52,6 +224,56 @@ describe('public API surface', () => {
       for (const name of expected) {
         expect(actual.has(name)).toBe(true)
       }
+    }),
+  )
+
+  it.effect('supports official DensityFunctions factory names', () =>
+    Effect.sync(() => {
+      const source = noise.createDensityNoiseSource(
+        () => 0.25,
+        { minValue: -1, maxValue: 1 },
+      )
+      const input = noise.constant(0.5)
+
+      expect(noise.zero().kind).toBe('constant')
+      expect(noise.constant(1).kind).toBe('constant')
+      expect(noise.noise(source).kind).toBe('noise')
+      expect(noise.noise(source, 2).kind).toBe('noise')
+      expect(noise.noise(source, 2, 3).kind).toBe('noise')
+      expect(noise.shift(source).kind).toBe('shift')
+      expect(noise.shiftA(source).kind).toBe('shift-a')
+      expect(noise.shiftB(source).kind).toBe('shift-b')
+      expect(noise.add(input, input).kind).toBe('binary')
+      expect(noise.mul(input, input).kind).toBe('binary')
+      expect(noise.min(input, input).kind).toBe('binary')
+      expect(noise.max(input, input).kind).toBe('binary')
+      expect(
+        noise.weirdScaledSampler(input, source, 'type-1').kind,
+      ).toBe('weird-scaled-sampler')
+      expect(noise.endIslands(0n).kind).toBe('end-islands')
+      expect(noise.lerp(input, 0, input).kind).toBe('binary')
+      expect(noise.map(input, noise.DensityMappedType.ABS).kind).toBe('unary')
+      expect(
+        noise.map(input, noise.DensityMappedType.SQUARE).kind,
+      ).toBe('unary')
+      expect(() => noise.map(input, 'unsupported' as never)).toThrow(
+        RangeError,
+      )
+      expect(noise.mappedNoise(source, -1, 1).kind).toBe('binary')
+      expect(
+        noise.rangeChoice(input, -1, 1, input, noise.zero()).kind,
+      ).toBe('range-choice')
+      expect(
+        noise.shiftedNoise2d(noise.zero(), noise.zero(), 1, source).kind,
+      ).toBe('shifted-noise')
+      const spline = noise.createDensitySpline(
+        noise.zero(),
+        noise.createSpline([]),
+      )
+      expect(noise.spline(spline).kind).toBe('spline')
+      expect(noise.yClampedGradient(0, 1, 0, 1).kind).toBe(
+        'y-clamped-gradient',
+      )
     }),
   )
 })
@@ -113,7 +335,7 @@ describe('the frozen seed -> value contract', () => {
       // The fix is a larger gradient set (12 directions, as the 3D kernel
       // already uses). That is a change to the FROZEN seed -> value mapping and
       // so is deferred to a deliberate MAJOR bump — see docs/design-notes.md,
-      // regression `noise-half-integer-gradient-degeneracy`, and README 現状.
+      // regression `noise-half-integer-gradient-degeneracy` and the documented legacy mapping.
       const halfIntegerSamples = Array.from({ length: 64 }, (_unused, index) =>
         field.raw2d(index + 0.5, index * 2 + 0.5),
       )
