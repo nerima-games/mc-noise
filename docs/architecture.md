@@ -183,30 +183,29 @@ mc-worldgen がチャンク生成のときに呼ぶ純粋関数だからであ�
 
 | ルール | 内容 | 現在の実効機構 |
 | --- | --- | --- |
-| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `.oxlintrc.json` の `no-restricted-imports`（`patterns[].group: ["@nerima-games/*", "!@nerima-games/mc-kernel"]`。DEPENDENCY_POLICY.md の例が示す `regex` キーは oxlint 1.76.0 では単独でも `group` と併用しても一致せず無効になることを実測済みのため、`group` のみを使っている） |
+| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `.oxlintrc.json` の `no-restricted-imports`（`patterns[].group: ["@nerima-games/*", "!@nerima-games/mc-kernel"]`。DEPENDENCY_POLICY.md の例が示す `regex` キーは Nix-provided oxlint 1.75.0 では単独でも `group` と併用しても一致せず無効になることを実測済みのため、`group` のみを使っている） |
 | 循環禁止 | 例外リストを設けない | レビュー（DEPENDENCY_POLICY.md §2） |
 | 推移閉包の禁止 | A→B、B→C のとき A は C を import できない | レビュー（DEPENDENCY_POLICY.md §2） |
 | kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要 | `.oxlintrc.json` のパターンが `mc-kernel` を除外 |
 | 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない | レビュー（自動チェックなし、DEPENDENCY_POLICY.md §5） |
 | kit は devDependency 専用 | §5.2 のとおり（mc-noise は kit 自体を使わない） | レビュー |
-| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | **代替なし**（oxlint 0.12 未実装、各リポジトリの裁量。`.oxlintrc.json` 冒頭コメント参照） |
+| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | ソースポリシー。現在の lint 設定では自動強制していない |
 
-`Date.now()` 禁止がまだ oxlint に無いのは、oxlint 0.12 が `no-restricted-syntax` も
-`no-restricted-properties` も実装しておらず、`no-restricted-globals` も一覧に出るだけで
-実装されていないためである（0.12.0 で実測確認済み）。旧スクリプトの撤去に伴い、この禁止は
-現時点で自動検査の対象外になった（org 標準として個別スクリプトの復活は要求しない、
-PACKAGE_STANDARD.md 同節）。
+`Date.now()` 禁止は現在、ソースポリシーとして扱っている。リポジトリ内に時間依存を持ち込まない
+ことは `rg` による監査で確認できるが、現在の `.oxlintrc.json` にはこの構文を自動拒否する
+ルールを設定していない。そのため、この方針を CI の lint ゲートであるかのようには扱わない。
+将来、時間を扱う層が必要になった場合も、決定論的なドメイン関数へ時計を直接参照させず、所有側
+から注入する。
 
-## 7. スケルトン段階の依存宣言について
+## 7. 公開依存の境界
 
-**現時点で `package.json` の `dependencies` は `effect` だけである。**
-`@nerima-games/mc-kernel` は入っていない。理由は 2 つ:
+`package.json` の runtime dependency は `effect` と `@nerima-games/mc-kernel` である。
+`src/domain/chunk-sampling.ts` は kernel の `ChunkCoord` と `CHUNK_SIZE_XZ` を使って
+チャンク境界を本リポジトリの補間グリッドへ変換する。座標語彙とチャンク幅は kernel の定義を
+再実装せず、ノイズの seed・勾配・補間・サンプリングは本リポジトリが所有する。
 
-1. まだ何も publish されていない（bottom-up に publish してから pin する方式）。
-2. スケルトンには import すべき兄弟コードがまだ存在しない。
-
-意図されたグラフは DEPENDENCY_POLICY.md と本ドキュメントに記録されている。
-グラフは仕様であり、最初の publish より前に循環検出を意味あるものにしているのはこの記録である。
+地形固有のチャンネル式、密度関数、スプライン、ブロック生成はこの依存境界を越えて持ち込まない。
+それらは上位の `mc-worldgen` が公式仕様とともに管理する。
 
 ## 参照
 

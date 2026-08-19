@@ -9,18 +9,21 @@
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト・ツール）の両方 |
 | `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ。このフラグが無かった頃は実質その3つしかゲートになっていなかった） |
 | `pnpm test` | vitest。`@effect/vitest` の `it.effect` が主 API |
-| `pnpm test:coverage` | カバレッジ計測。4 指標 99% のしきい値ゲート付き（§3 参照） |
-| `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。**CI と同じ内容**（カバレッジは別ステップ、§3） |
+| `pnpm test:coverage` | カバレッジ計測。4 指標 100% のしきい値ゲート付き（§3 参照） |
+| `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。カバレッジと配布物境界検査は別ステップ |
+| `pnpm build` | `dist/` に JavaScript・宣言ファイル・source map を生成 |
+| `pnpm package:verify` | ビルド済み公開 API と npm アーカイブの内容を検査 |
 | `pnpm bench` | ベンチマーク（`scripts/bench-noise.ts`）。**`verify` には入らない**（§7） |
 
 セットアップ:
 
 ```console
-$ direnv allow          # flake.nix の devShell で nodejs_22 + corepack が入る
+$ direnv allow          # flake.nix の devShell で Node.js + corepack が入る
 $ pnpm install
 ```
 
-Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0 が要る。
+Nix を使わない場合は `package.json` の `engines` を満たす Node.js と、
+`packageManager` が指定する pnpm が要る。
 `package.json` の `packageManager` が版を pin しているので `corepack pnpm ...` でよい。
 
 > ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
@@ -62,35 +65,18 @@ mc-noise で最も価値が高いのは**決定論のプロパティテスト**�
 `design-notes.md` の各項目には**回帰テスト名**が振ってあり、ソースのコメントからも
 同じ名前で参照している。テストを消すときは design-notes 側も同時に更新すること。
 
-## 3. カバレッジ閾値は有効化済み(即時ロールアウト、完成条件を待たない)
+## 3. カバレッジ閾値
 
-組織としての決定（TEST_STANDARD.md §3）により、branches / functions / lines / statements の
-4 指標すべてに **99%** のしきい値を、猶予期間や段階ロールアウトなしに全 16 リポジトリへ即時適用した。
-これはかつてこの節が書いていた「完成条件に到達してから有効化する」という方針を上書きする。
-スケルトンの完成度に関わらず有効化するのが組織としての決定であり、実装の質を数字で
-先取りするものではない。
+branches / functions / lines / statements の 4 指標すべてに **100%** のしきい値を設定している。
+しきい値は実装の質を先取りするものではなく、実際に実行されたコード経路を検査するゲートである。
 
 ```typescript
 // vitest.config.ts（有効化済み）
-thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 ```
 
-**有効化した時点(2026-08-01)の実測**は次の通り。functions と branches が未達で CI は赤くなる。
-これはしきい値を緩める理由ではなく、追跡対象の未完了作業として扱う
-（MIGRATION_RUNBOOK.md 手順7 が明示的に受容している既知の結果と同じ扱い）。
-
-| 指標 | 実測 |
-| --- | --- |
-| statements | 100%（219/219） |
-| lines | 100% |
-| functions | **95.45%（21/22）** — 未達 |
-| branches | **84.85%（56/66）** — 未達 |
-
-未達の内訳（`pnpm test:coverage` の出力より）: `domain/field.ts` の `fallback` 関数（1関数）と、
-`domain/perlin.ts` の到達していない分岐（`gradient2d`/`gradient3d` の一部ケースなど）。
-§2 が言う「少数の誠実なテスト」の方針に従い、まず「このテストは本当に必要な仕様を守っているか」
-「この分岐は本当に到達可能か」を問うこと（型が排除している到達不能分岐なら、テストを足すのではなく
-分岐そのものを削るのが正しい対処、TEST_STANDARD.md §3.2 参照）。
+`pnpm test:coverage` は、テスト件数が 0 でないことを確認したうえでこのしきい値を適用する。
+未達時はしきい値を緩めず、未検証の分岐を特定して仕様テストまたは不要コードの削除で解消する。
 
 ## 4. 完成条件
 
@@ -108,14 +94,16 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
 - プロパティテスト（**決定論・値域・連続性**）が green —— plan.md §3.2 の要求そのまま
 - **シード固定のゴールデン値**が固定されている —— 同上。
   参照実装にリテラルなゴールデン値は存在しないので、これは新規に作る資産である（`porting.md` §6）
-- グリーディに追加すべき残件:
-  - `design-notes.md` N-8（半整数格子での勾配退化）の解消、または恒久的な既知事項としての受理
-  - `computeTerrainChannels` 相当（疎グリッド + 双線形補間）を入れるかどうかの判断。
-    入れるならベンチマークを先にリポジトリに置くこと
+- `design-notes.md` N-8（半整数格子での勾配退化）は、現行の既知事項としてテストで固定している
+- `NoisePrimitives`、4 チャンネルのチャンクサンプル、プリミティブ batch API は本リポジトリの契約として検証済み
+- Simplex 2D/3D と Minecraft Java 1.21.1 を照合基準にした portable DensityFunction のノード（`Shift` / `ShiftA` / `ShiftB` / `shiftedNoise2d` / `noiseInRange` / `map` / `mapRange` / `lerp` / `LinearOperation` / `WeirdScaledSampler` / `EndIslands` を含む）、境界値、評価器、公開 API を仕様テストで検証済み
+- 汎用の 2D/3D batch、grid、補間、chunk sampling API も本リポジトリの契約として検証済みである
+- portable な NoiseRouter / Climate / Blender の構造・評価 API と、context-aware な DensityFunction のキャッシュ・blend ノードは本リポジトリで検証し、設定済みの Minecraft NoiseRouter、キャッシュのライフサイクル、地形制御点は mc-worldgen 側の統合テストで検証する
 
-到達時に行うこと（99% 閾値の有効化自体は §3 の通り組織決定で前倒し済み）:
+現在は 4 指標 100% のハードゲートを有効化している。新しい分岐を追加する場合は、
+実装と同じ変更で仕様テストを追加し、ゲートを維持する:
 
-1. ビルド / publish パイプラインを追加（`versioning.md` §3）
+1. publish 手順を maintainer の認証環境で確認（ビルドと tarball 境界は `versioning.md` §3 で実装済み）
 2. `0.x` → `1.0.0`（mc-worldgen が実際に消費して契約を確認したら、maintainer の裁量判断で。
    `versioning.md` §2）
 
@@ -126,13 +114,14 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
 
 1. Checkout（`actions/checkout` — commit SHA 固定、`persist-credentials: false`）
 2. Setup pnpm（`pnpm/action-setup` — commit SHA 固定）
-3. Setup Node.js 24（pnpm キャッシュ有効。`actions/setup-node` — commit SHA 固定）
+3. Setup Node.js（pnpm キャッシュ有効。`actions/setup-node` — commit SHA 固定）
 4. `pnpm install --frozen-lockfile --ignore-scripts`
 5. `pnpm typecheck`
-6. `pnpm lint`
+6. `nix develop --command pnpm lint`
 7. `pnpm test`
-8. `pnpm test:coverage` —— **ハードゲート**。4 指標 99% しきい値（§3）を下回ると非ゼロ終了する
-9. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
+8. `pnpm package:verify`
+9. `pnpm test:coverage` —— **ハードゲート**。4 指標 100% しきい値（§3）を下回ると非ゼロ終了する
+10. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
 
 依存ホワイトリスト検査（旧 `pnpm check:deps`）と API ロック検査（旧 `pnpm api:check`）は
 org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の `no-restricted-imports` に
@@ -145,9 +134,26 @@ org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の 
 | ファイル | 内容 |
 | --- | --- |
 | `test/determinism.test.ts` | 決定論（同一シード → ビット同一）、状態非共有、シード分岐、チャンネル非相関、`mulberry32` のストリーム再現 |
-| `test/octaves.test.ts` | `octaveNoise2D` の値域と退化ケース、定数カーネルの代数、`signedFbm2D` の符号保持と NaN 保護、`noise2d`/`noise3d` の正規化、空間連続性 |
+| `test/octaves.test.ts` | `octaveNoise2D` の値域と退化ケース、数値パラメータ検証、定数カーネルの代数、`signedFbm2D` の符号保持と NaN 保護、`noise2d`/`noise3d` の正規化、空間連続性 |
+| `test/noise-primitives.test.ts` | `NoisePrimitives` の seed 分岐、raw / normalized 値域、チャンネル係数、チャンクサンプルの形状 |
+| `test/terrain-channels.test.ts` | 4 チャンネルの疎サンプル、peaks-and-valleys 変換、双線形展開、座標検証 |
+| `test/primitive-batches.test.ts` | 2D / 3D のプリミティブ batch、octave 引数、短い入力と sparse hole の扱い |
 | `test/public-api.test.ts` | barrel の export、**ゴールデン値**、格子点で 0、半整数格子の既知アーティファクト、チャンネル salt の固定 |
-| `test/check-dependency-whitelist.test.ts` | 16 リポジトリ roster の完全性、非循環、体験モジュール間エッジ 0、kit の devDependency 専用性、推移閉包の拒否、`Date.now()` 禁止、import 抽出 |
+| `test/interpolation.test.ts` | 疎サンプリング、双線形補間、評価回数、入力検証 |
+| `test/chunk-sampling.test.ts` | `mc-kernel` の `ChunkCoord` を使ったチャンク原点・16×16 境界 |
+| `test/chunk-volume-sampling.test.ts` | `ChunkHeight` を含む 16×高さ×16 の chunk volume sampling |
+| `test/isotropic-field.test.ts` | 2D/3D フィールドの固定シード値と isotropic 契約 |
+| `test/perlin-isotropic.test.ts` | 3D Perlin の連続性・対称性・正規化前の値域 |
+| `test/permutation.test.ts` | permutation table の決定論と入力範囲 |
+| `test/sampling.test.ts` | 2D batch、grid、双線形補間、chunk sampling |
+| `test/sampling-3d.test.ts` | 3D batch、grid、三線形補間、stride と入力検証 |
+| `test/simplex.test.ts` | Minecraft 互換 Simplex の原点、permutation、2D/3D サンプリング |
+| `test/java-random.test.ts` | Java Random の seed、符号拡張、`nextInt` / `nextFloat` 契約 |
+| `test/end-islands.test.ts` | End Islands の seed、座標検証、値域 |
+| `test/density-function.test.ts` | DensityFunction の AST、評価器、境界値、portable helper |
+| `test/transforms.test.ts` | `Shift` / `ShiftA` / `ShiftB` の座標変換 |
+| `test/spline.test.ts` | spline の制御点、補間、境界値 |
+| `test/value-noise.test.ts` | hash、lattice、value noise の決定論・補間・数値パラメータ検証 |
 
 ## 7. ベンチマーク（`pnpm bench`）
 

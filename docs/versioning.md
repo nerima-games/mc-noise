@@ -35,23 +35,16 @@ org 標準から撤去された（[API_STANDARD.md §4](https://github.com/nerim
 
 したがって現在の `package.json` は:
 
-- `dependencies` に `effect` だけを宣言する。`@nerima-games/*` は 1 つも入っていない。
-- `exports` は **TypeScript ソースを直接指す**（`./src/index.ts`）。ビルド成果物ではない。
-- ビルド / publish パイプラインは存在しない。バージョニングと CHANGELOG 生成は `@changesets/cli`
-  に一本化されている（[RELEASE_STANDARD.md §1](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#1-changesets-導入)、`.changeset/config.json`）。
+- `dependencies` に `effect` と `@nerima-games/mc-kernel` を宣言する。
+- `exports` は `dist/` の JavaScript と宣言ファイルを指し、`files` も `dist/` に限定する。
+- `build` が `tsconfig.release.json` から成果物を生成し、`package:verify` が実行時 API と tarball
+  の内容を検査する。`prepublishOnly` は `verify` と `package:verify` を要求する。
 
-## 3. ビルドと publish は完成条件到達時に追加する
+## 3. ビルドと publish
 
-`tsconfig.base.json` は `"noEmit": true` である（コメントで理由を明記している）。
-`.gitignore` の `dist/` には `# Build outputs (none yet — the build pipeline is added at completion)` と書いてある。
-
-完成条件（`testing.md` §4）に到達した時点で追加するもの:
-
-1. `tsconfig.build.json` の `noEmit` を外し、`dist/` に `.js` + `.d.ts` + source map を出す
-2. `package.json` の `exports` を `dist/` に向ける（`files` も同様）
-3. `prepublishOnly` で `pnpm verify` を強制
-4. CI に publish job を追加（`.github/workflows/ci.yaml` は現在 typecheck / lint / test / coverage のみ）
-5. changesets 運用に切り替え（plan.md §6 Step 3）
+`tsconfig.release.json` は `dist/` に JavaScript・`.d.ts`・source map を出力する。
+CI は `pnpm package:verify` を通して、公開物に `src/` が混入せず、公開 API がロードできることを確認する。
+publish 自体は maintainer の認証環境で `prepublishOnly` を通して実行する。
 
 ## 4. 公開先: GitHub Packages
 
@@ -129,6 +122,7 @@ Step 0 の実装として GitHub Packages を選んである。組織 `nerima-ga
 - 新しいチャンネルの追加（既存チャンネルのストリームは変わらない）
 - 新しい合成ヘルパの追加
 - Simplex カーネルの追加
+- portable DensityFunction ノード、境界値、評価器の追加
 
 ### PATCH
 

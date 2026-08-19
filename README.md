@@ -2,7 +2,7 @@
 
 ## 責務
 
-シード付き決定論ノイズ。PRNG・Perlin 勾配ノイズカーネル・オクターブ / fBm 合成。
+シード付き決定論ノイズ、Simplex / Perlin カーネル、オクターブ / fBm 合成、portable な Minecraft DensityFunction とサンプリング primitives。
 
 **seed → 値の写像は凍結された契約である**（plan.md §3.2）。
 変更すると過去に保存されたすべてのワールドの地形が変わる。
@@ -10,11 +10,10 @@
 
 ## 依存
 
-`effect` のみ。`@nerima-games/*` のどのリポジトリにも依存しない。
+`effect` と `@nerima-games/mc-kernel` に依存する。
 
-将来的には `mc-kernel` に依存する（4 階層アーキテクチャの安定ライブラリ層）。
-現時点で宣言していないのは、まだ何も publish されていないためである
-（bottom-up に publish してから pin する方式）。
+`mc-kernel` からはチャンク座標の型と 16 ブロック幅の定数を利用する。
+ノイズの seed・Perlin・オクターブ合成は、このパッケージの純粋な責務として管理する。
 意図されたグラフは [`DEPENDENCY_POLICY.md`](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md)
 （実効機構は `.oxlintrc.json` の `no-restricted-imports`）と
 [`docs/architecture.md`](./docs/architecture.md) に記録してある。
@@ -42,7 +41,7 @@ plan.md を読み返さずに、また参照実装を再調査せずに実装で
 | [`docs/design-notes.md`](./docs/design-notes.md) | 設計注意と、対応する名前付き回帰テスト |
 | [`docs/porting.md`](./docs/porting.md) | 移植元パスと実測 LOC |
 | [`docs/testing.md`](./docs/testing.md) | 検証と完成条件 |
-| [`docs/versioning.md`](./docs/versioning.md) | 0.x → 1.0.0 と publish |
+| [`docs/versioning.md`](./docs/versioning.md) | バージョニングと配布境界 |
 
 ## 開発
 
@@ -69,8 +68,10 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11 を用意する
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm test:watch` | vitest watch |
-| `pnpm test:coverage` | カバレッジ計測。4 指標 99% のしきい値ゲート（`vitest.config.ts`）付き |
-| `pnpm verify` | `typecheck && lint && test`。CI の必須ゲートと同じ内容（カバレッジは別ステップ） |
+| `pnpm test:coverage` | カバレッジ計測。4 指標 100% のしきい値ゲート（`vitest.config.ts`）付き |
+| `pnpm build` | `dist/` に JavaScript・宣言ファイル・source map を生成 |
+| `pnpm package:verify` | ビルド済みの公開 API と npm アーカイブの内容を検査 |
+| `pnpm verify` | `typecheck && lint && test`。カバレッジと配布物検査は別ステップ |
 
 ## 使い方
 
@@ -92,9 +93,13 @@ field.channel('continentalness')(100, 200)  // 符号付き [-1, 1]、スプラ�
 凍結された契約（(seed, 座標) → 値）は変わらない。詳細は
 [`docs/public-api.md`](./docs/public-api.md) §1。
 
-## 現状
+## 現在の契約と未確定事項
 
-**このリポジトリはまだ第一版（叩き台）である。** 以下は確定事項ではない。
+決定論的なノイズ・fBm・値ノイズ・2D/3D サンプリングに加え、Simplex、portable な
+DensityFunction と NoiseRouter / Climate / Blender の構造 API、参照実装由来の
+`NoisePrimitives` とそのチャンネル・バッチ API まで実装済みである。API とテスト契約は
+実装と同じ変更で更新する。
+以下は、実装の有無ではなく、生成ワールドの互換性や mc-worldgen の仕様が決まるまで確定できない事項である。
 
 - **`CHANNEL_PARAMS` のチューニング値は暫定。** 参照実装から引き継いだ octaves / persistence /
   lacunarity をそのまま置いてあるが、地形の見た目に合わせて調整すべき値である。
@@ -110,24 +115,40 @@ field.channel('continentalness')(100, 200)  // 符号付き [-1, 1]、スプラ�
   低レベル利用には `createPerlinNoise2DIsotropic` も使える。world metadata には
   factory の選択を保存し、再生成時も同じものを選ぶこと。
   詳細と選択基準は [`docs/design-notes.md`](./docs/design-notes.md) N-8。
-- **`toPV` / 疎グリッド + 双線形補間は未移植。** 汎用2Dノイズのバッチ／グリッドサンプリングは `sampleNoise2DBatch` と `sampleNoise2DGrid` で提供する。
-  前者は地形の形の話（mc-worldgen 寄り）、後者 2 つは性能最適化なので
-  ベンチマークを用意してから入れる。
-- **Simplex ノイズは無い。** plan.md は「Perlin/Simplex系」と書くが、
-  参照実装に Simplex は存在しない。必要になってから入れる（追加は semver-minor）。
-- **密度関数コンビネータは意図的に含めていない。**
-  参照実装の `density-function.ts` はコンビネータ代数ではなく地形の式そのものであり、
-  それは mc-worldgen の責務である。詳細は
-  [`docs/responsibility.md`](./docs/responsibility.md) §3.1。
-- **ビルド／publish はまだない。** `package.json` の `exports` は TypeScript ソースを直接指している。
-  GitHub Packages への publish パイプラインは完成条件を満たした時点で追加する。
-  それまで `version` は `0.x` に留める（mc-worldgen が実際に消費して契約を確認したら 1.0.0 にする）。
-- **カバレッジ 4 指標 99% ゲートは有効化済み。** 組織としての即時・全リポジトリ一律の決定
-  （TEST_STANDARD.md §3）により、猶予期間なく `vitest.config.ts` と CI の両方で有効化した。
-  有効化時点の実測は statements 100%・lines 100%・**functions 95.45%（21/22）**・
-  **branches 84.85%（56/66）**で、functions と branches が 99% 未達のため CI は赤くなる。
-  これはしきい値を緩める理由ではなく、追跡対象の未完了作業として扱う
-  （MIGRATION_RUNBOOK.md 手順7 が明示的に受容している既知の結果と同じ扱い）。
+- **汎用の疎グリッド + 補間は実装済み。**
+  `sampleNoise2DInterpolatedGrid` は双線形、`sampleNoise3DInterpolatedGrid` は三線形補間を行う。
+  `sampleNoise2DChunk` は `mc-kernel` の `ChunkCoord` を 16×16 のサンプル領域へ、
+  `sampleNoise3DChunk` は同じ座標系と `ChunkHeight` を体積サンプルへ変換する。
+  `sampleNoise2DBatch` / `sampleNoise3DBatch` と `sampleNoise2DGrid` / `sampleNoise3DGrid` も提供する。
+  `peaksAndValleysFromWeirdness` は参照式どおりの純粋な変換として提供する。
+  `createNoisePrimitives` は raw / normalized noise、4 つの地形チャンネル、
+  `sampleTerrainChannels` を提供し、`noise2DBatchXY` / `octaveNoise2DBatchXY` /
+  `noise3DBatchXYZ` / `noise2DBatch` / `octaveNoise2DBatch` でプリミティブを一括評価できる。
+  汎用の区分線形スプラインは `createSpline` / `evaluateSpline` として提供する。
+  密度関数・地形スプライン制御点を組み合わせた地形の式は引き続き mc-worldgen 側の責務である。
+- **Simplex ノイズを提供する。** `createSimplexNoise2D` / `createSimplexNoise3D` は
+  Minecraft の初期化順に従うシード付きで決定論的な 2D / 3D Simplex 値を返す。原点は
+  既定でシードから生成され、明示した原点は有限値として検証される。これは再利用可能なカーネルであり、
+  特定バージョンの Minecraft の地形互換性を保証するものではない。
+- **型付き DensityFunction の portable subset を提供する。** `constant` / `coordinate` /
+  `noise` / `shift` / `shift-a` / `shift-b` / `shifted-noise` / `shifted-noise-2d` /
+  `noise-in-range` / `linear-operation` / `weird-scaled-sampler` / `end-islands` /
+  `map` / `map-range` / `lerp`、二項・単項演算、`clamp` / `range-choice` /
+  `y-clamped-gradient` / `spline` を immutable なノードとして組み立てられる。
+  `Shift` 系は公式の座標変換と境界値スケールを再現し、`evaluateDensityFunction` と
+  `densityBounds` が `mc-kernel` の `Position` を入力境界に使う。
+  公式メソッドとの照合基準は Minecraft Java 1.21.1 であり、バージョンごとのワールド生成変更は
+  別の契約として扱う。
+  portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価ヘルパを提供する。
+  context-aware なキャッシュ・blend ノードはセル幅・高さと blend callback を
+  `DensityEvaluationContext` から受け取る。Minecraft 固有の設定済み `NoiseRouter`、
+  キャッシュのライフサイクル、地形固有の定数・制御点は引き続き mc-worldgen 側の責務である。
+- **配布用ビルドを持つ。** `pnpm build` は `dist/` を生成し、`package.json` の `exports` は
+  その成果物だけを公開する。`pnpm package:verify` は実行時の公開 API と tarball の内容を検査する。
+  registry への publish は認証とリリース承認を伴うため CI の自動処理には含めず、Changesets を使うリリース操作で行う。
+  下流が契約を確認するまでは `version` は `0.x` に留める。
+- **カバレッジ 4 指標 100% ゲートは有効化済み。** `pnpm test:coverage` が
+  statements / branches / functions / lines を検査し、CI でも同じゲートを実行する。
 
 ## License
 
