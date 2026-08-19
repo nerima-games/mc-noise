@@ -77,8 +77,8 @@ describe('DensityFunction codec', () => {
       densityCacheOnce(input),
       densityCacheAllInCell(input),
       densityBlendDensity(input),
-      densityBlendAlpha(input),
-      densityBlendOffset(input),
+      densityBlendAlpha(),
+      densityBlendOffset(),
     ]
 
     for (const node of nodes) {
