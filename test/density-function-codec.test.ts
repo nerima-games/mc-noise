@@ -106,7 +106,10 @@ describe('DensityFunction codec', () => {
     const unsupportedDensity = {
       get kind() {
         kindReads += 1
-        return kindReads <= 2 ? 'blend-alpha' : 'unknown'
+        if (kindReads <= 2) {
+          return 'blend-alpha'
+        }
+        return 'unknown'
       },
       minValue: 0,
       maxValue: 0,
