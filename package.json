@@ -2,7 +2,7 @@
   "name": "@nerima-games/mc-noise",
   "version": "0.2.0",
   "type": "module",
-  "description": "Seeded deterministic noise for the nerima-games Minecraft-clone rebuild: PRNG, value/Perlin kernels, octave/fBm composition. The seed -> value interface is a frozen contract.",
+  "description": "Seeded deterministic noise, portable Minecraft density functions, and sampling primitives. The seed -> value interface is a frozen contract.",
   "homepage": "https://github.com/nerima-games/mc-noise#readme",
   "repository": {
     "type": "git",
@@ -22,17 +22,22 @@
     "registry": "https://npm.pkg.github.com",
     "access": "restricted"
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "src",
+    "dist",
     "tsconfig.base.json",
     "LICENSE",
     "README.md"
   ],
+  "sideEffects": false,
   "keywords": [
     "minecraft",
     "effect-ts",
@@ -45,26 +50,30 @@
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false",
+    "build": "tsc -p tsconfig.release.json --pretty false",
     "lint": "oxlint --deny-warnings src scripts test",
     "lint:fix": "oxlint --fix src scripts test",
+    "pretest": "pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "bench": "tsx scripts/bench-noise.ts",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test",
+    "package:verify": "pnpm build && node scripts/verify-package.mjs",
+    "prepublishOnly": "pnpm verify && pnpm package:verify"
   },
   "dependencies": {
-    "effect": "^3.22.0"
+    "@nerima-games/mc-kernel": "^0.4.0",
+    "effect": "^3.22.1"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.1",
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.0",
     "@effect/vitest": "^0.30.0",
-    "@types/node": "^26.1.2",
-    "@typescript/native": "npm:typescript@7.0.2",
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^3.2.7",
-    "tsx": "^4.23.1",
-    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.7"
   }
 }
