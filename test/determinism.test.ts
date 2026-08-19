@@ -148,6 +148,14 @@ describe('seed derivation', () => {
     }),
   )
 
+  it.effect('rejects non-safe-integer seeds at the runtime boundary', () =>
+    Effect.sync(() => {
+      for (const invalidSeed of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5]) {
+        expect(() => NoiseSeed(invalidSeed)).toThrow()
+      }
+    }),
+  )
+
   it.effect('mulberry32 reproduces its stream exactly and advances its state', () =>
     Effect.sync(() => {
       const first = mulberry32(NoiseSeed(42))
@@ -160,6 +168,17 @@ describe('seed derivation', () => {
         expect(value).toBeGreaterThanOrEqual(0)
         expect(value).toBeLessThan(1)
       }
+    }),
+  )
+
+  it.effect('matches the standard Mulberry32 reference vector', () =>
+    Effect.sync(() => {
+      const random = mulberry32(NoiseSeed(42))
+      expect([random(), random(), random()]).toStrictEqual([
+        0.6011037519201636,
+        0.44829055899754167,
+        0.8524657934904099,
+      ])
     }),
   )
 })

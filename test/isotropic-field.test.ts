@@ -43,6 +43,24 @@ describe('createIsotropicNoiseField', () => {
     }),
   )
 
+  it.effect('keeps normalized 3D samples within the unit interval', () =>
+    Effect.sync(() => {
+      const sampleHeights = [-31.5, -7.13, 0.25, 42.75]
+
+      for (let seed = 0; seed < 32; seed += 1) {
+        const field = createIsotropicNoiseField(NoiseSeed(seed))
+        for (const [x, z] of SAMPLE_COORDINATES) {
+          for (const y of sampleHeights) {
+            const sample = field.noise3d(x, y, z)
+            expect(Number.isFinite(sample)).toBe(true)
+            expect(sample).toBeGreaterThanOrEqual(0)
+            expect(sample).toBeLessThanOrEqual(1)
+          }
+        }
+      }
+    }),
+  )
+
   it.effect('removes the legacy half-integer zero degeneracy from full fields', () =>
     Effect.sync(() => {
       const seed = NoiseSeed(20260726)
@@ -54,6 +72,14 @@ describe('createIsotropicNoiseField', () => {
 
       expect(legacyZeros).toBeGreaterThan(40)
       expect(isotropicZeros).toBeLessThan(legacyZeros / 2)
+    }),
+  )
+
+  it.effect('keeps the 3D field mapping stable', () =>
+    Effect.sync(() => {
+      const field = createNoiseField(NoiseSeed(20260726))
+
+      expect(field.raw3d(12.37, -7.13, 4.25)).toBe(-0.039941847301443775)
     }),
   )
 

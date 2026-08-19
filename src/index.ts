@@ -1,7 +1,7 @@
 /**
  * @nerima-games/mc-noise — seeded deterministic noise.
  *
- * FIRST CUT (叩き台). See README.md 現状.
+ * Public entrypoint for deterministic noise kernels and sampling adapters.
  *
  * A tier-1 stable library (plan.md §2.2): pure functions, a narrow interface,
  * and a change frequency that should approach zero. Everything here is a
@@ -13,9 +13,16 @@
  * docs/versioning.md before touching a constant in domain/.
  */
 
-export * from './domain/field'
-export * from './domain/octaves'
-export * from './domain/perlin'
-export * from './domain/sampling'
-export * from './domain/seed'
-export * from './domain/value-noise'
+export * from './domain/field.js'
+export * from './domain/octaves.js'
+export * from './domain/noise-primitives.js'
+export * from './domain/perlin.js'
+export * from './domain/primitive-batches.js'
+export * from './domain/sampling.js'
+export * from './domain/sampling-3d.js'
+export * from './domain/transforms.js'
+export * from './domain/spline.js'
+export * from './domain/terrain-channels.js'
+export * from './domain/chunk-sampling.js'
+export * from './domain/seed.js'
+export * from './domain/value-noise.js'

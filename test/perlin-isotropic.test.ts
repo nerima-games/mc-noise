@@ -23,14 +23,22 @@ describe('createPerlinNoise2DIsotropic', () => {
   it.effect('stays in the documented practical signed range', () =>
     Effect.sync(() => {
       const noise = createNoise(42)
+      let allFinite = true
+      let minimum = Number.POSITIVE_INFINITY
+      let maximum = Number.NEGATIVE_INFINITY
+
       for (let x = -32; x <= 32; x += 0.125) {
         for (let z = -32; z <= 32; z += 0.125) {
           const value = noise(x, z)
-          expect(Number.isFinite(value)).toBe(true)
-          expect(value).toBeGreaterThanOrEqual(-1 - Number.EPSILON)
-          expect(value).toBeLessThanOrEqual(1 + Number.EPSILON)
+          allFinite &&= Number.isFinite(value)
+          minimum = Math.min(minimum, value)
+          maximum = Math.max(maximum, value)
         }
       }
+
+      expect(allFinite).toBe(true)
+      expect(minimum).toBeGreaterThanOrEqual(-1 - Number.EPSILON)
+      expect(maximum).toBeLessThanOrEqual(1 + Number.EPSILON)
     }),
   )
 

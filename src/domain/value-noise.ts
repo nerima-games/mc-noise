@@ -4,11 +4,19 @@
  * need to carry a second noise implementation.
  */
 
+import { requireFiniteNumber, requireSafeInteger } from './number-validation.js'
+
 export type ValueNoiseFbmOptions = Readonly<{
   octaves: number
   frequency: number
   persistence: number
 }>
+
+const validateValueNoiseFbmOptions = (options: ValueNoiseFbmOptions): void => {
+  requireSafeInteger('options.octaves', options.octaves)
+  requireFiniteNumber('options.frequency', options.frequency)
+  requireFiniteNumber('options.persistence', options.persistence)
+}
 
 /** Shift distance of zero: forces the uint32 bit pattern without moving any bits. */
 const UINT32_COERCION_SHIFT = 0
@@ -59,7 +67,7 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 /** Distance, in lattice cells, from a cell's floor corner to its opposite corner. */
 const LATTICE_NEIGHBOR_OFFSET = 1
 
-export const valueNoise2D = (seed: number, x: number, z: number, frequency: number): number => {
+const sampleValueNoise2D = (seed: number, x: number, z: number, frequency: number): number => {
   const sx = x * frequency
   const sz = z * frequency
   const x0 = Math.floor(sx)
@@ -81,19 +89,25 @@ export const valueNoise2D = (seed: number, x: number, z: number, frequency: numb
   return lerp(top, bottom, tz)
 }
 
+export const valueNoise2D = (seed: number, x: number, z: number, frequency: number): number => {
+  requireFiniteNumber('frequency', frequency)
+  return sampleValueNoise2D(seed, x, z, frequency)
+}
+
 /** How much `fbm2D` doubles its sampling frequency for each successive octave. */
 const FREQUENCY_MULTIPLIER = 2
 /** An accumulated amplitude of exactly this means every octave contributed zero weight. */
 const ZERO_NORMALISATION = 0
 
 export const fbm2D = (seed: number, x: number, z: number, options: ValueNoiseFbmOptions): number => {
+  validateValueNoiseFbmOptions(options)
   let total = 0,
     amplitude = 1,
     normalisation = 0,
     { frequency } = options
 
   for (let octave = 0; octave < options.octaves; octave += LOOP_STEP) {
-    total += valueNoise2D(channelSeed(seed, `octave-${String(octave)}`), x, z, frequency) * amplitude
+    total += sampleValueNoise2D(channelSeed(seed, `octave-${String(octave)}`), x, z, frequency) * amplitude
     normalisation += amplitude
     amplitude *= options.persistence
     frequency *= FREQUENCY_MULTIPLIER

@@ -44,6 +44,23 @@ describe('octaveNoise2D', () => {
     }),
   )
 
+  it.effect('rejects invalid numeric parameters before entering the octave loop', () =>
+    Effect.sync(() => {
+      const invalidParams = [
+        { octaves: Number.NaN, persistence: 0.5, lacunarity: 2 },
+        { octaves: 1.5, persistence: 0.5, lacunarity: 2 },
+        { octaves: Number.MAX_SAFE_INTEGER + 1, persistence: 0.5, lacunarity: 2 },
+        { octaves: 1, persistence: Number.NaN, lacunarity: 2 },
+        { octaves: 1, persistence: 0.5, lacunarity: Number.POSITIVE_INFINITY },
+      ]
+
+      for (const params of invalidParams) {
+        expect(() => octaveNoise2D(() => 0, 0, 0, params)).toThrow(RangeError)
+      }
+      expect(() => signedFbm2D(() => 0, invalidParams[0]!)).toThrow(RangeError)
+    }),
+  )
+
   it.effect('returns the midpoint 0.5 for a degenerate octave count, never the extreme 0', () =>
     Effect.sync(() => {
       // 0 would be indistinguishable from a real trough downstream. The

@@ -1,7 +1,6 @@
 /**
  * Octave / fBm composition.
  *
- * FIRST CUT (叩き台).
  *
  * ---------------------------------------------------------------------------
  * PERFORMANCE EXCEPTION — DO NOT "FIX" THE LOOPS BELOW (plan.md §3.2, §5.2)
@@ -42,7 +41,8 @@
  * generation. See docs/design-notes.md, regression
  * `noise-octave-loop-is-imperative`, and docs/testing.md §7.
  */
-import type { NoiseFn2D } from './perlin'
+import { requireFiniteNumber, requireSafeInteger } from './number-validation.js'
+import type { NoiseFn2D } from './perlin.js'
 
 /** Coordinate-space bounds every signed noise sample must land within. */
 const SIGNED_MIN = -1
@@ -78,6 +78,33 @@ export type OctaveParams = {
   readonly lacunarity: number
 }
 
+export type OctaveParameters = readonly [
+  octaves: number,
+  persistence: number,
+  lacunarity: number,
+]
+
+export type OctaveNoiseArguments = readonly [
+  x: number,
+  z: number,
+  ...octaveParameters: OctaveParameters,
+]
+
+const validateOctaveArguments = (octaves: number, persistence: number, lacunarity: number): void => {
+  requireSafeInteger('octaves', octaves)
+  requireFiniteNumber('persistence', persistence)
+  requireFiniteNumber('lacunarity', lacunarity)
+}
+
+const validateOctaveParams = (params: OctaveParams): void => {
+  validateOctaveArguments(params.octaves, params.persistence, params.lacunarity)
+}
+
+const validateSignedFbmArguments = (params: OctaveParams, boost: number): void => {
+  validateOctaveParams(params)
+  requireFiniteNumber('boost', boost)
+}
+
 export const DEFAULT_OCTAVE_PARAMS: OctaveParams = {
   lacunarity: 2,
   octaves: 4,
@@ -86,6 +113,8 @@ export const DEFAULT_OCTAVE_PARAMS: OctaveParams = {
 
 /** Fewer octaves than this is a degenerate request — see `octaveNoise2D`'s doc comment on why that returns the midpoint, not 0. */
 const MIN_OCTAVES = 1
+/** Positional octave composition uses this sentinel when no bands are requested. */
+const NO_OCTAVE_SENTINEL = 0
 /** How far an octave-loop counter advances per iteration, everywhere in this file. */
 const OCTAVE_STEP = 1
 /** `signedFbm2D` clamps a negative octave request to this floor before summing amplitudes. */
@@ -111,6 +140,7 @@ const UNIT_AMPLITUDE = 1
  * persistence, including persistence >= 1.
  */
 export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams): number => {
+  validateOctaveParams(params)
   if (params.octaves < MIN_OCTAVES) {
     return normalizeNoise(NEUTRAL_SIGNED_VALUE)
   }
@@ -132,6 +162,39 @@ export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: 
 }
 
 /**
+ * Sum positional octave parameters and return a normalized [0, 1] sample.
+ *
+ * This form matches the portable Minecraft-facing primitive API. Unlike
+ * octaveNoise2D, a request with no octaves returns 0 to preserve that API's
+ * established sentinel semantics.
+ */
+export const computeOctaveNoise = (
+  ...args: readonly [noiseFn: NoiseFn2D, ...OctaveNoiseArguments]
+): number => {
+  const [noiseFn, x, z, octaves, persistence, lacunarity] = args
+  validateOctaveArguments(octaves, persistence, lacunarity)
+  if (octaves < MIN_OCTAVES) {
+    return NO_OCTAVE_SENTINEL
+  }
+
+  // PERFORMANCE EXCEPTION — see the file header before changing this.
+  let total = 0,
+    frequency = 1,
+    amplitude = 1,
+    maxValue = 0
+  for (
+    let octave = 0;
+    octave < octaves;
+    octave += OCTAVE_STEP, amplitude *= persistence, frequency *= lacunarity
+  ) {
+    total += noiseFn(x * frequency, z * frequency) * amplitude
+    maxValue += amplitude
+  }
+
+  return normalizeNoise(total / maxValue)
+}
+
+/**
  * Pre-compose an fBm sampler that stays SIGNED, in [-1, 1].
  *
  * Terrain splines are defined over [-1, 1], so the terrain channels must not be
@@ -142,7 +205,8 @@ export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: 
  * only on `params`, so paying for it per sample would be pure waste. The
  * reference does the same (`noise-primitives.ts:112-118`).
  */
-export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D => {
+export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost = UNIT_AMPLITUDE): NoiseFn2D => {
+  validateSignedFbmArguments(params, boost)
   // PERFORMANCE EXCEPTION — see the file header before changing this.
   let amplitudeSum = 0
   let amplitude = 1
@@ -155,7 +219,7 @@ export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D
     return () => NEUTRAL_SIGNED_VALUE
   }
 
-  const scale = UNIT_AMPLITUDE / amplitudeSum
+  const scale = boost / amplitudeSum
 
   return (x, z) => {
     // PERFORMANCE EXCEPTION — see the file header before changing this.
