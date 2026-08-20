@@ -292,3 +292,13 @@ mc-meshing の HashSet 主張、`setDayLength → setTimeOfDay` の作業例に�
 しかも**テストカバレッジを説明する文章の中で**やっている。
 default branch は `non_fast_forward` で保護されているため履歴は書き換えられない。
 書き換えられないこと自体は正しい設計であり、だから訂正はここに置く。
+
+## 8. branch / worktree の反映後
+
+複数の作業単位を `main` に反映するときは、commit の祖先関係とファイル内容を分けて確認する。
+
+1. `git status --short --branch` で未コミット変更を確認する。
+2. `git diff main..branch` で、実際のファイル内容が `main` と異なるか確認する。後続の commit が同じ変更を含む場合、branch が `main` の祖先でなくても差分が空になることがあるため、差分が空なら重複して cherry-pick しない。
+3. `nix develop --command pnpm verify` を実行する。`oxlint` は Nix の devShell が提供するため、CI と同じ環境で lint まで検証する。
+4. `nix develop --command pnpm package:verify` と `nix develop --command pnpm test:coverage` を実行する。
+5. 検証済みの worktree と、内容の反映が確認できた local branch を削除する。remote branch の削除は別途明示的に扱う。
