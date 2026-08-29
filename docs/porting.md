@@ -1,13 +1,12 @@
 # 移植元と実測 LOC
 
 - 参照実装ルート: `<reference-impl>`（以下パスはこれ相対）
-- 計測日: 2026-07-26
 - 計測方法: `wc -l`（コメント・空行を含む物理行数）
 
-**plan.md の LOC 見積もりは信頼できない。** 本書の数値はすべてこのリポジトリで
+**初期資料の LOC 見積もりは信頼できない。** 本書の数値はすべてこのリポジトリで
 `wc -l` を実行して確認したものである。
 
-## 1. plan.md §3.2 の記述と実測
+## 1. 移植責務と実測
 
 > **移植元**: `packages/world` の noise-primitives.ts / density-function.ts / octave群（756 LOC）
 
@@ -15,9 +14,9 @@
 | --- | --- |
 | `packages/world/domain/noise-primitives.ts` | 335 |
 | `packages/world/domain/density-function.ts` | 71 |
-| **小計（plan.md が名指しした 2 ファイル）** | **406** |
+| **小計（初期資料が名指しした 2 ファイル）** | **406** |
 
-**plan.md の 756 は誤りではなく、数え方が違う。** 756 の内訳を再現できた:
+**初期資料の 756 は誤りではなく、数え方が違う。** 756 の内訳を再現できた:
 
 | ファイル | LOC |
 | --- | --- |
@@ -28,7 +27,7 @@
 | `packages/world/application/noise-port-factory.ts` | 82 |
 | **合計** | **756** |
 
-つまり plan.md の「octave群」は Port と Service レイヤを含んでいる。
+つまり初期資料の「octave群」は Port と Service レイヤを含んでいる。
 ところが **`octave*.ts` というファイルは存在しない**。オクターブ / fBm のコードは
 `noise-primitives.ts` の中の `computeOctaveNoise`（:74）と `signedFbm2D`（:105）である。
 
@@ -59,9 +58,12 @@
 | 参照実装 | LOC | 理由 |
 | --- | --- | --- |
 | `packages/world/domain/density-function.ts` | 71 | 4 チャンネルから高さを出す地形固有の式は mc-worldgen の責務。portable な DensityFunction subset は `src/domain/density-function*.ts` に新規設計として追加 |
-| Minecraft の DensityFunction 実装 | — | Minecraft Java 1.21.1 を照合基準とし、portable な `Shift` / `ShiftA` / `ShiftB` / `shiftedNoise2d` / `noiseInRange` / `map` / `mapRange` / `lerp` / `LinearOperation` / `WeirdScaledSampler` / `EndIslands` は本リポジトリで提供。portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価ヘルパも提供するが、ワールド設定に結び付いたキャッシュ、設定済み NoiseRouter、地形定数・制御点は mc-worldgen の責務 |
+| Minecraft の DensityFunction 実装 | — | Minecraft Java 1.21.1 を共通ノードの照合基準とし、1.21.8 の静的ノード一覧を監査。portable な `Shift` / `ShiftA` / `ShiftB` / `shiftedNoise2d` / `noiseInRange` / `map` / `mapRange` / `lerp` / `LinearOperation` / `WeirdScaledSampler` / `EndIslands` / `old_blended_noise`、runtime marker の `beardifier`、および 1.21.9 で追加された `find_top_surface` は本リポジトリで提供。`old_blended_noise` の octave source は callback で解決し、`beardifier` の構造物由来の beardifying は context callback で受け取る。portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価ヘルパも提供するが、NoiseConfig / registry、ワールド設定に結び付いたキャッシュ、設定済み NoiseRouter、地形定数・制御点は mc-worldgen の責務 |
 | `packages/world/domain/spline.ts` | 42 | **移植済み**。地形データを持たない区分線形評価を `src/domain/spline.ts` に分離し、制御点の有限値・単調性を検証 |
 | `packages/world/domain/terrain-splines.ts` | 46 | 地形固有の制御点データ。mc-worldgen のチューニング対象であり凍結対象ではない |
+| `src/domain/biome.ts` / `src/domain/biome-classifier.ts` | — | **純粋部分を移管済み**。気候からのバイオーム分類、静的なバイオーム・表面材質・ブロック定義を `src/domain/minecraft-biome*.ts` に配置。登録済みバイオームレジストリは mc-worldgen が所有 |
+| `src/domain/terrain.ts` / `src/domain/terrain-column.ts` | — | **純粋部分を移管済み**。大陸性、地表高、気候、地表バイオーム、1 列の合成を `src/domain/minecraft-terrain*.ts` に配置。チャンクへの書き込みは移管しない |
+| `src/domain/lake-generator.ts` / `src/domain/surface-resolver.ts` | — | **純粋部分を移管済み**。湖盆、水面、湖岸、凍結判定、表面材質を `src/domain/minecraft-lakes.ts` / `minecraft-surface.ts` に配置。ブロック配置は mc-worldgen の責務 |
 | `packages/world/domain/noise-service-port.ts` | 93 | Layer 配線。消費側の責務 |
 | `packages/world/application/noise-service.ts` | 175 | 可変サービス。不要（§1） |
 | `packages/world/application/noise-port-factory.ts` | 82 | 同上 |
@@ -79,9 +81,13 @@ NoiseRouter、キャッシュのライフサイクル、Blender のワールド�
 組み合わせる統合は `mc-worldgen` 側で行う。`mapFromUnitTo` と `mapRange` は公式の private
 factory であり、本リポジトリでは公開可能な挙動として `densityMapRange` に集約する。
 
-## 4. plan.md の数値の訂正（実測で検証）
+Minecraft の地形移植では、シード・座標・気候・地形レベルから値を返す純粋な分類・地形高・湖・表面材質の
+定義までを mc-noise に移管した。カーバー、鉱石、植生、構造物、氷や雪を含むチャンクへのブロック適用は
+ワールド状態と配置順序を必要とするため、mc-worldgen に残す。
 
-| plan.md の記述 | 実測 | 証拠 |
+## 4. 初期資料の数値を訂正（実測で検証）
+
+| 初期資料の記述 | 実測 | 証拠 |
 | --- | --- | --- |
 | `SEA_LEVEL=48`（§3.7） | **63** | `packages/core/domain/constants.ts:17` — `export const SEA_LEVEL = 63`。直前のコメントは `// Phase 2.1 MC 1.18-aligned. Ocean biome water fills up to this height.` |
 | `LAKE_LEVEL=62`（§3.7） | **63** | `packages/core/domain/constants.ts:20` — `export const LAKE_LEVEL = SEA_LEVEL` |
@@ -111,7 +117,7 @@ mc-worldgen が移植するときは、両者を 1 つに畳んではならな�
 ファイルローカルな `const LAKE_LEVEL = 62` がある。テストフィクスチャであり、
 export された定数とは無関係で、しかも値が食い違っている。62 を正典として扱ってはならない。
 
-## 5. plan.md で正しかったこと（検証済み）
+## 5. 初期資料で正しかったこと（検証済み）
 
 | 記述 | 検証 |
 | --- | --- |
@@ -125,7 +131,7 @@ export された定数とは無関係で、しかも値が食い違っている�
 
 ## 6. 移植すべきテスト資産
 
-plan.md §6 Step 2 は「各 Step で参照実装の対応テスト・fixture・E2E シナリオを
+初期資料の完了条件は「各 Step で参照実装の対応テスト・fixture・E2E シナリオを
 オラクルとして移植する」と定める。mc-noise に対応するもの:
 
 | 参照実装のテスト | 内容 | 本リポジトリでの扱い |
@@ -137,6 +143,6 @@ plan.md §6 Step 2 は「各 Step で参照実装の対応テスト・fixture・
 | `packages/world/test/terrain-determinism.test.ts` | 同一シード → バイト同一チャンク | mc-worldgen の責務 |
 | `packages/world/test/density-function.test.ts`（147 行） | 地形の意味論（深海 / 海岸 / 平原 / 山頂の Y） | mc-worldgen の責務 |
 
-**参照実装にリテラルなゴールデン値は無い。** plan.md §3.2 が求める
+**参照実装にリテラルなゴールデン値は無い。** 初期責務が求める
 「シード固定のゴールデン値」は本リポジトリで新規に作った資産である
 （`test/public-api.test.ts` のインラインスナップショット）。

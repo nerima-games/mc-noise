@@ -20,6 +20,7 @@ describe('DensityFunction structural validation', () => {
     expect(isDensityFunction({ kind: 'constant', minValue: Number.NaN, maxValue: 1 })).toBe(false)
     expect(isDensityFunction({ kind: 'constant', minValue: 0, maxValue: Number.NaN })).toBe(false)
     expect(isDensityFunction({ kind: 'constant', minValue: 2, maxValue: 1 })).toBe(false)
+    expect(isDensityFunction({ kind: 'find-top-surface', minValue: -1, maxValue: 1 })).toBe(true)
     expect(requireDensityFunction('density', valid)).toBe(valid)
     expect(() => requireDensityFunction('density', null)).toThrow(
       'density must be a DensityFunction',

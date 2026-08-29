@@ -15,6 +15,7 @@ import {
   DENSITY_ZERO,
 } from './density-function-constants.js'
 import type {
+  DensityBeardifier,
   DensityBinary,
   DensityBlendAlpha,
   DensityBlendDensity,
@@ -29,11 +30,13 @@ import type {
   DensityEndIslands,
   DensityEvaluationContext,
   DensityEvaluationSession,
+  DensityFindTopSurface,
   DensityFlatCache,
   DensityFunction,
   DensityInterpolated,
   DensityLinearOperation,
   DensityNoise,
+  DensityOldBlendedNoise,
   DensityPosition,
   DensityRangeChoice,
   DensityRarityValueMapper,
@@ -47,16 +50,20 @@ import type {
   DensityWeirdScaledSampler,
   DensityYClampedGradient,
 } from './density-function-types.js'
+import { evaluateOldBlendedNoise } from './old-blended-noise.js'
 import { evaluateSpline } from './spline.js'
 import { requireDensityEvaluationContext } from './density-function-context.js'
 import { requireFiniteNumber } from './number-validation.js'
 
 const DENSITY_INTERPOLATION_LOWER_BOUNDARY = 0
 const DENSITY_INTERPOLATION_UPPER_BOUNDARY = 1
+const DENSITY_SURFACE_THRESHOLD = 0
 
 type DensityLeaf =
   | DensityConstant
   | DensityCoordinate
+  | DensityOldBlendedNoise
+  | DensityBeardifier
   | DensityEndIslands
   | DensityNoise
   | DensityShift
@@ -71,7 +78,7 @@ type DensityOperationComposite =
   | DensityBinary
   | DensityUnary
 
-type DensityBranchComposite = DensityClamp | DensityRangeChoice | DensitySpline
+type DensityBranchComposite = DensityClamp | DensityFindTopSurface | DensityRangeChoice | DensitySpline
 
 type DensityContextComposite =
   | DensityInterpolated
@@ -291,6 +298,8 @@ type DensityShiftOrGradient =
   | DensityShiftB
   | DensityYClampedGradient
 
+type DensityPrimaryLeaf = Exclude<DensityLeaf, DensityBeardifier | DensityShiftOrGradient>
+
 const evaluateShiftOrGradient = (
   density: DensityShiftOrGradient,
   position: DensityPosition,
@@ -305,20 +314,62 @@ const evaluateShiftOrGradient = (
   return evaluateGradient(density, position)
 }
 
-const evaluateLeaf = (density: DensityLeaf, position: DensityPosition): number => {
-  if (density.kind === 'constant') {
-    return density.value
+const requireEvaluationContext = (
+  state: EvaluationState,
+  kind: string,
+): DensityEvaluationContext => {
+  if (typeof state.context === 'undefined') {
+    throw new RangeError(`${kind} requires an evaluation context`)
   }
-  if (density.kind === 'coordinate') {
-    return evaluateCoordinate(density, position)
+  return state.context
+}
+
+const evaluateBeardifier = (
+  density: DensityBeardifier,
+  position: DensityPosition,
+  state: EvaluationState,
+): number => {
+  const context = requireEvaluationContext(state, density.kind)
+  if (typeof context.beardifier !== 'function') {
+    throw new RangeError('beardifier requires context.beardifier')
   }
-  if (density.kind === 'end-islands') {
-    return evaluateEndIslands(density, position)
+  return context.beardifier(position)
+}
+
+const evaluatePrimaryLeaf = (
+  density: DensityPrimaryLeaf,
+  position: DensityPosition,
+): number => {
+  switch (density.kind) {
+    case 'constant':
+      return density.value
+    case 'coordinate':
+      return evaluateCoordinate(density, position)
+    case 'end-islands':
+      return evaluateEndIslands(density, position)
+    case 'noise':
+      return evaluateNoise(density, position)
+    default:
+      return evaluateOldBlendedNoise(density, position)
   }
-  if (density.kind === 'noise') {
-    return evaluateNoise(density, position)
+}
+
+const evaluateLeaf = (
+  density: DensityLeaf,
+  position: DensityPosition,
+  state: EvaluationState,
+): number => {
+  switch (density.kind) {
+    case 'beardifier':
+      return evaluateBeardifier(density, position, state)
+    case 'shift':
+    case 'shift-a':
+    case 'shift-b':
+    case 'y-clamped-gradient':
+      return evaluateShiftOrGradient(density, position)
+    default:
+      return evaluatePrimaryLeaf(density, position)
   }
-  return evaluateShiftOrGradient(density, position)
 }
 
 const evaluateShiftedNoise = (
@@ -379,21 +430,30 @@ const evaluateRangeChoice = (
   return evaluate(density.outOfRange, position)
 }
 
+const evaluateFindTopSurface = (
+  density: DensityFindTopSurface,
+  position: DensityPosition,
+  evaluate: DensityEvaluator,
+): number => {
+  const upperBound = evaluate(density.upperBound, position)
+  let y = Math.floor(upperBound / density.cellHeight) * density.cellHeight
+  if (!Number.isFinite(y) || y <= density.lowerBound) {
+    return density.lowerBound
+  }
+  while (y >= density.lowerBound) {
+    if (evaluate(density.density, { x: position.x, y, z: position.z }) > DENSITY_SURFACE_THRESHOLD) {
+      return y
+    }
+    y -= density.cellHeight
+  }
+  return density.lowerBound
+}
+
 const evaluateSplineNode = (
   density: DensitySpline,
   position: DensityPosition,
   evaluate: (node: DensityFunction, point: DensityPosition) => number,
 ): number => evaluateSpline(density.spline, evaluate(density.input, position))
-
-const requireEvaluationContext = (
-  state: EvaluationState,
-  kind: string,
-): DensityEvaluationContext => {
-  if (typeof state.context === 'undefined') {
-    throw new RangeError(`${kind} requires an evaluation context`)
-  }
-  return state.context
-}
 
 const positionKey = (position: DensityPosition): string =>
   [position.x, position.y, position.z].join(',')
@@ -785,6 +845,9 @@ const evaluateBranchComposite = (
   if (density.kind === 'range-choice') {
     return evaluateRangeChoice(density, position, evaluate)
   }
+  if (density.kind === 'find-top-surface') {
+    return evaluateFindTopSurface(density, position, evaluate)
+  }
   return evaluateSplineNode(density, position, evaluate)
 }
 
@@ -808,6 +871,8 @@ const isDensityLeaf = (density: DensityFunction): density is DensityLeaf =>
   density.kind === 'coordinate' ||
   density.kind === 'end-islands' ||
   density.kind === 'noise' ||
+  density.kind === 'old-blended-noise' ||
+  density.kind === 'beardifier' ||
   density.kind === 'shift' ||
   density.kind === 'shift-a' ||
   density.kind === 'shift-b' ||
@@ -819,7 +884,7 @@ const evaluateNode = (
   state: EvaluationState,
 ): number => {
   if (isDensityLeaf(density)) {
-    return evaluateLeaf(density, position)
+    return evaluateLeaf(density, position, state)
   }
   const evaluate: DensityEvaluator = (node, point) =>
     evaluateNode(node, point, state)

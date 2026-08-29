@@ -44,14 +44,16 @@ jobs:
 
       # oxlint is provided by the Nix devShell (flake.nix), not a package.json
       # devDependency — see flake.nix's comment on why. Installing Nix just for
-      # this one step is the org-wide trade-off (DEPENDENCY_POLICY.md §5
-      # "前提条件"): one pinned oxlint version instead of 16 repos each
-      # independently drifting on their own npm-resolved version.
+      # this one step is the repository's environment trade-off: one pinned
+      # oxlint version instead of independently drifting npm-resolved versions.
       - name: Set up Nix
         uses: ./.github/actions/nix-setup
         with:
           cachix-cache: ${{ vars.CACHIX_CACHE }}
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Flake check
+        run: nix flake check --all-systems
 
       - name: Lint
         run: nix develop --command pnpm lint
@@ -62,8 +64,8 @@ jobs:
       - name: Package boundary
         run: pnpm package:verify
 
-      # Hard gate (TEST_STANDARD.md §3): statements/branches/functions/lines
-      # all thresholded at 100% in vitest.config.ts. Run as a separate required
+      # Hard gate: statements/branches/functions/lines are all thresholded at
+      # 100% in vitest.config.ts. Run as a separate required
       # step from `pnpm verify`, not folded into it, so the fast verify loop
       # stays fast and the coverage report is always produced regardless.
       - name: Coverage

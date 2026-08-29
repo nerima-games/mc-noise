@@ -1,6 +1,6 @@
 # 設計注意と回帰テスト
 
-plan.md §3.x の「設計注意」を、参照実装の証拠（file:line）付きで展開し、
+参照実装と現行コードの「設計注意」を、証拠（file:line）付きで展開し、
 **それぞれを名前付き回帰テストとして**書き下したもの。
 
 各項目の見出しにある `code` 名がテスト名である。ソース側のコメントからも同じ名前で参照している。
@@ -9,7 +9,7 @@ plan.md §3.x の「設計注意」を、参照実装の証拠（file:line）付
 
 ## N-1 `noise-octave-loop-is-imperative`
 
-### plan.md §3.2 の記述
+### 初期責務の記述
 
 > **設計注意**: オクターブループは `let` + `for` を維持（参照実装で実測確定したパフォーマンス例外。状態スレッドを配列foldに「修正」しない）
 
@@ -95,28 +95,21 @@ plan.md §3.x の「設計注意」を、参照実装の証拠（file:line）付
 
 **「先にベンチマークを書き、それをリポジトリに入れろ」——それが `scripts/bench-noise.ts` である。**
 上の表に載っている 3 つの書き換えはすべてその場に実装してあり、出荷版と並べて計測される。
-5 つの綴りが 1024 座標でビット単位一致することを計測前に確認したうえで:
-
-| 書き換え | 実測（M4 Max / Node 22.23.1、4 オクターブ・20 万サンプル、5 回通しの中央値） |
-| --- | --- |
-| `Effect.reduce` | **6.6x** |
-| `Array.from({length}).reduce` | **2.8x** |
-| effect の `Array.reduce` | **1.3x** |
-
-**表の訂正**: 3 つとも「結果を変えずにコストだけ増やす」のは正しいが、増え方は桁で違う。
-effect の `Array.reduce` は 1.3 倍にとどまる。これはワールド生成の最内ループなので
-1.3 倍が無視できるという意味ではないが、「桁違い」ではない。
+5 つの綴りが 1024 座標でビット単位一致することを計測前に確認したうえで、guard は同一プロセス内で
+実装順をローテーションしながら交互に計測する。20 回の warm-up と 9 サンプルを使うため、単純な
+実装順固定より共有ノイズを減らせるが、ホストと JIT に依存する点は変わらない。
 
 ゲート本体は `octave-loop/shipped-vs-frozen-imperative`——出荷版を
-**その現在の形の凍結コピー**と比べる guard であり、
-`octaveNoise2D` を effect の `Array.reduce` に書き換えると 0.841 → 0.629 に落ちて exit 1 になる。
-詳細と計測手法は `testing.md` §7。
+**その現在の形の凍結コピー**と比べる guard である。workload は yardstick と各処理を同じサンプル内で
+交互に測り、サンプルごとの比の中央値を使う。`scripts/bench-baseline.json` の数値は現行方式で保持する
+保守的な履歴基準であり、Node や特定ハードウェアの普遍的な性能値ではない。詳細と計測手法は
+`testing.md` §7。
 
 ---
 
 ## N-2 `noise-determinism-same-seed`
 
-### plan.md §3.2 の記述
+### 初期責務の記述
 
 > **主要な公開API**: ... **seed→値のインターフェースは凍結扱い**（変更 = 全ワールドの地形が変わる破壊的変更）
 >
@@ -128,7 +121,7 @@ effect の `Array.reduce` は 1.3 倍にとどまる。これはワールド生�
 - `packages/world/test/terrain-determinism.test.ts:22`:
   `it('same seed + coord → byte-identical chunk (save/reload reproducibility)')`
 - ただし **リテラルなゴールデン値は参照実装にコミットされていない**。
-  plan.md §3.2 が求める「シード固定のゴールデン値」は参照実装には存在せず、本リポジトリで新規に作る資産である。
+  シード固定のゴールデン値は参照実装には存在せず、本リポジトリで新規に作る資産である。
 
 ### 回帰テスト
 
@@ -271,17 +264,18 @@ permutation table のインデックス計算や fade 曲線が壊れると、�
 
 ---
 
-## N-8 `noise-half-integer-gradient-degeneracy`（本リポジトリで発見）
+## N-8 `noise-half-integer-gradient-degeneracy`（canonical kernel の設計根拠）
 
 ### 事実
 
-古典的な 2D Perlin の 4 勾配 `{(1,1), (-1,1), (1,-1), (-1,-1)}` を使うと、
+2D Perlin が 4 つの対角勾配 `{(1,1), (-1,1), (1,-1), (-1,-1)}` だけを使うと、
 オフセットがちょうど `±0.5` のとき各コーナーの内積は `{-1, 0, 1}` にしか落ちず、
 `fade(0.5)` はちょうど `0.5` なので、結果はその 4 値の**単純平均**になる。
 これがちょうど 0 になる頻度が、偶然では説明できないほど高い。
 
-`test/public-api.test.ts` の `KNOWN ARTIFACT: ...` が現在の発生率を固定している
-（半整数格子 64 点のうち 10 点以上がちょうど 0）。
+この現象は、ブロック中心を直接サンプルするワールドで格子状のアーティファクトに
+なる。現行の `test/public-api.test.ts` は、canonical kernel が半整数格子で十分な
+値の多様性を保つことを固定している。
 
 ### 影響
 
@@ -296,26 +290,23 @@ permutation table のインデックス計算や fade 曲線が壊れると、�
 
 ### 対処
 
-`createPerlinNoise2DIsotropic` は、軸4方向と正規化した対角4方向からなる8勾配を均等に選ぶ。
-これにより半整数格子の高頻度なゼロ退化と方向バイアスを抑える。
-
-既存の `createPerlinNoise2D` は**凍結された seed→値 の写像**なので変更していない。
-保存済みworldの再生成にはlegacy APIを使い、新規worldでカーネル選択を永続化できる場合だけ
-isotropic APIを選ぶこと。カーネル識別子を保存できない呼び出し側はlegacyのままにする。
+現行の 2D Perlin kernel は、軸 4 方向と正規化した対角 4 方向からなる 8 勾配を均等に
+選ぶ。これにより半整数格子の高頻度なゼロ退化と方向バイアスを抑える。canonical
+kernel への変更は意図的な seed → 値の契約変更として反映済みであり、別 kernel を
+選ぶための公開 API や保存形式は設けない。
 
 ### 回帰テスト
 
 `test/public-api.test.ts`:
 
-- `KNOWN ARTIFACT: the 4-gradient 2D kernel is often exactly 0 at half-integer coordinates`
-  —— 将来の勾配集合がこれを直すと発生率が下がってテストが落ちる。
-  それは「上の注記を消せ」ではなく「更新しろ」という合図である。
+- `keeps half-integer samples varied with the canonical gradient set`
+  —— canonical 勾配集合を変えると値の分布が変わるため、契約変更のレビューが必要になる。
 - `is exactly 0 at every lattice point, which is what gradient noise means`
   —— 整数格子で 0 になるのは正常（構造的事実）。ここが落ちたら勾配ノイズではなく値ノイズになっている。
 
 `test/perlin-isotropic.test.ts`:
 
-- 決定性、256セル周期、実用値域を固定する。
+- canonical 2D/3D Perlin の決定性、256セル周期、実用値域を固定する。
 - 半整数サンプルがゼロへ退化しないことを固定する。
 - 軸方向と対角方向で方向微分の平均二乗値を比較し、方向別の統計的偏りを検出する。
 
@@ -323,11 +314,11 @@ isotropic APIを選ぶこと。カーネル識別子を保存できない呼び�
 
 ## 参照実装の数値の訂正
 
-plan.md には参照実装の実測値がいくつか書かれているが、**再検証したところ一致しないものがある**。
+初期資料には参照実装の実測値がいくつか書かれているが、**再検証したところ一致しないものがある**。
 本リポジトリでは検証済みの値を使う。詳細は `porting.md` を参照。
 
-| plan.md | 実測 |
+| 初期資料の記述 | 実測 |
 | --- | --- |
 | `SEA_LEVEL=48` | **63**（`packages/core/domain/constants.ts:17`） |
-| `LAKE_LEVEL=62` | **63**。ただし plan.md 訂正の「独立した定数ではない」も不正確。詳細は `porting.md` §4 |
+| `LAKE_LEVEL=62` | **63**。ただし「独立した定数ではない」という訂正も不正確。詳細は `porting.md` §4 |
 | noise-primitives + density-function 756 LOC | **406** |

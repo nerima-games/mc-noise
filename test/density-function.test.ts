@@ -9,6 +9,7 @@ import {
   densityCoordinate,
   densityEndIslands,
   densityCube,
+  densityFindTopSurface,
   densityHalfNegative,
   densityInvert,
   densityLinearOperation,
@@ -296,6 +297,92 @@ describe('portable DensityFunction composition', () => {
     expect(densityBounds(spline)).toEqual({ minValue: 0, maxValue: 10 })
   })
 
+  it('finds the top surface using floored, inclusive cell-height scans', () => {
+    const calls: Array<readonly [number, number, number]> = []
+    const source = createDensityNoiseSource(
+      (x, y, z) => {
+        calls.push([x, y, z])
+        if (y === 4) {
+          return 0
+        }
+        if (y === 0) {
+          return 1
+        }
+        return -1
+      },
+      { minValue: -1, maxValue: 1 },
+    )
+    const surface = densityFindTopSurface(
+      densityNoise(source, { xzScale: 1, yScale: 1 }),
+      densityConstant(9),
+      -4,
+      4,
+    )
+
+    expect(evaluateDensityFunction(surface, { x: 2, y: 99, z: -3 })).toBe(0)
+    expect(calls).toEqual([
+      [2, 8, -3],
+      [2, 4, -3],
+      [2, 0, -3],
+    ])
+    expect(densityBounds(surface)).toEqual({ minValue: -4, maxValue: 9 })
+
+    const negativeCalls: number[] = []
+    const negativeSurface = densityFindTopSurface(
+      densityNoise(
+        createDensityNoiseSource(
+          (_x, y, _z) => {
+            negativeCalls.push(y)
+            if (y === -4) {
+              return 1
+            }
+            return -1
+          },
+          { minValue: -1, maxValue: 1 },
+        ),
+        { xzScale: 1, yScale: 1 },
+      ),
+      densityConstant(-1),
+      -8,
+      4,
+    )
+    expect(evaluateDensityFunction(negativeSurface, position)).toBe(-4)
+    expect(negativeCalls).toEqual([-4])
+
+    const noScanCalls: number[] = []
+    const noScanSurface = densityFindTopSurface(
+      densityNoise(
+        createDensityNoiseSource(
+          (_x, y, _z) => {
+            noScanCalls.push(y)
+            return 1
+          },
+          { minValue: -1, maxValue: 1 },
+        ),
+        { xzScale: 1, yScale: 1 },
+      ),
+      densityConstant(-9),
+      -8,
+      4,
+    )
+    expect(evaluateDensityFunction(noScanSurface, position)).toBe(-8)
+    expect(noScanCalls).toEqual([])
+
+    const fallbackSurface = densityFindTopSurface(densityZero, densityConstant(4), -4, 4)
+    expect(evaluateDensityFunction(fallbackSurface, position)).toBe(-4)
+
+    const nonFiniteUpperBound = densityFindTopSurface(
+      densityZero,
+      densityNoise(
+        { sample: () => Number.POSITIVE_INFINITY, minValue: 0, maxValue: 0 },
+        { xzScale: 1, yScale: 1 },
+      ),
+      -8,
+      4,
+    )
+    expect(evaluateDensityFunction(nonFiniteUpperBound, position)).toBe(-8)
+  })
+
   it('rejects invalid public inputs at construction and evaluation boundaries', () => {
     const validSource = { sample: () => 0, minValue: -1, maxValue: 1 }
     const invalidSource = { sample: null as never, minValue: -1, maxValue: 1 }
@@ -351,6 +438,12 @@ describe('portable DensityFunction composition', () => {
       'minInclusive must not exceed maxExclusive',
     )
     expect(() => densityYClampedGradient(1, 1, 0, 1)).toThrow('fromY and toY must differ')
+    expect(() => densityFindTopSurface(densityZero, densityZero, 0, 0)).toThrow(
+      'cellHeight must be a positive integer',
+    )
+    expect(() => densityFindTopSurface(densityZero, densityZero, 0.5, 1)).toThrow(
+      'lowerBound must be a safe integer',
+    )
     expect(() => evaluateDensityFunction(densityZero, { x: Number.NaN, y: 0, z: 0 })).toThrow(
       'position.x must be finite',
     )

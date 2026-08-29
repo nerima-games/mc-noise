@@ -233,6 +233,14 @@ export const boundsForRangeChoice = (
   Math.max(inRange.maxValue, outOfRange.maxValue),
 )
 
+export const boundsForFindTopSurface = (
+  upperBound: DensityBounds,
+  lowerBound: number,
+): DensityBounds => createDensityBounds(
+  lowerBound,
+  Math.max(lowerBound, upperBound.maxValue),
+)
+
 export const boundsForYClampedGradient = (
   fromValue: number,
   toValue: number,

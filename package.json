@@ -2,7 +2,7 @@
   "name": "@nerima-games/mc-noise",
   "version": "0.2.0",
   "type": "module",
-  "description": "Seeded deterministic noise, portable Minecraft density functions, and sampling primitives. The seed -> value interface is a frozen contract.",
+  "description": "Seeded deterministic noise, portable Minecraft density functions, and sampling primitives. The seed -> value interface is a versioned contract.",
   "homepage": "https://github.com/nerima-games/mc-noise#readme",
   "repository": {
     "type": "git",
@@ -53,14 +53,15 @@
     "build": "tsc -p tsconfig.release.json --pretty false",
     "lint": "oxlint --deny-warnings src scripts test",
     "lint:fix": "oxlint --fix src scripts test",
-    "pretest": "pnpm build",
+    "pretest": "corepack pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "bench": "tsx scripts/bench-noise.ts",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test",
-    "package:verify": "pnpm build && node scripts/verify-package.mjs",
-    "prepublishOnly": "pnpm verify && pnpm package:verify"
+    "bench:density": "tsx scripts/bench-density-function.ts",
+    "verify": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test",
+    "package:verify": "corepack pnpm build && node scripts/verify-package.mjs",
+    "prepublishOnly": "corepack pnpm verify && corepack pnpm package:verify"
   },
   "dependencies": {
     "@nerima-games/mc-kernel": "^0.4.0",
@@ -68,12 +69,11 @@
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
-    "@changesets/cli": "^3.0.0",
-    "@effect/vitest": "^0.30.0",
+    "@changesets/cli": "^3.0.1",
     "@types/node": "^26.2.0",
-    "@vitest/coverage-v8": "^3.2.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }

@@ -3,14 +3,14 @@
  *
  * Public entrypoint for deterministic noise kernels and sampling adapters.
  *
- * A tier-1 stable library (plan.md §2.2): pure functions, a narrow interface,
+ * The stable library layer (docs/architecture.md §4): pure functions, a narrow interface,
  * and a change frequency that should approach zero. Everything here is a
  * function of (seed, coordinate) and of nothing else — no services, no clock,
  * no I/O, no platform.
  *
- * THE SEED -> VALUE MAPPING IS A FROZEN CONTRACT (plan.md §3.2). Changing it
- * regenerates the terrain of every world that has ever been saved. See
- * docs/versioning.md before touching a constant in domain/.
+ * The seed -> value algorithm is a versioned public contract. Deliberate
+ * algorithm changes are breaking changes; this package does not retain legacy
+ * compatibility kernels. See docs/versioning.md before changing domain/.
  */
 
 export * from './domain/field.js'
@@ -37,3 +37,9 @@ export * from './domain/density-function-codec.js'
 export * from './domain/noise-router.js'
 export * from './domain/climate.js'
 export * from './domain/blender.js'
+export * from './domain/minecraft-biome.js'
+export * from './domain/minecraft-biome-classifier.js'
+export * from './domain/minecraft-terrain.js'
+export * from './domain/minecraft-lakes.js'
+export * from './domain/minecraft-surface.js'
+export * from './domain/minecraft-terrain-column.js'

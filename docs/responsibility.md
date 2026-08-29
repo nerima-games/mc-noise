@@ -1,9 +1,9 @@
 # 責務
 
-- 出典: plan.md（**非公開**）§3.2
+- 根拠: 本リポジトリの公開 API と `mc-kernel` の依存境界
 - 参照実装: `takeokunn/ts-minecraft`
 
-## 1. plan.md §3.2 の記述（原文）
+## 1. 初期責務の要約
 
 > ### 3.2 mc-noise
 >
@@ -25,6 +25,8 @@
 - 地形チャンネルから独立した peaks-and-valleys 変換（`peaksAndValleysFromWeirdness`）
 - Minecraft 向けのノイズ束（`createNoisePrimitives`）と raw / normalized / scaled channel API
 - 4 チャンネルのチャンクサンプル材料（`computeTerrainChannels` / `sampleTerrainChannels`）
+- Minecraft の気候サンプル、バイオーム分類、地形高、湖・水面・表面材質の純粋な定義
+- チャンク状態へ書き込まずに 1 列を評価する `minecraftTerrainColumnAt`
 - プリミティブ単位の座標配列・点配列 batch API
 - 2D/3D の batch・grid・補間サンプリングと `mc-kernel` チャンク座標変換
 - 制御点を検証して凍結できる汎用の区分線形スプライン（`createSpline` / `evaluateSpline`）
@@ -36,32 +38,37 @@
 
 | 項目 | どこが所有するか | 理由 |
 | --- | --- | --- |
-| バイオーム分類 | mc-worldgen | 気候 → バイオームは**分類ルール**であり、ノイズの値域の話ではない |
-| 地形生成そのもの（`generateChunk`） | mc-worldgen | チャンクを作るにはブロックテーブルとバイオームが要る。どちらも mc-noise は知らない |
-| Minecraft 固有の密度関数の地形式 | mc-worldgen | 地形ルーター・制御点・ワールド設定を含むため |
+| バイオーム分類と気候からの純粋な地形判定 | mc-noise | `classifyMinecraftBiomeFromClimate` は気候値を、`minecraftBiomeFor` などはシード・座標・地表条件を受け取り、再利用可能な値を返す。設定済みレジストリは mc-worldgen が所有する |
+| 地形生成そのもの（`generateChunk`） | mc-worldgen | チャンク状態、ブロック配置順序、ワールド設定を変更する処理である |
+| Minecraft 固有の DensityFunction の portable なノード・評価器 | mc-noise | ワールド設定を持たない AST・境界値・評価コンテキストとして再利用できる |
+| 設定済みの DensityFunction / NoiseRouter と地形の密度式 | mc-worldgen | レジストリ、ワールド設定、地形スプライン、キャッシュの組み合わせに依存するため |
 | 地形スプライン（`OFFSET_SPLINE` 等の制御点） | mc-worldgen | 汎用評価器ではなく地形チューニングデータであり、凍結対象ではない |
+| チャンクへのブロック書き込み、カーバー、鉱石、植生、構造物 | mc-worldgen | ワールド状態・ブロック状態・配置順序を変更する生成処理である |
 | カーバー（洞窟 / 渓谷） | mc-worldgen | ノイズを**使う**側 |
 | 木の格子ジッター配置 | mc-worldgen | 同上 |
 | ライトグリッド（BFS 光伝播） | mc-worldgen（データ）/ mc-render（適用） | ノイズと無関係 |
 | ワールドシードの永続化 | mc-save | mc-noise は `NoiseSeed` を受け取るだけで、どこから来たかを知らない |
-| Minecraft 固有の DensityFunction 実装 | mc-worldgen | ワールド生成に結び付いたキャッシュ、設定済みの NoiseRouter、登録済みの地形定数などはワールド生成の契約に依存する |
 
 ### 3.1 DensityFunction の境界
 
 `mc-noise` は特定ワールドの地形式ではなく、複数のワールド実装が再利用できる
 portable な DensityFunction の代数を所有する。公開する範囲は次のとおりである:
 
-- constant / coordinate / noise / shift / shift-a / shift-b / shifted-noise / shifted-noise-2d / noise-in-range
+- constant / coordinate / noise / old-blended-noise / beardifier / shift / shift-a / shift-b / shifted-noise / shifted-noise-2d / noise-in-range
 - linear-operation / weird-scaled-sampler / end-islands / map / map-range / lerp
-- add / mul / min / max と abs / square / cube / squeeze などの単項演算
-- clamp / range-choice / y-clamped-gradient / 地形データを持たない spline
+- add / mul / min / max と abs / square / cube / squeeze / invert などの単項演算
+- clamp / range-choice / find-top-surface / y-clamped-gradient / 地形データを持たない spline
 - immutable な `minValue` / `maxValue` と `Position` ベースの評価器
 
-公式メソッドとの照合基準は Minecraft Java 1.21.1 とする。portable な `NoiseRouter` / `Climate` /
+共通する公式メソッドは Minecraft Java 1.21.1 を基本照合基準とし、1.21.8 の静的ノード一覧を監査する。
+Minecraft Java 1.21.9 で追加された `find_top_surface` も mc-noise が提供する。portable な `NoiseRouter` / `Climate` /
 `Blender` の構造と評価ヘルパは mc-noise が提供する。一方、Minecraft の公式実装にあるキャッシュ、
 設定済みの NoiseRouter、登録済みの地形定数と制御点は、ワールド設定に依存するため mc-worldgen が所有する。
 `EndIslands` は seed と座標だけで
 評価できるため、portable な DensityFunction ノードとして mc-noise が提供する。
+`old_blended_noise` は公式の係数と main / min / max octave の合成までを提供し、octave source は
+呼び出し側の callback で解決する。`beardifier` は構造物データを所有せず、評価時に
+`DensityEvaluationContext` の callback から影響値を受け取る runtime marker である。
 参照実装の 4 チャンネルから高さを出す式も、引き続きその境界の外に置く。
 
 公式 1.21.1 の `interpolated`、`flatCache`、`cache2d`、`cacheOnce`、`cacheAllInCell`、
@@ -81,9 +88,10 @@ context-aware な portable ノードとして含める。`DensityEvaluationConte
 
 `package.json` は `@nerima-games/mc-kernel` に依存し、`ChunkCoord`、`ChunkHeight`、チャンク幅の
 共有定義を `src/domain/chunk-sampling.ts` で利用する。ノイズの seed・勾配・補間ロジックは本リポジトリが
-所有する。ポータブルな 4 チャンネルのサンプル材料と DensityFunction の代数・評価器も本リポジトリが
-提供する。一方、密度関数を組み合わせた特定地形の式、その制御点データ、設定済みの NoiseRouter とキャッシュは
-`mc-worldgen` の責務として移植しない。制御点を評価する汎用スプライン処理だけは `mc-noise` が提供する。
+所有する。ポータブルな 4 チャンネルのサンプル材料、気候・バイオーム・地形列・湖・表面材質の純粋定義、
+DensityFunction の代数・評価器も本リポジトリが提供する。一方、密度関数を組み合わせた特定地形の式、
+その制御点データ、設定済みの NoiseRouter とキャッシュ、チャンクへのブロック適用は `mc-worldgen` の責務として
+移植しない。制御点を評価する汎用スプライン処理だけは `mc-noise` が提供する。
 `architecture.md` §7 を参照。
 
 ## 5. 完成条件
@@ -95,5 +103,5 @@ context-aware な portable ノードとして含める。`DensityEvaluationConte
 - カバレッジ 100% ゲート有効化
 
 mc-noise は**プレビューを持たない**。安定ライブラリ層は「操作できる成果物」を持たないので、
-plan.md §6 Step 2 の完了条件のうち「内蔵プレビューが操作可能」は適用されない。
+プレビューを要求する完了条件は適用されない。
 最初の遊べる成果物は mc-worldgen の地形プレビューである。

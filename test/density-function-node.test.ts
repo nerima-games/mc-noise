@@ -24,6 +24,7 @@ describe('DensityFunctionNode', () => {
     expect(node.clamp(-1, 1).compute({ x: 0, y: 0, z: 0 })).toBe(-1)
     expect(node.cube().compute({ x: 0, y: 0, z: 0 })).toBe(-8)
     expect(node.halfNegative().compute({ x: 0, y: 0, z: 0 })).toBe(-1)
+    expect(node.invert().compute({ x: 0, y: 0, z: 0 })).toBe(-0.5)
     expect(node.quarterNegative().compute({ x: 0, y: 0, z: 0 })).toBe(-0.5)
     expect(node.square().compute({ x: 0, y: 0, z: 0 })).toBe(4)
     expect(node.squeeze().compute({ x: 0, y: 0, z: 0 })).toBeCloseTo(-11 / 24)

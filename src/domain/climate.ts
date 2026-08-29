@@ -451,6 +451,11 @@ const distance = (parameter: ClimateParameter, targetValue: number): number => {
   return CLIMATE_ZERO_DISTANCE
 }
 
+const squaredDistance = (parameter: ClimateParameter, targetValue: number): number => {
+  const value = distance(parameter, targetValue)
+  return value * value
+}
+
 export const climateParameterDistance = (
   parameter: ClimateParameter,
   targetValue: number,
@@ -478,13 +483,13 @@ const calculateClimateParameterPointFitness = (
   parameterValue: ClimateParameterPoint,
   targetValue: ClimateTargetPoint,
 ): number =>
-  distance(parameterValue.temperature, targetValue.temperature) +
-  distance(parameterValue.humidity, targetValue.humidity) +
-  distance(parameterValue.continentalness, targetValue.continentalness) +
-  distance(parameterValue.erosion, targetValue.erosion) +
-  distance(parameterValue.depth, targetValue.depth) +
-  distance(parameterValue.weirdness, targetValue.weirdness) +
-  Math.abs(parameterValue.offset)
+  squaredDistance(parameterValue.temperature, targetValue.temperature) +
+  squaredDistance(parameterValue.humidity, targetValue.humidity) +
+  squaredDistance(parameterValue.continentalness, targetValue.continentalness) +
+  squaredDistance(parameterValue.erosion, targetValue.erosion) +
+  squaredDistance(parameterValue.depth, targetValue.depth) +
+  squaredDistance(parameterValue.weirdness, targetValue.weirdness) +
+  parameterValue.offset * parameterValue.offset
 
 export const climateParameterPointFitness = (
   pointValue: ClimateParameterPoint,

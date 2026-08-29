@@ -1,14 +1,14 @@
 # 公開 API
 
-- 出典: plan.md §3.2 + **参照実装の実コードによる検証**
+- 根拠: 現行の公開 API + **参照実装の実コードによる検証**
 - 参照実装ルート: `<reference-impl>`（以下パスはこれ相対）
 
-plan.md の API スケッチと参照実装の実装は一致しない箇所がある。
+初期 API スケッチと参照実装の実装は一致しない箇所がある。
 本書は**実コードで確認した事実**を一次資料とし、差分は理由付きで明示する。
 
 ## 1. 最重要の差分: シードは引数ではなくファクトリ
 
-plan.md §3.2 は次のように書く:
+初期 API スケッチは次のように書く:
 
 > **主要な公開API**: `noise2d/3d(seed, x, y, z)`
 
@@ -54,13 +54,12 @@ export type NoisePrimitives = Readonly<{
 
 ```typescript
 export const createNoiseField = (seed: NoiseSeed): NoiseField
-export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 ```
 
-`createNoiseField` は保存済みworld向けのlegacy 4勾配写像を維持する。
-`createIsotropicNoiseField` は `raw2d`、`noise2d`、`octave2d`、全channelへ8勾配
-isotropic kernelを一貫して適用する新規world向けAPIである。`raw3d` / `noise3d` は共通の
-3D kernelを使う。どちらを選んだかはworld metadataへ保存すること。
+`createNoiseField` は `raw2d`、`noise2d`、`octave2d`、全 channel に、軸 4 方向と
+正規化した対角 4 方向からなる canonical 2D Perlin kernel を一貫して適用する。
+`raw3d` / `noise3d` は共通の 3D kernel を使う。seed → 値の写像は versioned contract
+であり、別 kernel を選ぶための公開 API は提供しない。
 
 ## 2. 型
 
@@ -73,7 +72,7 @@ export const toUint32 = (seed: NoiseSeed): number
 ```
 
 参照実装のシードは素の `number` である（`createNoisePrimitives(seed: number)`）。
-本リポジトリでは branded にした。plan.md §3.2 が「凍結扱い」と宣言している契約に入る境界は、
+本リポジトリでは branded にした。凍結扱いとする契約に入る境界は、
 型で見えているべきだからである。
 
 uint32 への正規化（`>>> 0`）により `-1` / `4294967295` / `0xFFFFFFFF` は同じシードになる。
@@ -172,14 +171,12 @@ export const createPerlinNoise3D = (rand?: RandFn): NoiseFn3D => {
 export const PERMUTATION_SIZE = 256
 export const buildPermutation = (rand: RandFn): Uint8Array
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D
-export const createPerlinNoise2DIsotropic = (rand: RandFn): NoiseFn2D
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D
 ```
 
-`createPerlinNoise2D` は4対角勾配を使うlegacyカーネルであり、保存済みworldとの互換性のため
-seed→値を維持する。`createPerlinNoise2DIsotropic` は8つの単位勾配（軸4 + 対角4）を使う
-opt-inカーネルで、半整数座標の退化と方向バイアスを抑える。新規worldで採用する場合は、
-再生成時にも同じカーネルを選べるようカーネル識別子を保存すること。
+`createPerlinNoise2D` は 8 つの勾配（軸 4 + 正規化した対角 4）を均等に使う canonical
+kernel で、半整数座標の退化と方向バイアスを抑える。seed → 値の写像を変更する場合は
+[`docs/versioning.md`](./versioning.md) の breaking-change 手順を適用する。
 
 permutation table は Fisher-Yates で作る。参照実装 `perlin.ts:6-17`:
 
@@ -302,7 +299,6 @@ export type NoiseField = {
   readonly channel: (name: NoiseChannel) => NoiseFn2D                          // 符号付き [-1, 1]
 }
 export const createNoiseField = (seed: NoiseSeed): NoiseField
-export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 ```
 
@@ -338,7 +334,7 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 値域が `[0, 1]` である以上 0 は正当な極値であり、退化パラメータが「最も深い谷」と
 区別できないのは下流にとって危険だからである。`design-notes.md` に記録。
 
-## 8. plan.md には無いが必要だったもの
+## 8. 初期 API スケッチには無かったが必要だったもの
 
 | 追加 | 理由 |
 | --- | --- |
@@ -372,12 +368,36 @@ jaggedness の 4 配列を 16×16 で返す。これは地形の式そのもの�
 | `sampleNoise3DInterpolatedGrid` | `src/domain/sampling-3d-interpolation.ts`（`sampling-3d.ts` から再公開） | 疎な格子を三線形補間し、評価回数を抑える |
 | `sampleNoise2DChunk` / `sampleNoise3DChunk` | `src/domain/chunk-sampling.ts` | `mc-kernel` の `ChunkCoord` / `ChunkHeight` をサンプル領域へ変換 |
 
+### Minecraft の気候・バイオーム・地形定義
+
+チャンク状態を変更しない Minecraft の純粋な定義を公開する。
+
+| API | 実装 | 契約 |
+| --- | --- | --- |
+| `MINECRAFT_BIOMES` / `MINECRAFT_CHUNK_BIOMES` / `MINECRAFT_BLOCK` | `src/domain/minecraft-biome.ts` | 公式寄りのバイオーム、チャンク用バイオーム、ブロック ID の静的定義 |
+| `classifyMinecraftBiome` | 同上 | 気候サンプルを直接分類する既定のバイオーム規則 |
+| `classifyMinecraftBiomeFromClimate` / `refineMinecraftBeachBiome` / `minecraftPeaksAndValleysFromWeirdness` | `src/domain/minecraft-biome-classifier.ts` / `src/domain/transforms.ts` | 気候値、河川、山地、海岸の分岐を決定論的に評価 |
+| `minecraftContinentalnessAt` / `minecraftSurfaceHeightAt` / `minecraftClimateAt` | `src/domain/minecraft-terrain.ts` | シードと X/Z から大陸性、地表高、気候をサンプル |
+| `minecraftSurfaceBiomeAt` / `minecraftBiomeFor` | 同上 | 海面・海岸の上書きを含む地表バイオームを評価 |
+| `minecraftComputeLakeBasin` / `minecraftResolveSurfaceY` / `minecraftDetermineWaterLevel` | `src/domain/minecraft-lakes.ts` | 湖盆、地表 Y、水面 Y を副作用なしで判定 |
+| `minecraftShouldFreezeWaterSurface` / `minecraftIsLakeShoreColumn` | 同上 | 凍結・湖岸の判定だけを返す。ブロック配置は行わない |
+| `resolveMinecraftSurfaceMaterial` | `src/domain/minecraft-surface.ts` | バイオームと水面条件から表面材質を返す。`BlockId` は `mc-kernel` の型を使う |
+
+`minecraftBiomeFor` は `MinecraftBiomeQuery` の名前付きオブジェクト（`seed`、`wx`、`wz`、`surfaceY`、任意の `levels`）を受け取る。
+| `minecraftTerrainColumnAt` | `src/domain/minecraft-terrain-column.ts` | 上記の値を 1 列の不変な評価結果へ合成 |
+
+これらはシード、座標、気候・水面の入力から値またはレコードを返し、チャンク・ブロック・構造物を
+変更しない。`minecraftShouldFreezeWaterSurface` の結果を使った氷・雪の配置、カーバー、鉱石、植生、
+構造物、設定済み NoiseRouter の組み立ては `mc-worldgen` が所有する。
+
 ### Simplex と DensityFunction
 
 | API | 実装 | 契約 |
 | --- | --- | --- |
 | `createSimplexNoise2D` / `createSimplexNoise3D` | `src/domain/simplex.ts` | Minecraft の初期化順に従うシード付き 2D / 3D Simplex ノイズ。原点は既定でシードから生成し、明示値は有限値を検証 |
 | `densityConstant` / `densityCoordinate` / `densityNoise` | `src/domain/density-function.ts` | immutable な定数・座標・ノイズノード |
+| `createDensityOldBlendedNoiseSource` / `densityOldBlendedNoise` | `src/domain/density-function.ts` / `src/domain/old-blended-noise.ts` | 公式 `old_blended_noise` の係数と main / min / max octave 合成。octave source の解決は callback 境界 |
+| `densityBeardifier` / `beardifier` | `src/domain/density-function.ts` / `src/domain/density-function-context.ts` | 構造物の影響値を context callback から受け取る runtime marker。構造物データは保持しない |
 | `densityShift` / `densityShiftA` / `densityShiftB` / `densityShiftedNoise` | `src/domain/density-function.ts` | 公式の Shift 系を含むシフト値付き portable ノイズノード。Shift / ShiftA / ShiftB は入力座標を 1/4 にして結果を 4 倍する |
 | `densityShiftedNoise2D` / `densityNoiseInRange` / `densityMappedNoise` | `src/domain/density-function.ts` | 2D shifted noise（Y シフトなし）と、ノイズ値を指定範囲へ写像する公式 overload 相当 |
 | `densityLinearOperation` | `src/domain/density-function.ts` | 公式の加算・乗算による線形 DensityFunction ノード |
@@ -385,12 +405,15 @@ jaggedness の 4 配列を 16×16 で返す。これは地形の式そのもの�
 | `densityEndIslands` | `src/domain/density-function.ts` | seed と signed 32-bit X/Z 座標から End Islands の密度を評価するノード |
 | `densityMap` / `densityMapRange` / `densityLerp` | `src/domain/density-function.ts` | 公式の map・mapRange・lerp に対応する純粋な写像・範囲変換・線形補間 |
 | `densityAdd` / `densityMul` / `densityMin` / `densityMax` | `src/domain/density-function.ts` | 二項演算と保守的な境界値 |
-| `densityAbs` / `densitySquare` / `densityCube` / `densitySqueeze` など | `src/domain/density-function.ts` | 単項演算と保守的な境界値 |
+| `densityAbs` / `densitySquare` / `densityCube` / `densitySqueeze` / `densityInvert` など | `src/domain/density-function.ts` | 単項演算と保守的な境界値 |
+| `densityFindTopSurface` | `src/domain/density-function.ts` | 公式の `find_top_surface`。`upperBound` を `cellHeight` に合わせて切り下げ、`density > 0` の最上段を走査し、見つからなければ `lowerBound` |
 | `densityClamp` / `densityRangeChoice` / `densityYClampedGradient` / `densitySpline` | `src/domain/density-function-spatial.ts` | 空間分岐・勾配・汎用スプラインノード |
 | `evaluateDensityFunction` / `densityBounds` | `src/domain/density-function-evaluator.ts` / `density-function-bounds.ts` | `mc-kernel` の `Position` を受け、値と `[minValue, maxValue]` を返す |
+| `encodeDensityFunction` / `decodeDensityFunction` / `parseDensityFunction` | `src/domain/density-function-codec.ts` | source registry callback を受け取る、portable な codec 表現 |
 
-これらは Minecraft Java 1.21.1 の `DensityFunctions` を照合基準にした、ワールド固有の設定を
-含まない portable API である。portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価
+これらは Minecraft Java 1.21.1 の共通 `DensityFunctions` を基本照合基準にし、1.21.8 の静的
+ノード一覧を監査し、1.21.9 で追加された `find_top_surface` を含めた、ワールド固有の設定を含まない
+portable API である。portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価
 ヘルパも公開する。`interpolated`、`flatCache`、`cache2d`、`cacheOnce`、`cacheAllInCell`、
 `blendDensity`、`blendAlpha`、`blendOffset` は、DensityFunction の context-aware なノードとして
 `DensityEvaluationContext` / `DensityEvaluationSession` とともに公開する。セル幅・高さと blend
@@ -398,3 +421,12 @@ callback は呼び出し側が context に与える。設定済みの NoiseRoute
 地形定数・制御点などワールド固有の統合は mc-worldgen の責務である。`mapFromUnitTo` と
 `mapRange` は公式では private な補助ファクトリであり、公開 API では `densityMapRange` が
 その範囲変換を担う。
+
+`old_blended_noise` の係数はノードに保持するが、Minecraft の NoiseConfig / noise registry
+にある octave source の解決は mc-worldgen の責務である。`beardifier` も同様に、構造物の
+beardifying 処理を持たず、評価時の context callback を通じて値だけを受け取る。
+
+`DensityFunctionEncoded` と `stringifyDensityFunction` が扱う JSON-like 表現は、パッケージ内で
+DensityFunction の構造を保存・転送するための portable codec であり、Mojang の canonical resource
+JSON や noise registry の解決器ではない。Minecraft の resource / registry 形式への変換と source ID
+の解決は、ワールド設定を所有する mc-worldgen 側で行う。

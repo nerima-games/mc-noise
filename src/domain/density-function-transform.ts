@@ -6,6 +6,7 @@ import {
   densityCacheAllInCell,
   densityCacheOnce,
   densityClamp,
+  densityFindTopSurface,
   densityFlatCache,
   densityInterpolated,
   densityLinearOperation,
@@ -37,6 +38,7 @@ type OperationDensityFunction = Extract<
 type BranchDensityFunction = Extract<
   DensityFunction,
   | { readonly kind: 'clamp' }
+  | { readonly kind: 'find-top-surface' }
   | { readonly kind: 'range-choice' }
   | { readonly kind: 'spline' }
 >
@@ -105,6 +107,14 @@ const mapBranchChildren = (
       visit(density.outOfRange),
     )
   }
+  if (density.kind === 'find-top-surface') {
+    return densityFindTopSurface(
+      visit(density.density),
+      visit(density.upperBound),
+      density.lowerBound,
+      density.cellHeight,
+    )
+  }
   return densitySpline(visit(density.input), density.spline)
 }
 
@@ -151,6 +161,7 @@ const mapChildren = (
     case 'unary':
       return mapOperationChildren(density, visit)
     case 'clamp':
+    case 'find-top-surface':
     case 'range-choice':
     case 'spline':
       return mapBranchChildren(density, visit)

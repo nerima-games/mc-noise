@@ -13,6 +13,7 @@ type MutableDensityEvaluationContext = {
   blendDensity?: NonNullable<DensityEvaluationContext['blendDensity']>
   blendAlpha?: NonNullable<DensityEvaluationContext['blendAlpha']>
   blendOffset?: NonNullable<DensityEvaluationContext['blendOffset']>
+  beardifier?: NonNullable<DensityEvaluationContext['beardifier']>
 }
 
 const requireCellSize = (name: string, value: number): number => {
@@ -35,6 +36,24 @@ const requireOptionalFunction = (name: string, value: unknown): void => {
   }
 }
 
+const assignOptionalContextCallbacks = (
+  context: MutableDensityEvaluationContext,
+  options: DensityEvaluationContextOptions,
+): void => {
+  if (typeof options.beardifier !== 'undefined') {
+    context.beardifier = options.beardifier
+  }
+  if (typeof options.blendAlpha !== 'undefined') {
+    context.blendAlpha = options.blendAlpha
+  }
+  if (typeof options.blendDensity !== 'undefined') {
+    context.blendDensity = options.blendDensity
+  }
+  if (typeof options.blendOffset !== 'undefined') {
+    context.blendOffset = options.blendOffset
+  }
+}
+
 export const requireDensityEvaluationContext = (
   context: DensityEvaluationContext,
 ): DensityEvaluationContext => {
@@ -46,6 +65,7 @@ export const requireDensityEvaluationContext = (
   requireOptionalFunction('context.blendDensity', context.blendDensity)
   requireOptionalFunction('context.blendAlpha', context.blendAlpha)
   requireOptionalFunction('context.blendOffset', context.blendOffset)
+  requireOptionalFunction('context.beardifier', context.beardifier)
   return context
 }
 
@@ -62,15 +82,7 @@ export const createDensityEvaluationContext = (
       options.cellWidth ?? DEFAULT_CELL_SIZE,
     ),
   }
-  if (typeof options.blendDensity !== 'undefined') {
-    context.blendDensity = options.blendDensity
-  }
-  if (typeof options.blendAlpha !== 'undefined') {
-    context.blendAlpha = options.blendAlpha
-  }
-  if (typeof options.blendOffset !== 'undefined') {
-    context.blendOffset = options.blendOffset
-  }
+  assignOptionalContextCallbacks(context, options)
   requireDensityEvaluationContext(context)
   return Object.freeze(context)
 }

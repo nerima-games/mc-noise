@@ -2,7 +2,7 @@
  * bench-harness.ts — measurement, medians, and baseline comparison.
  *
  * Ported from the reference implementation's `scripts/bench-meshing.ts`,
- * `bench-light.ts` and `bench-terrain.ts`, which were hand-rolled around
+ * `bench-light.ts`, which were hand-rolled around
  * `node:perf_hooks` and never wired into CI or `package.json`. The methodology
  * is theirs and is deliberately not reinvented: **warm up, then take the median
  * of several timed runs**. The reference used 7 runs for meshing and 9 for
@@ -19,10 +19,11 @@
  *
  *   GUARD (`guards` in the baseline) — an A/B ratio between two implementations
  *     of the same computation, measured in the SAME process, on the SAME data,
- *     within milliseconds of each other. The machine cancels out exactly. A
- *     guard is what protects a plan.md §5.2 performance exception: it measures
- *     the fast spelling against the idiomatic spelling that keeps getting
- *     proposed, and it fails when the gap closes. This is the strong number.
+ *     within the same interleaved sample window. This reduces shared machine
+ *     noise, but does not make a timing ratio machine-independent. A guard is
+ *     what protects the performance exception documented in docs/design-notes.md N-1: it measures the fast
+ *     spelling against the idiomatic spelling that keeps getting proposed, and
+ *     it fails when the gap closes. This is the strong number.
  *
  *   WORKLOAD (`workloads` in the baseline) — the real end-to-end cost, divided
  *     by a `yardstick` workload measured in the same run. The yardstick is a
@@ -38,14 +39,12 @@
  * `performance.now()` and the clock ban
  * ---------------------------------------------------------------------------
  *
- * `scripts/check-dependency-whitelist.ts` rule 7 bans `Date.now()`,
- * `new Date()` and `performance.now()` repository-wide, and it scans
- * `scripts/`. The ban exists so that *simulation* is deterministic and
- * replayable; a benchmark harness is the one other place that must read a real
- * clock, for the same reason a clock adapter must. The read is confined to the
- * single `now()` function below and carries the documented escape-hatch marker,
- * so `grep mc-kernel-allow-time-source` still enumerates every raw clock read
- * in the repository — which is the property the marker exists to preserve.
+ * Simulation code must be deterministic and replayable; a benchmark harness is
+ * the one place that must read a real clock, for the same reason a clock
+ * adapter must. The read is confined to the single `now()` function below and
+ * carries the documented escape-hatch marker, so
+ * `grep mc-kernel-allow-time-source` still enumerates every raw clock read in
+ * the repository.
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
@@ -56,7 +55,7 @@ const now = (): number => performance.now() // mc-kernel-allow-time-source: benc
 /**
  * Chunks meshed on initial load at renderDistance=4, i.e. (2*4+1)^2.
  *
- * The reference's `bench-meshing.ts` and `bench-terrain.ts` both multiply their
+ * The reference's `bench-meshing.ts` and terrain benchmark both multiply their
  * per-chunk median by this to state a load-time budget, and that framing is
  * kept: a per-chunk figure is hard to feel, a load-time figure is not.
  */
@@ -102,6 +101,123 @@ export const measure = (run: () => void, options: MeasureOptions): number => {
 }
 
 /**
+ * Median milliseconds per call for several implementations measured together.
+ *
+ * Every timed sample runs each implementation once, rotating the first slot
+ * so no implementation always inherits the same CPU, JIT, or scheduler state.
+ * This keeps comparative guards in the same measurement window instead of
+ * comparing independent blocks that may have run under different load.
+ */
+export const measureInterleaved = (
+  implementations: ReadonlyArray<() => void>,
+  options: MeasureOptions,
+): ReadonlyArray<number> => {
+  if (implementations.length === 0) {
+    throw new RangeError('at least one implementation is required')
+  }
+
+  for (let warmup = 0; warmup < options.warmupIterations; warmup += 1) {
+    const first = warmup % implementations.length
+    for (let offset = 0; offset < implementations.length; offset += 1) {
+      implementations[(first + offset) % implementations.length]?.()
+    }
+  }
+
+  const samples = implementations.map(() => [] as Array<number>)
+  for (let sample = 0; sample < options.runs; sample += 1) {
+    const first = sample % implementations.length
+    for (let offset = 0; offset < implementations.length; offset += 1) {
+      const implementation = (first + offset) % implementations.length
+      const started = now()
+      for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+        implementations[implementation]?.()
+      }
+      samples[implementation]?.push((now() - started) / options.iterations)
+    }
+  }
+
+  return samples.map(median)
+}
+
+const timeBatch = (run: () => void, iterations: number): number => {
+  const started = now()
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    run()
+  }
+  return (now() - started) / iterations
+}
+
+export type PairedMeasurement = {
+  readonly fastMs: number
+  readonly slowMs: number
+  readonly ratio: number
+}
+
+/**
+ * Measures a workload against a yardstick with the two batches adjacent.
+ *
+ * The options may use different iteration counts because workloads have
+ * different costs, but they must have the same number of samples. The first
+ * side alternates on every sample and the ratio is taken per sample before its
+ * median, so a temporary frequency or scheduler change affects both sides of
+ * that sample instead of one independent timing block.
+ */
+export const measurePaired = (
+  fast: () => void,
+  slow: () => void,
+  fastOptions: MeasureOptions,
+  slowOptions: MeasureOptions,
+): PairedMeasurement => {
+  if (fastOptions.runs !== slowOptions.runs) {
+    throw new RangeError('paired measurements require the same number of runs')
+  }
+
+  const warmupRuns = Math.max(fastOptions.warmupIterations, slowOptions.warmupIterations)
+  for (let warmup = 0; warmup < warmupRuns; warmup += 1) {
+    const runFast = warmup % 2 === 0
+    if (runFast) {
+      if (warmup < fastOptions.warmupIterations) {
+        fast()
+      }
+      if (warmup < slowOptions.warmupIterations) {
+        slow()
+      }
+    } else {
+      if (warmup < slowOptions.warmupIterations) {
+        slow()
+      }
+      if (warmup < fastOptions.warmupIterations) {
+        fast()
+      }
+    }
+  }
+
+  const fastSamples: Array<number> = []
+  const slowSamples: Array<number> = []
+  const ratios: Array<number> = []
+  for (let sample = 0; sample < fastOptions.runs; sample += 1) {
+    const runFast = sample % 2 === 0
+    const firstMs = runFast
+      ? timeBatch(fast, fastOptions.iterations)
+      : timeBatch(slow, slowOptions.iterations)
+    const secondMs = runFast
+      ? timeBatch(slow, slowOptions.iterations)
+      : timeBatch(fast, fastOptions.iterations)
+    const fastMs = runFast ? firstMs : secondMs
+    const slowMs = runFast ? secondMs : firstMs
+    fastSamples.push(fastMs)
+    slowSamples.push(slowMs)
+    ratios.push(slowMs / fastMs)
+  }
+
+  return {
+    fastMs: median(fastSamples),
+    slowMs: median(slowSamples),
+    ratio: median(ratios),
+  }
+}
+
+/**
  * A measured A/B pair protecting one documented performance exception.
  *
  * `fast` is the spelling the repository uses. `slow` is the spelling that gets
@@ -119,9 +235,8 @@ export type Guard = {
    * Overrides `DEFAULT_GUARD_TOLERANCE` for this guard alone.
    *
    * Used by the shipped-vs-frozen gates, which compare a function against a
-   * copy of itself and so are far quieter than the price-list guards (5-6%
-   * spread against up to 17%). A quieter measurement can afford — and should
-   * carry — a tighter threshold, because it is the one that has to fire.
+   * frozen copy of itself. The primary guard intentionally carries a tighter
+   * threshold; its measurement is still sensitive to the host and JIT.
    */
   readonly tolerance?: number | undefined
 }
@@ -131,6 +246,8 @@ export const guardRatio = (guard: Guard): number => guard.slowMs / guard.fastMs
 export type Workload = {
   readonly name: string
   readonly msPerUnit: number
+  /** Paired workload/yardstick ratio, when the caller measured one. */
+  readonly ratio?: number | undefined
   /** Free-text description of one unit, e.g. `chunk`. */
   readonly unit: string
   /** Extra context printed after the timing, e.g. a quad count. */
@@ -151,14 +268,10 @@ export type Baseline = {
  * How far a ratio may drift before the run fails. Guards and workloads get
  * different numbers, because they are different kinds of measurement.
  *
- * GUARDS are process-internal A/B pairs over identical data, so their noise is
- * small: measured spread across five whole-benchmark reruns is 5-6% for each
- * repository's primary shipped-vs-frozen gate and at worst 17% for the
- * comparative price-list guards. 1.3 means a guard fails when its ratio falls to
- * 77% of baseline, which is roughly four times the worst observed noise and
- * still tight enough to catch the CHEAPEST rewrite either repository documents
- * (`effect`'s `Array.reduce`, measured at 1.31x the imperative octave loop —
- * swapping it in drops that gate to 0.64 of baseline, comfortably outside 0.77).
+ * GUARDS are interleaved A/B measurements over identical data. 1.3 means a
+ * guard fails when its ratio falls to 77% of baseline; that is deliberately
+ * conservative because wall-clock timing remains sensitive to JIT and host
+ * load even after interleaving.
  *
  * WORKLOADS are divided by a yardstick that only approximates the workload's
  * memory/ALU mix, so they carry real cross-machine error on top of run-to-run
@@ -183,12 +296,10 @@ export const DEFAULT_WORKLOAD_TOLERANCE = 2
 /**
  * Tolerance for the shipped-vs-frozen gates specifically (`Guard.tolerance`).
  *
- * Those compare a shipped function against a frozen copy of its own current
- * shape, so their spread is 5-6% where the price-list guards reach 17%. 1.15
- * gives them a threshold of 0.87 of baseline against ~2.5% worst-case observed
- * drift, and it is what makes the cheapest documented rewrite fail: fold-ifying
- * `octaveNoise2D` with `effect`'s `Array.reduce` puts that gate at 0.79 of
- * baseline, which passes at 1.3 and fails at 1.15.
+ * The primary guard compares shipped code with a frozen copy of its current
+ * shape. Keep this threshold stricter than the default so a rewrite that also
+ * changes the shipped implementation cannot hide behind a moving comparison;
+ * do not weaken it to accommodate a noisy run.
  */
 export const SHIPPED_VS_FROZEN_TOLERANCE = 1.15
 
@@ -228,7 +339,7 @@ export const checkWorkloads = (
   tolerance: number,
 ): ReadonlyArray<CheckResult> =>
   workloads.map((workload) => {
-    const observed = workload.msPerUnit / yardstickMs
+    const observed = workload.ratio ?? workload.msPerUnit / yardstickMs
     const recorded = baseline?.workloads[workload.name]
     if (recorded === undefined) {
       return { label: workload.name, kind: 'workload' as const, observed, baseline: undefined, status: 'new' as const }

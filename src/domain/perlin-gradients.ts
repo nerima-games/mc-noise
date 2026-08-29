@@ -1,27 +1,7 @@
 import { INVERSE_SQRT2 } from './perlin-constants.js'
 
-/** `gradient2d` selects one of 4 diagonal gradients from the hash's low 2 bits. */
-const GRADIENT_2D_MASK = 3
-const GRADIENT_2D_CASE_POSITIVE_POSITIVE = 0
-const GRADIENT_2D_CASE_NEGATIVE_POSITIVE = 1
-const GRADIENT_2D_CASE_POSITIVE_NEGATIVE = 2
-
-/** 2D gradient dot product, selected by the low bits of the hash. */
-export const gradient2d = (hash: number, x: number, z: number): number => {
-  switch (hash & GRADIENT_2D_MASK) {
-    case GRADIENT_2D_CASE_POSITIVE_POSITIVE:
-      return x + z
-    case GRADIENT_2D_CASE_NEGATIVE_POSITIVE:
-      return -x + z
-    case GRADIENT_2D_CASE_POSITIVE_NEGATIVE:
-      return x - z
-    default:
-      return -x - z
-  }
-}
-
-/** `gradient2dIsotropic` selects one of 8 unit gradients from the hash's low 3 bits. */
-const GRADIENT_ISOTROPIC_MASK = 7
+/** The canonical 2D kernel selects one of 8 unit gradients from the hash's low 3 bits. */
+const GRADIENT_2D_MASK = 7
 const GRADIENT_AXIS_POSITIVE_X = 0
 const GRADIENT_AXIS_NEGATIVE_X = 1
 const GRADIENT_AXIS_POSITIVE_Z = 2
@@ -31,8 +11,8 @@ const GRADIENT_DIAGONAL_NEGATIVE_POSITIVE = 5
 const GRADIENT_DIAGONAL_POSITIVE_NEGATIVE = 6
 
 /** Unit-length axis and diagonal gradients, selected uniformly by three hash bits. */
-export const gradient2dIsotropic = (hash: number, x: number, z: number): number => {
-  switch (hash & GRADIENT_ISOTROPIC_MASK) {
+export const gradient2d = (hash: number, x: number, z: number): number => {
+  switch (hash & GRADIENT_2D_MASK) {
     case GRADIENT_AXIS_POSITIVE_X:
       return x
     case GRADIENT_AXIS_NEGATIVE_X:

@@ -8,7 +8,7 @@
  * Why the seed is branded
  * ---------------------------------------------------------------------------
  *
- * plan.md §3.2 declares the seed -> value interface FROZEN: changing it changes
+ * docs/versioning.md §5 declares the seed -> value interface FROZEN: changing it changes
  * the terrain of every world that has ever been generated, which is a
  * save-breaking change disguised as a refactor. A branded `NoiseSeed` makes the
  * boundary at which that contract is entered visible in the type system —

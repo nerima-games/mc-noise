@@ -22,6 +22,7 @@ import type {
   DensityCacheOnce,
   DensityCoordinateAxis,
   DensityCoordinateOptions,
+  DensityFindTopSurface,
   DensityFlatCache,
   DensityFunction,
   DensityFunctionValue,
@@ -31,6 +32,8 @@ import type {
   DensityNoiseInRangeOptions,
   DensityNoiseOptions,
   DensityNoiseSource,
+  DensityOldBlendedNoiseOptions,
+  DensityOldBlendedNoiseSource,
   DensityRarityValueMapper,
   DensityShiftedNoise2DOptions,
   DensityShiftedNoise2DShifts,
@@ -45,6 +48,7 @@ import {
 import {
   boundsForBinary,
   boundsForCoordinate,
+  boundsForFindTopSurface,
   boundsForLinearOperation,
   boundsForNoise,
   boundsForScaledNoise,
@@ -58,9 +62,13 @@ import {
   densitySpline,
   densityYClampedGradient,
 } from './density-function-spatial.js'
+import {
+  requireFiniteNumber,
+  requirePositiveInteger,
+  requireSafeInteger,
+} from './number-validation.js'
 import type { NoiseFn3D } from './perlin.js'
 import { createSpline } from './spline.js'
-import { requireFiniteNumber } from './number-validation.js'
 
 type NoiseParameters = Readonly<{
   readonly xzScale: number
@@ -131,6 +139,31 @@ const normalizeNoiseSource = (source: DensityNoiseSource): DensityNoiseSource =>
   })
 }
 
+const normalizeOldBlendedNoiseSource = (
+  source: DensityOldBlendedNoiseSource,
+): DensityOldBlendedNoiseSource => {
+  if (source === null || typeof source !== 'object') {
+    throw new TypeError('old blended noise source must be an object')
+  }
+  if (typeof source.mainNoise !== 'function') {
+    throw new TypeError('old blended noise mainNoise must be a function')
+  }
+  if (typeof source.minLimitNoise !== 'function') {
+    throw new TypeError('old blended noise minLimitNoise must be a function')
+  }
+  if (typeof source.maxLimitNoise !== 'function') {
+    throw new TypeError('old blended noise maxLimitNoise must be a function')
+  }
+  const bounds = createDensityBounds(source.minValue, source.maxValue)
+  return Object.freeze({
+    mainNoise: source.mainNoise,
+    maxLimitNoise: source.maxLimitNoise,
+    maxValue: bounds.maxValue,
+    minLimitNoise: source.minLimitNoise,
+    minValue: bounds.minValue,
+  })
+}
+
 const freezeDensity = <DensityNode extends DensityFunction>(density: DensityNode): DensityNode =>
   Object.freeze(density)
 
@@ -146,6 +179,26 @@ export const createDensityNoiseSource = (
     maxValue: normalizedBounds.maxValue,
     minValue: normalizedBounds.minValue,
     sample,
+  })
+}
+
+export const createDensityOldBlendedNoiseSource = (
+  source: Pick<
+    DensityOldBlendedNoiseSource,
+    'mainNoise' | 'minLimitNoise' | 'maxLimitNoise'
+  >,
+  bounds: DensityBounds,
+): DensityOldBlendedNoiseSource => {
+  if (source === null || typeof source !== 'object') {
+    throw new TypeError('old blended noise source must be an object')
+  }
+  const normalizedBounds = createDensityBounds(bounds.minValue, bounds.maxValue)
+  return normalizeOldBlendedNoiseSource({
+    mainNoise: source.mainNoise,
+    maxLimitNoise: source.maxLimitNoise,
+    maxValue: normalizedBounds.maxValue,
+    minLimitNoise: source.minLimitNoise,
+    minValue: normalizedBounds.minValue,
   })
 }
 
@@ -221,6 +274,37 @@ export const densityNoise = (
     yScale: parameters.yScale,
   })
 }
+
+export const densityOldBlendedNoise = (
+  source: DensityOldBlendedNoiseSource,
+  options: DensityOldBlendedNoiseOptions,
+): DensityFunction => {
+  if (options === null || typeof options !== 'object') {
+    throw new TypeError('old blended noise options must be an object')
+  }
+  const normalizedSource = normalizeOldBlendedNoiseSource(source)
+  return freezeDensity({
+    kind: 'old-blended-noise',
+    maxValue: normalizedSource.maxValue,
+    minValue: normalizedSource.minValue,
+    smearScaleMultiplier: requireFiniteNumber(
+      'smearScaleMultiplier',
+      options.smearScaleMultiplier,
+    ),
+    source: normalizedSource,
+    xzFactor: requireFiniteNumber('xzFactor', options.xzFactor),
+    xzScale: requireFiniteNumber('xzScale', options.xzScale),
+    yFactor: requireFiniteNumber('yFactor', options.yFactor),
+    yScale: requireFiniteNumber('yScale', options.yScale),
+  })
+}
+
+export const densityBeardifier = (): DensityFunction =>
+  freezeDensity({
+    kind: 'beardifier',
+    maxValue: DENSITY_INFINITY,
+    minValue: DENSITY_NEGATIVE_INFINITY,
+  })
 
 export const densityShift = (source: DensityNoiseSource): DensityFunction => {
   const normalizedSource = normalizeNoiseSource(source)
@@ -512,6 +596,26 @@ const densityContextBounds = (input: DensityFunction): DensityBounds =>
 const densityUnboundedBounds = (): DensityBounds =>
   createDensityBounds(DENSITY_NEGATIVE_INFINITY, DENSITY_INFINITY)
 
+export const densityFindTopSurface = (
+  density: DensityFunction,
+  upperBound: DensityFunction,
+  lowerBound: number,
+  cellHeight: number,
+): DensityFindTopSurface => {
+  const normalizedLowerBound = requireSafeInteger('lowerBound', lowerBound)
+  const normalizedCellHeight = requirePositiveInteger('cellHeight', cellHeight)
+  const bounds = boundsForFindTopSurface(densityBounds(upperBound), normalizedLowerBound)
+  return freezeDensity({
+    cellHeight: normalizedCellHeight,
+    density,
+    kind: 'find-top-surface',
+    lowerBound: normalizedLowerBound,
+    maxValue: bounds.maxValue,
+    minValue: bounds.minValue,
+    upperBound,
+  })
+}
+
 export const densityInterpolated = (input: DensityFunction): DensityInterpolated => {
   const bounds = densityContextBounds(input)
   return freezeDensity({
@@ -627,6 +731,8 @@ export const min = densityMin
 export const max = densityMax
 export const weirdScaledSampler = densityWeirdScaledSampler
 export const endIslands = densityEndIslands
+export const oldBlendedNoise = densityOldBlendedNoise
+export const beardifier = densityBeardifier
 export const lerp = densityLerp
 
 export const DensityMappedType = Object.freeze({
@@ -671,6 +777,8 @@ export const mappedNoise = densityMappedNoise
 
 export const spline = (definition: DensitySplineInput): DensityFunction =>
   densitySpline(definition.coordinate, definition.spline)
+
+export const findTopSurface = densityFindTopSurface
 
 export const yClampedGradient = densityYClampedGradient
 

@@ -11,8 +11,8 @@
   // the `no-restricted-imports` Tier1 dependency rule below — was silently
   // never enforced by `pnpm lint` or CI. This predated the org-standard
   // migration and was not specific to mc-noise; every repository using the
-  // `oxlint.json` filename convention (see the PACKAGE_STANDARD.md /
-  // DEPENDENCY_POLICY.md examples, which showed `oxlint.json`) was affected.
+  // `oxlint.json` filename convention used by older package guidance was
+  // affected.
   //
   // Renaming to `.oxlintrc.json` alone was not sufficient. Two more fixes were
   // required, verified empirically against the Nix-provided `oxlint@1.75.0`, before
@@ -159,7 +159,7 @@
     // terms of uint32 wrapping arithmetic: `>>> 0`, `^`, `| 1`, `& 255`. Those
     // are not a micro-optimisation, they are the specification of the function.
     // Rewriting them with arithmetic operators would change the values the seed
-    // produces, and the seed -> value mapping is a frozen contract (plan.md §3.2).
+    // produces, and the seed -> value mapping is a frozen contract (docs/versioning.md §5).
     "no-bitwise": "off",
 
     // Restriction
@@ -174,7 +174,7 @@
     // `{"name"/"regex"}` object passed as its own array element (what this
     // file previously had for the `effect` entry) is silently not registered.
     // Within `patterns`, use `group` (glob, with `!` negation for the
-    // mc-kernel exemption), not `regex`. DEPENDENCY_POLICY.md's Tier1 example
+    // mc-kernel exemption), not `regex`. The dependency guidance's Tier1 example
     // uses `regex`, but oxlint 1.75.0 (the Nix-provided version)
     // silently does not match against a `regex`-only pattern — verified
     // empirically: it produces zero diagnostics for a matching import.
@@ -196,7 +196,7 @@
         "patterns": [
           {
             "group": ["@nerima-games/*", "!@nerima-games/mc-kernel"],
-            "message": "mc-noise is a Tier1 library (DEPENDENCY_POLICY.md) and must not depend on any other @nerima-games/* package. mc-kernel is universally importable and exempt."
+            "message": "mc-noise is a Tier1 library and must not depend on any other @nerima-games/* package. mc-kernel is universally importable and exempt."
           }
         ]
       }

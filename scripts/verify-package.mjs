@@ -41,10 +41,10 @@ try {
   if (typeof runtime.createSimplexNoise2D !== 'function' || typeof runtime.createSimplexNoise3D !== 'function') {
     throw new Error('dist/index.js does not expose the Simplex API')
   }
-  if (typeof runtime.densityConstant !== 'function' || typeof runtime.densityShiftA !== 'function' || typeof runtime.densityShiftB !== 'function' || typeof runtime.densityMappedNoise !== 'function' || typeof runtime.evaluateDensityFunction !== 'function') {
+  if (typeof runtime.densityConstant !== 'function' || typeof runtime.densityInvert !== 'function' || typeof runtime.densityFindTopSurface !== 'function' || typeof runtime.densityShiftA !== 'function' || typeof runtime.densityShiftB !== 'function' || typeof runtime.densityMappedNoise !== 'function' || typeof runtime.createDensityOldBlendedNoiseSource !== 'function' || typeof runtime.densityOldBlendedNoise !== 'function' || typeof runtime.densityBeardifier !== 'function' || typeof runtime.evaluateDensityFunction !== 'function') {
     throw new Error('dist/index.js does not expose the DensityFunction API')
   }
-  if (typeof runtime.zero !== 'function' || typeof runtime.map !== 'function' || typeof runtime.mappedNoise !== 'function' || typeof runtime.shiftedNoise2d !== 'function' || typeof runtime.spline !== 'function') {
+  if (typeof runtime.zero !== 'function' || typeof runtime.map !== 'function' || typeof runtime.mappedNoise !== 'function' || typeof runtime.shiftedNoise2d !== 'function' || typeof runtime.oldBlendedNoise !== 'function' || typeof runtime.beardifier !== 'function' || typeof runtime.findTopSurface !== 'function' || typeof runtime.spline !== 'function') {
     throw new Error('dist/index.js does not expose the official DensityFunctions factories')
   }
   if (runtime.DensityMappedType?.ABS !== 'ABS' || runtime.DensityMappedType?.SQUEEZE !== 'SQUEEZE') {
@@ -85,6 +85,14 @@ try {
   if (runtime.evaluateDensityFunction(density, { x: 0, y: 0, z: 0 }) !== 3) {
     throw new Error('dist/index.js DensityFunction API returned an invalid sample')
   }
+  const invertedDensity = runtime.densityInvert(runtime.densityConstant(2))
+  if (runtime.evaluateDensityFunction(invertedDensity, { x: 0, y: 0, z: 0 }) !== 0.5) {
+    throw new Error('dist/index.js densityInvert returned an invalid sample')
+  }
+  const topSurface = runtime.densityFindTopSurface(runtime.densityConstant(1), runtime.densityConstant(4), -4, 4)
+  if (runtime.evaluateDensityFunction(topSurface, { x: 0, y: 0, z: 0 }) !== 4) {
+    throw new Error('dist/index.js densityFindTopSurface returned an invalid sample')
+  }
   const shiftSource = {
     maxValue: 10,
     minValue: -10,
@@ -100,19 +108,43 @@ try {
   if (runtime.evaluateDensityFunction(mappedNoise, shiftPosition) !== 14) {
     throw new Error('dist/index.js mappedNoise returned an invalid sample')
   }
+  const oldBlendedSource = runtime.createDensityOldBlendedNoiseSource(
+    {
+      mainNoise: () => ({ sample: () => 0.25 }),
+      minLimitNoise: () => ({ sample: () => 0.5 }),
+      maxLimitNoise: () => ({ sample: () => 0.75 }),
+    },
+    { minValue: -1, maxValue: 1 },
+  )
+  const oldBlendedDensity = runtime.oldBlendedNoise(oldBlendedSource, {
+    smearScaleMultiplier: 4,
+    xzFactor: 80,
+    xzScale: 0.25,
+    yFactor: 160,
+    yScale: 0.25,
+  })
+  if (!Number.isFinite(runtime.evaluateDensityFunction(oldBlendedDensity, shiftPosition))) {
+    throw new Error('dist/index.js oldBlendedNoise returned an invalid sample')
+  }
+  const beardifierContext = runtime.createDensityEvaluationContext({
+    beardifier: () => 0.75,
+  })
+  if (runtime.evaluateDensityFunction(runtime.beardifier(), shiftPosition, beardifierContext) !== 0.75) {
+    throw new Error('dist/index.js beardifier returned an invalid sample')
+  }
   const officialDensity = runtime.map(runtime.densityConstant(-2), runtime.DensityMappedType.ABS)
   const densityRuntime = runtime.createDensityFunctionRuntime(officialDensity)
   if (densityRuntime.compute({ x: 0, y: 0, z: 0 }) !== 2 || densityRuntime.minValue !== 2 || densityRuntime.maxValue !== 2) {
     throw new Error('dist/index.js DensityFunction runtime returned an invalid result')
   }
   const densityNode = runtime.createDensityFunctionNode(officialDensity)
-  if (densityNode.compute({ x: 0, y: 0, z: 0 }) !== 2 || densityNode.minValue() !== 2 || densityNode.maxValue() !== 2) {
+  if (densityNode.compute({ x: 0, y: 0, z: 0 }) !== 2 || densityNode.minValue() !== 2 || densityNode.maxValue() !== 2 || densityNode.invert().compute({ x: 0, y: 0, z: 0 }) !== 0.5) {
     throw new Error('dist/index.js DensityFunction node returned an invalid result')
   }
-  const densityValues = []
+  const densityValues = [0]
   runtime.fillDensityFunctionArray(officialDensity, densityValues, () => ({ x: 0, y: 0, z: 0 }))
-  if (densityValues.length !== 0) {
-    throw new Error('dist/index.js DensityFunction fillArray changed an empty target')
+  if (densityValues.length !== 1 || densityValues[0] !== 2) {
+    throw new Error('dist/index.js DensityFunction fillArray returned an invalid result')
   }
   const router = runtime.createNoiseRouter(Object.fromEntries(runtime.NOISE_ROUTER_CHANNELS.map((channel) => [channel, runtime.densityConstant(1)])))
   const routerRuntime = runtime.createNoiseRouterRuntime(router)
@@ -131,7 +163,7 @@ try {
     throw new Error('dist/index.js Blender context returned an invalid result')
   }
 
-  run('pnpm', ['pack', '--pack-destination', temporaryDirectory, '--silent'])
+  run('corepack', ['pnpm', 'pack', '--pack-destination', temporaryDirectory, '--silent'])
   const archiveName = readdirSync(temporaryDirectory).find((name) => name.endsWith('.tgz'))
   if (archiveName === undefined) {
     throw new Error('pnpm pack produced no archive')
@@ -153,6 +185,8 @@ try {
     'package/dist/domain/simplex.d.ts',
     'package/dist/domain/density-function.js',
     'package/dist/domain/density-function.d.ts',
+    'package/dist/domain/old-blended-noise.js',
+    'package/dist/domain/old-blended-noise.d.ts',
     'package/dist/domain/density-function-runtime.js',
     'package/dist/domain/density-function-runtime.d.ts',
     'package/dist/domain/density-function-node.js',

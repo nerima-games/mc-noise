@@ -1,6 +1,6 @@
 # 検証と完成条件
 
-- 上位仕様: plan.md §3.2（検証）、§6 Step 2（完了条件）
+- 根拠: `package.json`、`vitest.config.ts`、現行テストと公開 API
 
 ## 1. コマンド
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト・ツール）の両方 |
 | `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ。このフラグが無かった頃は実質その3つしかゲートになっていなかった） |
-| `pnpm test` | vitest。`@effect/vitest` の `it.effect` が主 API |
+| `pnpm test` | Vitest。純粋なテストと `test/effect-test.ts` の同期 Effect テストを実行 |
 | `pnpm test:coverage` | カバレッジ計測。4 指標 100% のしきい値ゲート付き（§3 参照） |
 | `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。カバレッジと配布物境界検査は別ステップ |
 | `pnpm build` | `dist/` に JavaScript・宣言ファイル・source map を生成 |
@@ -32,16 +32,14 @@ Nix を使わない場合は `package.json` の `engines` を満たす Node.js �
 
 ## 2. テストの方針
 
-### `it.effect` を使う
+### Effect テストと純粋な `it`
 
-`@effect/vitest` の `it.effect` が主 API である。純粋な同期アサーションでも
-`Effect.sync(() => { ... })` で包む。理由は一貫性であり、
-Effect を要求するコードが後から入ったときにテストの書き方が変わらないためである。
+mc-noise の大半は同期的な純粋関数なので、その値・境界値・決定論の契約テストには
+Vitest のプレーンな `it` を使う。Effect を要求するコードを検証するときは
+`test/effect-test.ts` の `effectTest` を使い、同期 Effect を `Effect.runSync` で実行する。
 
-**例外**（参照実装で確立済み、plan.md §3.13）: DOM イベントフローのテストで
-`Effect.fork` + `Deferred.await` を `it.effect` の中に書くとデッドロックする。
-そのときはプレーンな `it` + `Effect.runPromise` を使う。
-mc-noise は DOM を触らないので現時点では該当しない。
+非同期 Effect を追加する場合は、テスト本体で `Effect.runPromise` を使い、
+Vitest の非同期テスト契約に合わせる。
 
 ### プロパティテストを優先する
 
@@ -50,7 +48,7 @@ mc-noise は DOM を触らないので現時点では該当しない。
 Vite からの解決のためである。
 
 mc-noise で最も価値が高いのは**決定論のプロパティテスト**である
-（同一シード → 同一値）。plan.md §3.2 が seed→値 を凍結扱いにしている以上、
+（同一シード → 同一値）。seed→値を凍結契約として扱う以上、
 「凍結されている」ことが機械検査されていなければ宣言に意味がない。
 
 比較は `===` ではなく `Object.is` を使う。`-0` と `0` の差は `===` を通り抜けたうえで、
@@ -80,23 +78,20 @@ thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 
 ## 4. 完成条件
 
-plan.md §6 Step 2 の各リポジトリ完了条件は
-「ユニット/シナリオテスト green + 内蔵プレビューが操作可能」である。
+各リポジトリの完了条件は「ユニット/シナリオテスト green」である。
 
-**mc-noise はプレビューを持たない。** 安定ライブラリ層（plan.md §2.2）は
+**mc-noise はプレビューを持たない。** 安定ライブラリ層は
 「純粋関数・狭い界面」であって、ユーザが操作できるものではない。
-plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め、
-§3.7 が「worldgen の地形プレビューが最初の遊べる成果物」と明示しているとおり、
-プレビューを持つのは基盤層以上である。
+プレビューを持つのは基盤層以上の責務である。
 
 したがって mc-noise の完成条件は:
 
-- プロパティテスト（**決定論・値域・連続性**）が green —— plan.md §3.2 の要求そのまま
-- **シード固定のゴールデン値**が固定されている —— 同上。
+- プロパティテスト（**決定論・値域・連続性**）が green
+- **シード固定のゴールデン値**が固定されている。
   参照実装にリテラルなゴールデン値は存在しないので、これは新規に作る資産である（`porting.md` §6）
 - `design-notes.md` N-8（半整数格子での勾配退化）は、現行の既知事項としてテストで固定している
 - `NoisePrimitives`、4 チャンネルのチャンクサンプル、プリミティブ batch API は本リポジトリの契約として検証済み
-- Simplex 2D/3D と Minecraft Java 1.21.1 を照合基準にした portable DensityFunction のノード（`Shift` / `ShiftA` / `ShiftB` / `shiftedNoise2d` / `noiseInRange` / `map` / `mapRange` / `lerp` / `LinearOperation` / `WeirdScaledSampler` / `EndIslands` を含む）、境界値、評価器、公開 API を仕様テストで検証済み
+- Simplex 2D/3D と Minecraft Java 1.21.1 を共通ノードの照合基準にし、1.21.8 の静的ノード一覧を監査した portable DensityFunction のノード（`Shift` / `ShiftA` / `ShiftB` / `shiftedNoise2d` / `noiseInRange` / `map` / `mapRange` / `lerp` / `LinearOperation` / `WeirdScaledSampler` / `EndIslands` / `old_blended_noise` を含む）、runtime marker の `beardifier`、1.21.9 で追加された `find_top_surface`、境界値、評価器、公開 API を仕様テストで検証済み。`old_blended_noise` の octave source と `beardifier` の構造物由来値は callback 境界を仕様化している
 - 汎用の 2D/3D batch、grid、補間、chunk sampling API も本リポジトリの契約として検証済みである
 - portable な NoiseRouter / Climate / Blender の構造・評価 API と、context-aware な DensityFunction のキャッシュ・blend ノードは本リポジトリで検証し、設定済みの Minecraft NoiseRouter、キャッシュのライフサイクル、地形制御点は mc-worldgen 側の統合テストで検証する
 
@@ -123,10 +118,10 @@ plan.md §2.3-4 が「プレビューは検証対象と同居する」と定め�
 9. `pnpm test:coverage` —— **ハードゲート**。4 指標 100% しきい値（§3）を下回ると非ゼロ終了する
 10. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
 
-依存ホワイトリスト検査（旧 `pnpm check:deps`）と API ロック検査（旧 `pnpm api:check`）は
-org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の `no-restricted-imports` に
-一本化され、`pnpm lint`（手順6）に吸収されている。後者は自動ツールを廃止し、
-破壊的変更の判定は人間のレビューと `test/public-api.test.ts` のゴールデン値に委ねている
+依存関係の許可グラフは `package.json`、`pnpm-workspace.yaml`、`.oxlintrc.json`、CI
+とレビューで維持する。`.oxlintrc.json` の `no-restricted-imports` と `pnpm lint`
+が出荷ソースの import 境界を検査し、推移依存・循環・宣言の妥当性はレビューで確認する。
+API の破壊的変更は `test/public-api.test.ts` のゴールデン値と人間のレビューで判定する
 （[versioning.md](./versioning.md) §6）。
 
 ## 6. 現時点のテスト一覧
@@ -138,19 +133,22 @@ org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の 
 | `test/noise-primitives.test.ts` | `NoisePrimitives` の seed 分岐、raw / normalized 値域、チャンネル係数、チャンクサンプルの形状 |
 | `test/terrain-channels.test.ts` | 4 チャンネルの疎サンプル、peaks-and-valleys 変換、双線形展開、座標検証 |
 | `test/primitive-batches.test.ts` | 2D / 3D のプリミティブ batch、octave 引数、短い入力と sparse hole の扱い |
-| `test/public-api.test.ts` | barrel の export、**ゴールデン値**、格子点で 0、半整数格子の既知アーティファクト、チャンネル salt の固定 |
+| `test/public-api.test.ts` | barrel の export、**ゴールデン値**、格子点で 0、canonical kernel の半整数サンプル、チャンネル salt の固定 |
 | `test/interpolation.test.ts` | 疎サンプリング、双線形補間、評価回数、入力検証 |
 | `test/chunk-sampling.test.ts` | `mc-kernel` の `ChunkCoord` を使ったチャンク原点・16×16 境界 |
 | `test/chunk-volume-sampling.test.ts` | `ChunkHeight` を含む 16×高さ×16 の chunk volume sampling |
-| `test/isotropic-field.test.ts` | 2D/3D フィールドの固定シード値と isotropic 契約 |
-| `test/perlin-isotropic.test.ts` | 3D Perlin の連続性・対称性・正規化前の値域 |
+| `test/isotropic-field.test.ts` | 2D/3D フィールドの固定シード値と canonical kernel の契約 |
+| `test/perlin-isotropic.test.ts` | 2D/3D Perlin の連続性・対称性・正規化前の値域 |
 | `test/permutation.test.ts` | permutation table の決定論と入力範囲 |
 | `test/sampling.test.ts` | 2D batch、grid、双線形補間、chunk sampling |
 | `test/sampling-3d.test.ts` | 3D batch、grid、三線形補間、stride と入力検証 |
 | `test/simplex.test.ts` | Minecraft 互換 Simplex の原点、permutation、2D/3D サンプリング |
 | `test/java-random.test.ts` | Java Random の seed、符号拡張、`nextInt` / `nextFloat` 契約 |
 | `test/end-islands.test.ts` | End Islands の seed、座標検証、値域 |
-| `test/density-function.test.ts` | DensityFunction の AST、評価器、境界値、portable helper |
+| `test/density-function.test.ts` | DensityFunction の AST、評価器、境界値、`find_top_surface`、portable helper |
+| `test/density-function-codec.test.ts` / `test/density-function-transform.test.ts` | DensityFunction の codec 往復と子ノード変換、`find_top_surface` の再構成 |
+| `test/density-function-context.test.ts` / `test/density-function-runtime.test.ts` | context-aware cache / blend と runtime の fill / map / 集約 |
+| `test/density-function-node.test.ts` / `test/density-function-validation.test.ts` | 実行時 node wrapper とノード種別・入力検証 |
 | `test/transforms.test.ts` | `Shift` / `ShiftA` / `ShiftB` の座標変換 |
 | `test/spline.test.ts` | spline の制御点、補間、境界値 |
 | `test/value-noise.test.ts` | hash、lattice、value noise の決定論・補間・数値パラメータ検証 |
@@ -164,7 +162,7 @@ org 標準から撤去された。前者の実効機構は `.oxlintrc.json` の 
 > もし誰かがこのループの置換を提案したら、答えは「先にベンチマークを書き、それをリポジトリに入れろ」である。
 
 **リポジトリにベンチマークが無かったので、この一文は借用書だった。**
-plan.md §5.2 はこの例外を「実測で確定した」と書いているが、5 つの例外のうち
+初期資料はこの例外を「実測で確定した」と書いているが、5 つの例外のうち
 オクターブループは**コメント 1 つしか防護が無い**——最も弱い状態にあった。
 `scripts/bench-noise.ts` はその借用書を清算する。コメントが名指しする書き換えは
 **全部その場に実装してあり**、本物と並べて計測される。
@@ -172,8 +170,9 @@ fold を提案するレビュアーには、主張ではなく数字が返る。
 
 ### 何を測っているか
 
-手法は参照実装の `scripts/bench-terrain.ts` のもの——**ウォームアップののち 9 回計測しその中央値**。
-9 という数（メッシングの 7 ではなく）は、これが terrain 側のワークロードだからそのまま踏襲した。
+`scripts/bench-noise.ts` は**ウォームアップののち複数回計測し中央値を採る**。
+`scripts/bench-density-function.ts` は固定座標で DensityFunction、NoiseRouter、Climate、
+Blender の代表 workload を測り、noise/field とは独立した回帰観測を持つ。
 
 チャンクという単位は mc-noise には無いので、per-chunk の単位は
 **1 チャンク分の地形サンプリングが要求する 16×16 = 256 カラム**とした。
@@ -182,9 +181,13 @@ fold を提案するレビュアーには、主張ではなく数字が返る。
 
 シードは定数 `20260726`。時計も未シードの PRNG も無い。
 
+`scripts/bench-noise.ts` の測定対象は `octaveNoise2D`、`createNoiseField`、および
+noise/field の hot loop である。DensityFunction、NoiseRouter、Climate、Blender、
+context-aware な cache / blend は `scripts/bench-density-function.ts` で別に測定する。
+
 ### 計測前に**等価性**を検査している
 
-5 つの綴り（出荷版・凍結コピー・`Array.from().reduce`・effect の `Array.reduce`・`Effect.reduce`）が
+複数の実装形（出荷版・凍結コピー・配列 reduce 版など）が
 1024 座標で**ビット単位で一致する**ことを、どれかを計測する前に確認する。
 一致しない 2 つの関数を比べたベンチマークは何のベンチマークでもないし、
 この検査は書き換えが「都合よく簡略化されていない」ことの担保でもある。
@@ -192,59 +195,27 @@ fold を提案するレビュアーには、主張ではなく数字が返る。
 ### 絶対値ではなく**比**を検査する
 
 「0.0075 ms/chunk」という絶対値は記録した機械を写しているだけである。捕まえたいのは
-**「3 倍遅くなった」**のほうなので、2 種類の比を使う:
+**「3 倍遅くなった」**のほうなので、実装差を比較する guard と、処理量を比較する workload
+の 2 種類を使う。
 
 | 種類 | 定義 | 機械依存性 | 既定 tolerance |
 | --- | --- | --- | --- |
-| **guard** | 同一プロセス・同一データ上での 2 実装の A/B 比 | **無い**（機械が約分される） | 1.30x。ただし shipped-vs-frozen は 1.15x |
-| **workload** | 実測値 ÷ 同じ run 内で測った yardstick | 近似的にしか無い | 2.00x |
+| **guard** | 同一プロセス・同一データ上で複数実装を交互に測る比 | ノイズを減らすが、ホストと JIT に依存する | 1.30x。ただし shipped-vs-frozen は 1.15x |
+| **workload** | workload と yardstick を隣接サンプルで交互に測った比 | guard より大きく依存する | 2.00x |
 
-`scripts/bench-baseline.json` がコミットされた baseline で、記録は
-**5 回の通し実行の中央値**であり 1 回の実行ではない。
+`scripts/bench-baseline.json` の数値は、Node やハードウェアを代表する値ではなく、現行の測定方式で
+保持している保守的な履歴基準である。基準や tolerance を、揺れた実行に合わせて下げてはならない。
 
-### 実測値（Apple M4 Max / Node 22.23.1、5 回通しの中央値、4 オクターブ・20 万サンプル）
+### 現行の計測方式
 
-| guard | 比 |
-| --- | --- |
-| `octave-loop/effect-reduce-vs-imperative` | **6.6x** |
-| `octave-loop/array-from-reduce-vs-imperative` | **2.8x** |
-| `octave-loop/effect-array-reduce-vs-imperative` | **1.3x** |
-| `octave-loop/shipped-vs-frozen-imperative` | 0.84（ゲート。詳細は下） |
+- guard は 20 回の warm-up 後、9 サンプルを同一プロセス内で測る。各サンプルで実装の先頭を
+  ローテーションし、測定順の偏りを減らす。
+- workload は yardstick と各 workload を同じサンプル内で交互に測り、サンプルごとの比の中央値を
+  ゲートに使う。表示する絶対値は診断用であり、ゲート値ではない。
+- 計測前に、出荷版・凍結コピー・3 つの書き換えが 1024 座標でビット単位に一致することを確認する。
 
-**design-notes N-1 の表の訂正**: 3 つの書き換えは「すべてコストだけを増やす」という記述は正しいが、
-**増え方が桁で違う**。`Effect.reduce`（オクターブごとに fiber step）は 6.6 倍、
-`Array.from().reduce` は 2.8 倍、しかし **effect の `Array.reduce` は 1.3 倍にとどまる**。
-1.3 倍は「無視してよい」という意味ではない——これはワールド生成の最内ループである——が、
-「桁違いに遅い」ではない。数字を持っておくほうが、持たずに主張するより強い。
-
-### ゲート（shipped-vs-frozen）が 1.00 ではなく 0.84 である理由
-
-このゲートは出荷している `octaveNoise2D` を、**その現在の形をそのまま凍結したコピー**と比較する。
-凍結コピーはこのモジュールのローカルにあり、V8 はモジュール境界を越える import より
-ローカルのほうを少しよくインライン化する。0.84 はその差であって `octaveNoise2D` の性質ではない。
-重要なのは**その値が安定していること**で、5 回通しの散らばりはファイル中で最小の **1%** である。
-
-書き換え版と比較するだけでは不十分である: 比はどちらの辺が変わっても同じ向きに動くので、
-`octaveNoise2D` 自身が fold になったら「書き換えは N 倍遅い」という比は
-すべて 1 に近づくだけで、tolerance の内側に収まってしまいうる。
-
-### ゲートが実際に落ちることの確認
-
-`domain/octaves.ts` の `octaveNoise2D` を effect の `Array.reduce` で書き換えて実行した:
-
-```
-REGRESSED  octave-loop/shipped-vs-frozen-imperative       observed 0.629  baseline 0.841  (0.75x)
-REGRESSED  octave-loop/effect-array-reduce-vs-imperative  observed 0.971  baseline 1.309  (0.74x)
-REGRESSED  octave-loop/effect-reduce-vs-imperative        observed 5.022  baseline 6.560  (0.77x)
-REGRESSED  sample/octave2d-per-chunk-columns              observed 3.500  baseline 1.458  (2.40x)
-```
-
-4 件の regression と exit 1。**これは 3 つの書き換えのうち最も安いもの**（1.3 倍）であり、
-guard tolerance が 1.30 のままなら 0.79x でぎりぎり通過していた。
-shipped-vs-frozen に専用の 1.15 を与えているのはこのためである
-（そのゲートの散らばりは 1% なので、締めても揺れない）。
-なお workload `sample/octave2d-per-chunk-columns` は独立に 2.4 倍で捕まえており、
-2 系統の冗長性が実際に効いている。
+shipped-vs-frozen は出荷実装と現在の形の凍結コピーを比較する主ゲートである。出荷実装と書き換え版を
+比較するだけでは、両方が変わったときに差が隠れるため、この独立した比較を残している。
 
 ### ベンチが**できない**こと
 
@@ -256,15 +227,14 @@ wall-clock は粗い道具である。tolerance より安い書き換えはす�
 ### `verify` に入っていない理由と、CI について
 
 これらのリポジトリは public で、CI は **`pull_request` ごとに**走る。
-ベンチマークは 8 秒前後だが、共有ランナーの実時間は負荷で揺れる——
-つまり workload 比は CI ではここで測ったより不安定になる。
+共有ランナーの実時間は負荷で揺れるため、benchmark の workload 比は通常のテストより不安定になる。
 
 **推奨**: 現時点で CI ジョブを足す必要は無い。
 `domain/` に触る PR で人間が走らせるものとして扱い、
 足すとしても `push` on `main` か nightly（`pull_request` ではなく）にして、
 guard だけを見る形が妥当である。
-mc-noise はゲートとして最も筋がよい（散らばりが小さく、シードが定数で、
-ワークロードが数秒で終わる）ので、3 リポジトリのうち最初に CI に載せるならここである。
+mc-noise は入力を固定できるため benchmark の候補にはなるが、現状は人間が変更時に実行する
+診断ゲートとして扱う。
 
 ### baseline の更新手順
 
@@ -272,33 +242,22 @@ mc-noise はゲートとして最も筋がよい（散らばりが小さく、�
 $ pnpm bench --update-baseline
 ```
 
-`BENCH_MACHINE` 環境変数に機械の説明を入れると `recordedOn` に記録される。
+`BENCH_MACHINE` 環境変数に値を入れると `recordedOn` に記録されるが、公開リポジトリへ
+ホスト名・会社名・個人情報を記録してはならない。
 **更新は必ず、何がどう動いたかをコミットメッセージに書いて行うこと。**
 baseline を黙って上書きするのは、ベンチマークを削除するのと同じである。
 
-## 直前のカバレッジ拡張について — コミットメッセージの数字が誤っている
+## 8. 変更後の最終確認
 
-`test: cover the code the suites were walking past` のコミットメッセージは
-「added 107 tests」と書いているが、**正しくは 27 本**である
-(mc-noise 8 + mc-meshing 13 + mc-physics 6)。本リポジトリの実測は **79 → 87**。
+実装や依存境界を変更したときは、変更範囲に応じて次の確認を行う。
 
-107 は 1 日古いレビューの baseline (53/53/68) から引いた差であり、
-その時点から 3 リポジトリはすでに 79/79/96 まで育っていた。
-16 リポジトリ合計も 2,771 → 2,798 で、差は 27 と一致する。
+1. `corepack pnpm typecheck`
+2. `nix develop --command corepack pnpm lint`
+3. `corepack pnpm test`
+4. `nix develop --command corepack pnpm test:coverage`
+5. `corepack pnpm package:verify`
+6. flake を変更した場合は `nix flake check --all-systems`
+7. 性能の hot loop を変更した場合は `corepack pnpm bench`
 
-**この誤りをここに残すのは、それが本プロジェクトで最も多く記録されている欠陥だからである** ——
-「結論は正しく、証拠が間違っている」。`CONTINENTALNESS_CONTRAST`、`SETTLE_TICK_LIMIT`、
-mc-meshing の HashSet 主張、`setDayLength → setTimeOfDay` の作業例に続く 5 例目で、
-しかも**テストカバレッジを説明する文章の中で**やっている。
-default branch は `non_fast_forward` で保護されているため履歴は書き換えられない。
-書き換えられないこと自体は正しい設計であり、だから訂正はここに置く。
-
-## 8. branch / worktree の反映後
-
-複数の作業単位を `main` に反映するときは、commit の祖先関係とファイル内容を分けて確認する。
-
-1. `git status --short --branch` で未コミット変更を確認する。
-2. `git diff main..branch` で、実際のファイル内容が `main` と異なるか確認する。後続の commit が同じ変更を含む場合、branch が `main` の祖先でなくても差分が空になることがあるため、差分が空なら重複して cherry-pick しない。
-3. `nix develop --command pnpm verify` を実行する。`oxlint` は Nix の devShell が提供するため、CI と同じ環境で lint まで検証する。
-4. `nix develop --command pnpm package:verify` と `nix develop --command pnpm test:coverage` を実行する。
-5. 検証済みの worktree と、内容の反映が確認できた local branch を削除する。remote branch の削除は別途明示的に扱う。
+benchmark が赤い場合は基準や tolerance を弱めず、同じ条件で再実行して測定器と実装のどちらに
+原因があるかを切り分ける。

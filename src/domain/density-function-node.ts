@@ -14,6 +14,7 @@ import {
   densityClamp,
   densityCube,
   densityHalfNegative,
+  densityInvert,
   densityQuarterNegative,
   densitySquare,
   densitySqueeze,
@@ -33,6 +34,7 @@ export type DensityFunctionNode = Readonly<{
   readonly clamp: (min: number, max: number) => DensityFunctionNode
   readonly cube: () => DensityFunctionNode
   readonly halfNegative: () => DensityFunctionNode
+  readonly invert: () => DensityFunctionNode
   readonly quarterNegative: () => DensityFunctionNode
   readonly square: () => DensityFunctionNode
   readonly squeeze: () => DensityFunctionNode
@@ -58,6 +60,7 @@ export const createDensityFunctionNode = (
       contextProvider: DensityFunctionArrayContextProvider,
     ): void => runtime.fillArray(array, contextProvider),
     halfNegative: (): DensityFunctionNode => derive(densityHalfNegative(density)),
+    invert: (): DensityFunctionNode => derive(densityInvert(density)),
     mapAll: (visitor: DensityFunctionVisitor): DensityFunctionNode =>
       derive(runtime.mapAll(visitor)),
     maxValue: (): number => runtime.maxValue,

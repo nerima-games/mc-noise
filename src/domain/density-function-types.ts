@@ -14,6 +14,28 @@ export type DensityNoiseSource = DensityBounds & Readonly<{
   readonly sample: NoiseFn3D
 }>
 
+export type DensityOldBlendedNoiseSample = readonly [
+  x: number,
+  y: number,
+  z: number,
+  yScale: number,
+  yMax: number,
+]
+
+export type DensityOldBlendedNoiseOctave = Readonly<{
+  readonly sample: (...coordinates: DensityOldBlendedNoiseSample) => number
+}>
+
+export type DensityOldBlendedNoiseOctaveSource = (
+  octave: number,
+) => DensityOldBlendedNoiseOctave | undefined
+
+export type DensityOldBlendedNoiseSource = DensityBounds & Readonly<{
+  readonly mainNoise: DensityOldBlendedNoiseOctaveSource
+  readonly minLimitNoise: DensityOldBlendedNoiseOctaveSource
+  readonly maxLimitNoise: DensityOldBlendedNoiseOctaveSource
+}>
+
 export type DensityCoordinateAxis = 'x' | 'y' | 'z'
 
 export type DensityBinaryOperation = 'add' | 'mul' | 'min' | 'max'
@@ -46,6 +68,20 @@ export type DensityNoise = DensityBounds & Readonly<{
   readonly source: DensityNoiseSource
   readonly xzScale: number
   readonly yScale: number
+}>
+
+export type DensityOldBlendedNoise = DensityBounds & Readonly<{
+  readonly kind: 'old-blended-noise'
+  readonly source: DensityOldBlendedNoiseSource
+  readonly xzScale: number
+  readonly yScale: number
+  readonly xzFactor: number
+  readonly yFactor: number
+  readonly smearScaleMultiplier: number
+}>
+
+export type DensityBeardifier = DensityBounds & Readonly<{
+  readonly kind: 'beardifier'
 }>
 
 export type DensityShift = DensityBounds & Readonly<{
@@ -126,6 +162,14 @@ export type DensityRangeChoice = DensityBounds & Readonly<{
   readonly outOfRange: DensityFunction
 }>
 
+export type DensityFindTopSurface = DensityBounds & Readonly<{
+  readonly kind: 'find-top-surface'
+  readonly density: DensityFunction
+  readonly upperBound: DensityFunction
+  readonly lowerBound: number
+  readonly cellHeight: number
+}>
+
 export type DensityYClampedGradient = DensityBounds & Readonly<{
   readonly kind: 'y-clamped-gradient'
   readonly fromY: number
@@ -182,6 +226,8 @@ export type DensityFunction =
   | DensityConstant
   | DensityCoordinate
   | DensityNoise
+  | DensityOldBlendedNoise
+  | DensityBeardifier
   | DensityShift
   | DensityShiftA
   | DensityShiftB
@@ -193,6 +239,7 @@ export type DensityFunction =
   | DensityUnary
   | DensityClamp
   | DensityRangeChoice
+  | DensityFindTopSurface
   | DensityYClampedGradient
   | DensitySpline
   | DensityInterpolated
@@ -218,6 +265,7 @@ export type DensityEvaluationContext = Readonly<{
   ) => number
   readonly blendAlpha?: (position: DensityPosition) => number
   readonly blendOffset?: (position: DensityPosition) => number
+  readonly beardifier?: (position: DensityPosition) => number
 }>
 
 export type DensityEvaluationContextOptions = Readonly<{
@@ -229,6 +277,7 @@ export type DensityEvaluationContextOptions = Readonly<{
   ) => number
   readonly blendAlpha?: (position: DensityPosition) => number
   readonly blendOffset?: (position: DensityPosition) => number
+  readonly beardifier?: (position: DensityPosition) => number
 }>
 
 export type DensityEvaluationSession = Readonly<{
@@ -248,6 +297,14 @@ export type DensityCoordinateOptions = Readonly<{
 export type DensityNoiseOptions = Readonly<{
   readonly xzScale?: number
   readonly yScale?: number
+}>
+
+export type DensityOldBlendedNoiseOptions = Readonly<{
+  readonly xzScale: number
+  readonly yScale: number
+  readonly xzFactor: number
+  readonly yFactor: number
+  readonly smearScaleMultiplier: number
 }>
 
 export type DensityNoiseInRangeOptions = DensityNoiseOptions & Readonly<{

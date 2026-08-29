@@ -35,7 +35,7 @@ import {
   PERMUTATION_MASK,
   PERMUTATION_SIZE,
 } from './perlin-constants.js'
-import { gradient2d, gradient2dIsotropic, gradient3d } from './perlin-gradients.js'
+import { gradient2d, gradient3d } from './perlin-gradients.js'
 import type { RandFn } from './seed.js'
 
 export { PERMUTATION_SIZE }
@@ -48,7 +48,7 @@ export type NoiseFn3D = (x: number, y: number, z: number) => number
  *
  * `let` + `for` throughout: this is a state-threading shuffle, and the array
  * `fold` spelling of it would allocate an intermediate array per swap. Same
- * exemption as the octave loop (plan.md §5.2), for the same reason.
+ * exemption as the octave loop (docs/design-notes.md N-1), for the same reason.
  */
 /** Fisher-Yates stops before this index: index 0 has no remaining partner to swap with. */
 const SHUFFLE_LOWER_BOUND = 0
@@ -81,10 +81,14 @@ const fade = (t: number): number =>
 
 const lerp = (from: number, to: number, t: number): number => from + t * (to - from)
 
-const createPerlinNoise2DWithGradient = (
-  rand: RandFn,
-  gradient: (hash: number, x: number, z: number) => number,
-): NoiseFn2D => {
+/**
+ * A 2D Perlin sampler over a permutation table derived from `rand`.
+ *
+ * The canonical kernel uses four axis and four normalized diagonal unit
+ * gradients. Building the permutation table is O(256); keeping it in the
+ * returned closure makes each sample O(1).
+ */
+export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
   const permutation = buildPermutation(rand)
 
   return (x, z) => {
@@ -101,17 +105,17 @@ const createPerlinNoise2DWithGradient = (
     const rowB = (permutation[(cellX + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK]! + cellZ) & PERMUTATION_MASK
 
     const bottom = lerp(
-      gradient(permutation[rowA]!, fracX, fracZ),
-      gradient(permutation[rowB]!, fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
+      gradient2d(permutation[rowA]!, fracX, fracZ),
+      gradient2d(permutation[rowB]!, fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
       easedX,
     )
     const top = lerp(
-      gradient(
+      gradient2d(
         permutation[(rowA + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK]!,
         fracX,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
       ),
-      gradient(
+      gradient2d(
         permutation[(rowB + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK]!,
         fracX - LATTICE_NEIGHBOR_OFFSET,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
@@ -122,26 +126,6 @@ const createPerlinNoise2DWithGradient = (
     return lerp(bottom, top, easedZ) * AMPLITUDE_SCALE_2D
   }
 }
-/**
- * A 2D Perlin sampler over a permutation table derived from `rand`.
- *
- * Returns a closure rather than taking the seed per call. Building the
- * permutation table is O(256); doing it per sample would dominate the cost of
- * the noise itself. This is also why the seed is not a parameter of the sampler
- * — see docs/public-api.md on the difference from plan.md's sketched
- * `noise2d(seed, x, y, z)` signature.
- */
-export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D =>
-  createPerlinNoise2DWithGradient(rand, gradient2d)
-
-/**
- * A less directionally biased 2D kernel with eight unit gradients.
- *
- * This is opt-in because selecting it changes the frozen seed-to-value mapping.
- * Existing worlds must continue to use `createPerlinNoise2D`.
- */
-export const createPerlinNoise2DIsotropic = (rand: RandFn): NoiseFn2D =>
-  createPerlinNoise2DWithGradient(rand, gradient2dIsotropic)
 
 /** A 3D Perlin sampler. Same contract as `createPerlinNoise2D`. */
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {

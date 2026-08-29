@@ -10,7 +10,7 @@ export const PERMUTATION_MASK = PERMUTATION_SIZE - UNIT_DIMENSION
 /** 2D unit gradients have magnitude 1; the noise maximum is 1/sqrt(2). */
 export const AMPLITUDE_SCALE_2D = Math.SQRT2
 
-/** Diagonal components for the isotropic 8-direction kernel. */
+/** Diagonal components used by the canonical 8-direction 2D kernel. */
 export const INVERSE_SQRT2 = Math.SQRT1_2
 
 /** 3D maximum is 1/sqrt(3) under the same argument. */

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  beardifier,
+  createDensityOldBlendedNoiseSource,
   createDensityNoiseSource,
   decodeDensityFunction,
   densityBinary,
@@ -13,10 +15,12 @@ import {
   densityConstant,
   densityCoordinate,
   densityEndIslands,
+  densityFindTopSurface,
   densityFlatCache,
   densityInterpolated,
   densityLinearOperation,
   densityNoise,
+  densityOldBlendedNoise,
   densityRangeChoice,
   densityShift,
   densityShiftA,
@@ -36,11 +40,25 @@ const noiseSource = createDensityNoiseSource(
   { minValue: -6, maxValue: 6 },
 )
 
+const oldBlendedNoiseSource = createDensityOldBlendedNoiseSource(
+  {
+    mainNoise: () => ({ sample: () => 1 }),
+    minLimitNoise: () => ({ sample: () => 2 }),
+    maxLimitNoise: () => ({ sample: () => 3 }),
+  },
+  { minValue: -3, maxValue: 3 },
+)
+
 const codecOptions = {
   encodeNoiseSource: () => 'test-source',
   decodeNoiseSource: (identifier: string) => {
     expect(identifier).toBe('test-source')
     return noiseSource
+  },
+  encodeOldBlendedNoiseSource: () => 'old-test-source',
+  decodeOldBlendedNoiseSource: (identifier: string) => {
+    expect(identifier).toBe('old-test-source')
+    return oldBlendedNoiseSource
   },
 }
 
@@ -51,6 +69,14 @@ describe('DensityFunction codec', () => {
       input,
       densityCoordinate('z', { scale: 2, offset: -1 }),
       densityNoise(noiseSource, { xzScale: 0.5, yScale: 2 }),
+      densityOldBlendedNoise(oldBlendedNoiseSource, {
+        xzScale: 0.25,
+        yScale: 0.5,
+        xzFactor: 80,
+        yFactor: 160,
+        smearScaleMultiplier: 4,
+      }),
+      beardifier(),
       densityShift(noiseSource),
       densityShiftA(noiseSource),
       densityShiftB(noiseSource),
@@ -69,6 +95,7 @@ describe('DensityFunction codec', () => {
         minInclusive: -1,
         maxExclusive: 1,
       }, densityConstant(4), densityConstant(5)),
+      densityFindTopSurface(input, densityConstant(16), -32, 4),
       densityYClampedGradient(0, 10, -1, 1),
       densitySpline(input, [[0, 1], [1, 3]]),
       densityInterpolated(input),
@@ -102,6 +129,22 @@ describe('DensityFunction codec', () => {
     expect(() => encodeDensityFunction(noise, {
       encodeNoiseSource: () => 1 as never,
     })).toThrow()
+    const oldBlendedNoise = densityOldBlendedNoise(oldBlendedNoiseSource, {
+      xzScale: 1,
+      yScale: 1,
+      xzFactor: 80,
+      yFactor: 160,
+      smearScaleMultiplier: 4,
+    })
+    expect(() => encodeDensityFunction(oldBlendedNoise)).toThrow(
+      'encodeOldBlendedNoiseSource is required for old blended noise functions',
+    )
+    expect(() => encodeDensityFunction(oldBlendedNoise, {
+      encodeOldBlendedNoiseSource: () => '',
+    })).toThrow()
+    expect(() => encodeDensityFunction(oldBlendedNoise, {
+      encodeOldBlendedNoiseSource: () => 1 as never,
+    })).toThrow()
     let kindReads = 0
     const unsupportedDensity = {
       get kind() {
@@ -130,6 +173,35 @@ describe('DensityFunction codec', () => {
       axis: 'x',
       scale: 1,
     } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      kind: 'coordinate',
+      axis: 'w',
+      offset: 0,
+      scale: 1,
+    } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      kind: 'linear-operation',
+      argument: 1,
+      input: encodeDensityFunction(densityConstant(1)),
+      operation: 'div',
+    } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      kind: 'binary',
+      left: encodeDensityFunction(densityConstant(1)),
+      operation: 'div',
+      right: encodeDensityFunction(densityConstant(1)),
+    } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      kind: 'unary',
+      input: encodeDensityFunction(densityConstant(1)),
+      operation: 'negate',
+    } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      input: encodeDensityFunction(densityConstant(1)),
+      kind: 'weird-scaled-sampler',
+      rarityValueMapper: 'type-3',
+      source: 'test-source',
+    } as never, codecOptions)).toThrow()
     expect(() => decodeDensityFunction({ kind: 'end-islands', seed: 'x' } as never)).toThrow()
     expect(() => decodeDensityFunction({
       kind: 'spline',
@@ -145,6 +217,13 @@ describe('DensityFunction codec', () => {
       kind: 'spline',
       input: encodeDensityFunction(densityConstant(1)),
       spline: [['x', 1]],
+    } as never)).toThrow()
+    expect(() => decodeDensityFunction({
+      kind: 'find-top-surface',
+      density: encodeDensityFunction(densityConstant(1)),
+      upperBound: encodeDensityFunction(densityConstant(16)),
+      lowerBound: -32,
+      cellHeight: 0,
     } as never)).toThrow()
 
     const encodedNoise = {
@@ -176,6 +255,71 @@ describe('DensityFunction codec', () => {
         sample: () => 0,
         minValue: Number.NaN,
         maxValue: 1,
+      } as never),
+    })).toThrow()
+
+    const encodedOldBlendedNoise = {
+      kind: 'old-blended-noise',
+      source: 'old-test-source',
+      xzScale: 1,
+      yScale: 1,
+      xzFactor: 80,
+      yFactor: 160,
+      smearScaleMultiplier: 4,
+    } as const
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise)).toThrow(
+      'decodeOldBlendedNoiseSource is required for old blended noise functions',
+    )
+    expect(() => decodeDensityFunction({
+      ...encodedOldBlendedNoise,
+      source: '',
+    }, codecOptions)).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => null as never,
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({} as never),
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({
+        maxLimitNoise: () => 0 as never,
+        minLimitNoise: () => 0 as never,
+        minValue: -1,
+        maxValue: 1,
+      } as never),
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({
+        mainNoise: () => 0 as never,
+        maxLimitNoise: () => 0 as never,
+        minValue: -1,
+        maxValue: 1,
+      } as never),
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({
+        mainNoise: () => 0 as never,
+        minLimitNoise: () => 0 as never,
+        minValue: -1,
+        maxValue: 1,
+      } as never),
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({
+        mainNoise: () => 0 as never,
+        maxLimitNoise: () => 0 as never,
+        minLimitNoise: () => 0 as never,
+        minValue: Number.NaN,
+        maxValue: 1,
+      } as never),
+    })).toThrow()
+    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+      decodeOldBlendedNoiseSource: () => ({
+        mainNoise: () => 0 as never,
+        maxLimitNoise: () => 0 as never,
+        minLimitNoise: () => 0 as never,
+        minValue: -1,
+        maxValue: Number.NaN,
       } as never),
     })).toThrow()
 

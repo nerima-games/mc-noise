@@ -242,8 +242,8 @@ describe('Climate distance and parameter lists', () => {
     expect(climateParameterDistance(ranged, 20_000)).toBe(10_000)
     expect(climateParameterDistance(ranged, 5000)).toBe(0)
     const pointValue = climateParameters(0, 0, 0, 0, 0, 0, 0.25)
-    const targetValue = createClimateTargetPointFromQuantized(1000, 0, 0, 0, 0, 0)
-    expect(climateParameterPointFitness(pointValue, targetValue)).toBe(3500)
+    const targetValue = createClimateTargetPointFromQuantized(1000, 2000, 3000, 4000, 5000, 6000)
+    expect(climateParameterPointFitness(pointValue, targetValue)).toBe(97_250_000)
     expect(climateParameterSpace(pointValue)).toEqual({
       temperature: zeroParameter,
       humidity: zeroParameter,

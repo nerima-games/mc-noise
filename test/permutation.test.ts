@@ -24,7 +24,8 @@
  * caller's integer becomes a seed's bit pattern, and it was only ever exercised
  * through one indirect assertion in test/determinism.test.ts.
  */
-import { describe, expect, it } from '@effect/vitest'
+import { describe, expect } from 'vitest'
+import { effectTest } from './effect-test'
 import { Effect, FastCheck } from 'effect'
 import { PERMUTATION_SIZE, buildPermutation } from '../src/domain/perlin'
 import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32, toUint32 } from '../src/domain/seed'
@@ -35,7 +36,7 @@ const UINT32_MODULUS = 4294967296
 const arbitrarySeed = FastCheck.integer({ min: 0, max: 4294967295 }).map((value) => NoiseSeed(value))
 
 describe('buildPermutation', () => {
-  it.effect('is a bijection on 0..255: every value present, exactly once, for every seed', () =>
+  effectTest('is a bijection on 0..255: every value present, exactly once, for every seed', () =>
     Effect.sync(() => {
       // THE property. A Fisher-Yates that swaps out of range loses a value and
       // duplicates another, and the `?? 0` fallbacks swallow that without a
@@ -51,7 +52,7 @@ describe('buildPermutation', () => {
     }),
   )
 
-  it.effect('spells out the bijection once, so a failure names the value that went missing', () =>
+  effectTest('spells out the bijection once, so a failure names the value that went missing', () =>
     Effect.sync(() => {
       // The property above reports "size 255 !== 256" and leaves the reader to
       // work out which entry was clobbered. This one hands it over.
@@ -67,7 +68,7 @@ describe('buildPermutation', () => {
     }),
   )
 
-  it.effect('actually shuffles: the table is neither the identity nor the same for two seeds', () =>
+  effectTest('actually shuffles: the table is neither the identity nor the same for two seeds', () =>
     Effect.sync(() => {
       // A shuffle that never swaps is a perfect bijection and useless noise:
       // the permutation would be the identity, the gradient hash would be the
@@ -80,7 +81,7 @@ describe('buildPermutation', () => {
     }),
   )
 
-  it.effect('is a function of the PRNG stream alone, so one seed always builds one table', () =>
+  effectTest('is a function of the PRNG stream alone, so one seed always builds one table', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(arbitrarySeed, (seed) => {
@@ -95,7 +96,7 @@ describe('buildPermutation', () => {
 })
 
 describe('toUint32', () => {
-  it.effect('is exactly the mathematical modulo, for negatives and for values past 32 bits', () =>
+  effectTest('is exactly the mathematical modulo, for negatives and for values past 32 bits', () =>
     Effect.sync(() => {
       // A seed is a bit pattern, not a quantity (domain/seed.ts). Every caller
       // that hands us a hash, a timestamp or a negative constant depends on
@@ -111,7 +112,7 @@ describe('toUint32', () => {
     }),
   )
 
-  it.effect('pins the boundaries a wrap bug would land on', () =>
+  effectTest('pins the boundaries a wrap bug would land on', () =>
     Effect.sync(() => {
       expect(toUint32(NoiseSeed(0))).toBe(0)
       expect(toUint32(NoiseSeed(-1))).toBe(4294967295)
@@ -125,7 +126,7 @@ describe('toUint32', () => {
     }),
   )
 
-  it.effect('leaves nothing outside uint32, which is what the PRNG state assumes', () =>
+  effectTest('leaves nothing outside uint32, which is what the PRNG state assumes', () =>
     Effect.sync(() => {
       // mulberry32 keeps its state in a uint32 and reseeds from `toUint32`. A
       // negative or oversized value reaching that state would change the stream
@@ -143,7 +144,7 @@ describe('toUint32', () => {
     }),
   )
 
-  it.effect('is applied on both sides of deriveSeed, so a channel seed is a uint32 too', () =>
+  effectTest('is applied on both sides of deriveSeed, so a channel seed is a uint32 too', () =>
     Effect.sync(() => {
       // A channel seed is the XOR of a normalised master seed and a salt, and
       // JavaScript's `^` yields a SIGNED 32-bit result. Four of the six salts

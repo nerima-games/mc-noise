@@ -3,6 +3,7 @@ import {
   blendAlpha,
   blendDensity,
   blendOffset,
+  beardifier,
   cache2d,
   cacheAllInCell,
   cacheOnce,
@@ -37,6 +38,7 @@ describe('DensityFunction evaluation contexts', () => {
       blendDensity: (value, point) => value + point.y,
       blendAlpha: (point) => point.x / 10,
       blendOffset: (point) => point.z + 1,
+      beardifier: (point) => point.x - point.z,
     })
 
     expect(context.cellWidth).toBe(2)
@@ -64,6 +66,7 @@ describe('DensityFunction evaluation contexts', () => {
     expect(blendDensity(densityConstant(1)).kind).toBe('blend-density')
     expect(blendAlpha().kind).toBe('blend-alpha')
     expect(blendOffset().kind).toBe('blend-offset')
+    expect(beardifier().kind).toBe('beardifier')
   })
 
   it('caches once and clears every cache in a reusable session', () => {
@@ -121,6 +124,14 @@ describe('DensityFunction evaluation contexts', () => {
     expect(evaluateDensityFunction(blendOffset(), position, context)).toBe(2)
   })
 
+  it('delegates the official beardifier marker to its runtime callback', () => {
+    const context = createDensityEvaluationContext({
+      beardifier: (point) => point.x - point.z,
+    })
+
+    expect(evaluateDensityFunction(beardifier(), position, context)).toBe(0)
+  })
+
   it('accepts sessions and distinguishes them from context-like values', () => {
     const context = createDensityEvaluationContext()
     const session = createDensityEvaluationSession(context)
@@ -146,6 +157,9 @@ describe('DensityFunction evaluation contexts', () => {
     expect(() => evaluateDensityFunction(densityBlendOffset(), position)).toThrow(
       'blend-offset requires an evaluation context',
     )
+    expect(() => evaluateDensityFunction(beardifier(), position)).toThrow(
+      'beardifier requires an evaluation context',
+    )
     expect(() => evaluateDensityFunction(
       densityBlendDensity(densityConstant(1)),
       position,
@@ -161,6 +175,11 @@ describe('DensityFunction evaluation contexts', () => {
       position,
       createDensityEvaluationContext(),
     )).toThrow('blend-offset requires context.blendOffset')
+    expect(() => evaluateDensityFunction(
+      beardifier(),
+      position,
+      createDensityEvaluationContext(),
+    )).toThrow('beardifier requires context.beardifier')
     expect(() => createDensityEvaluationSession(null as never)).toThrow(
       'evaluation context must be an object',
     )
@@ -193,6 +212,9 @@ describe('DensityFunction evaluation contexts', () => {
     )
     expect(() => createDensityEvaluationContext({ blendOffset: null as never })).toThrow(
       'context.blendOffset must be a function when provided',
+    )
+    expect(() => createDensityEvaluationContext({ beardifier: null as never })).toThrow(
+      'context.beardifier must be a function when provided',
     )
   })
 })
