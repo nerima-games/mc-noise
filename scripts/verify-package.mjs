@@ -12,13 +12,13 @@ import { pathToFileURL } from 'node:url'
 const root = process.cwd()
 const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'mc-noise-package-'))
-const COMMAND_TIMEOUT_MS = 60_000
+const DEFAULT_COMMAND_TIMEOUT_MS = 120_000
 
 const run = (command, args) => {
   const result = spawnSync(command, args, {
     cwd: root,
     encoding: 'utf8',
-    timeout: COMMAND_TIMEOUT_MS,
+    timeout: DEFAULT_COMMAND_TIMEOUT_MS,
   })
   if (result.error !== undefined || result.status !== 0) {
     const reason = result.error?.message ?? (result.stderr?.trim() || `exit status ${String(result.status)}`)
@@ -163,7 +163,7 @@ try {
     throw new Error('dist/index.js Blender context returned an invalid result')
   }
 
-  run('corepack', ['pnpm', 'pack', '--pack-destination', temporaryDirectory, '--silent'])
+  run('pnpm', ['pack', '--pack-destination', temporaryDirectory, '--silent'])
   const archiveName = readdirSync(temporaryDirectory).find((name) => name.endsWith('.tgz'))
   if (archiveName === undefined) {
     throw new Error('pnpm pack produced no archive')

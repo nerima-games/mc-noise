@@ -195,8 +195,8 @@
         ],
         "patterns": [
           {
-            "group": ["@nerima-games/*", "!@nerima-games/mc-kernel"],
-            "message": "mc-noise is a Tier1 library and must not depend on any other @nerima-games/* package. mc-kernel is universally importable and exempt."
+            "group": ["@nerima-games/**", "!@nerima-games/mc-kernel", "!@nerima-games/mc-kernel/**"],
+            "message": "mc-noise is Tier1 (DEPENDENCY_POLICY.md §1); only the listed packages may be imported."
           }
         ]
       }

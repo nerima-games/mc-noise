@@ -31,7 +31,11 @@ export const MINECRAFT_BIOMES = [
 
 export type MinecraftBiome = (typeof MINECRAFT_BIOMES)[number]
 
-export const MINECRAFT_CHUNK_BIOMES = [...MINECRAFT_BIOMES, 'NETHER', 'END'] as const
+export const MINECRAFT_CHUNK_BIOMES: readonly [...typeof MINECRAFT_BIOMES, 'NETHER', 'END'] = [
+  ...MINECRAFT_BIOMES,
+  'NETHER',
+  'END',
+] as const
 
 export type MinecraftChunkBiome = (typeof MINECRAFT_CHUNK_BIOMES)[number]
 
@@ -72,7 +76,26 @@ export type MinecraftBiomeSurface = Readonly<{
   underwaterTop: BlockId
 }>
 
-export const MINECRAFT_BLOCK = {
+export const MINECRAFT_BLOCK: Readonly<
+  Record<
+    | 'AIR'
+    | 'BEDROCK'
+    | 'DEEPSLATE'
+    | 'DIRT'
+    | 'GRASS'
+    | 'GRAVEL'
+    | 'ICE'
+    | 'LAVA'
+    | 'LEAVES'
+    | 'LOG'
+    | 'OBSIDIAN'
+    | 'SAND'
+    | 'SNOW'
+    | 'STONE'
+    | 'WATER',
+    BlockId
+  >
+> = {
   AIR: blockIdOf('air'),
   BEDROCK: blockIdOf('bedrock'),
   DEEPSLATE: blockIdOf('deepslate'),
@@ -88,7 +111,7 @@ export const MINECRAFT_BLOCK = {
   SNOW: blockIdOf('snow'),
   STONE: blockIdOf('stone'),
   WATER: blockIdOf('water'),
-} as const
+}
 
 export const MINECRAFT_BIOME_SURFACES: Readonly<Record<MinecraftBiome, MinecraftBiomeSurface>> = {
   BEACH: { filler: MINECRAFT_BLOCK.SAND, top: MINECRAFT_BLOCK.SAND, underwaterTop: MINECRAFT_BLOCK.SAND },

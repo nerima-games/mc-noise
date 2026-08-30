@@ -120,7 +120,7 @@ export const minecraftClimateAt = (
   seed: number,
   wx: number,
   wz: number,
-  continentalness = toBipolar(minecraftContinentalnessAt(seed, wx, wz)),
+  continentalness: number = toBipolar(minecraftContinentalnessAt(seed, wx, wz)),
 ): MinecraftClimateSample =>
   minecraftClimateAtWithContinentalness(
     seed,

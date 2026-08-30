@@ -1,0 +1,28 @@
+id: no-wall-clock-read
+language: TypeScript
+severity: error
+files:
+  - "src/**/*.ts"
+message: >-
+  mc-noise is deterministic, seeded computation; it must not read a
+  process-global clock.
+note: >-
+  The seed -> value mapping is a frozen contract (docs/versioning.md §5); a
+  wall-clock read anywhere in src/ would make sampling nondeterministic and
+  break that contract. This is one of the org-wide rules every repository
+  shares (see mc-kernel's copy of this rule for the general rationale).
+
+  This rule exists because oxlint implements none of no-restricted-syntax,
+  no-restricted-properties, or no-restricted-globals (checked against the
+  version in the devShell: `oxlint --rules | grep no-restricted` returns
+  nothing), so the ban had no mechanical gate and was carried by review alone.
+
+  Matching is structural rather than textual on purpose: this repository
+  explains the ban in prose next to the code, and a grep would fail the very
+  comments that document it.
+rule:
+  any:
+    - pattern: Date.now()
+    - pattern: performance.now()
+    - pattern: new Date()
+    - pattern: new Date($$$ARGS)

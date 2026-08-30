@@ -291,7 +291,7 @@ export const fillDensityFunctionArray = (
   }
 }
 
-export const mapAllDensityFunction = mapAll
+export const mapAllDensityFunction: typeof mapAll = mapAll
 
 export const densityFunctionMinValue = (densityValue: DensityFunction): number =>
   densityBounds(requireDensityFunction('density', densityValue)).minValue

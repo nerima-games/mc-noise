@@ -187,4 +187,4 @@ export const mapDensityFunction = (
   return requireDensityFunction('visitor result', mapVisitor(mapped))
 }
 
-export const mapAll = mapDensityFunction
+export const mapAll: typeof mapDensityFunction = mapDensityFunction

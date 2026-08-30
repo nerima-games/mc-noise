@@ -212,7 +212,7 @@ export const densityConstant = (value: number): DensityFunction => {
   })
 }
 
-export const densityZero = densityConstant(DENSITY_ZERO)
+export const densityZero: DensityFunction = densityConstant(DENSITY_ZERO)
 
 type DensitySplineDefinition = ReturnType<typeof createSpline>
 
@@ -696,14 +696,14 @@ export const densityBlendOffset = (): DensityBlendOffset => {
   })
 }
 
-export const interpolated = densityInterpolated
-export const flatCache = densityFlatCache
-export const cache2d = densityCache2D
-export const cacheOnce = densityCacheOnce
-export const cacheAllInCell = densityCacheAllInCell
-export const blendDensity = densityBlendDensity
-export const blendAlpha = densityBlendAlpha
-export const blendOffset = densityBlendOffset
+export const interpolated: typeof densityInterpolated = densityInterpolated
+export const flatCache: typeof densityFlatCache = densityFlatCache
+export const cache2d: typeof densityCache2D = densityCache2D
+export const cacheOnce: typeof densityCacheOnce = densityCacheOnce
+export const cacheAllInCell: typeof densityCacheAllInCell = densityCacheAllInCell
+export const blendDensity: typeof densityBlendDensity = densityBlendDensity
+export const blendAlpha: typeof densityBlendAlpha = densityBlendAlpha
+export const blendOffset: typeof densityBlendOffset = densityBlendOffset
 
 export const densityLerp = (
   delta: DensityFunction,
@@ -721,21 +721,28 @@ export const densityLerp = (
 
 
 export const zero = (): DensityFunction => densityZero
-export const constant = densityConstant
-export const shift = densityShift
-export const shiftA = densityShiftA
-export const shiftB = densityShiftB
-export const add = densityAdd
-export const mul = densityMul
-export const min = densityMin
-export const max = densityMax
-export const weirdScaledSampler = densityWeirdScaledSampler
-export const endIslands = densityEndIslands
-export const oldBlendedNoise = densityOldBlendedNoise
-export const beardifier = densityBeardifier
-export const lerp = densityLerp
+export const constant: typeof densityConstant = densityConstant
+export const shift: typeof densityShift = densityShift
+export const shiftA: typeof densityShiftA = densityShiftA
+export const shiftB: typeof densityShiftB = densityShiftB
+export const add: typeof densityAdd = densityAdd
+export const mul: typeof densityMul = densityMul
+export const min: typeof densityMin = densityMin
+export const max: typeof densityMax = densityMax
+export const weirdScaledSampler: typeof densityWeirdScaledSampler = densityWeirdScaledSampler
+export const endIslands: typeof densityEndIslands = densityEndIslands
+export const oldBlendedNoise: typeof densityOldBlendedNoise = densityOldBlendedNoise
+export const beardifier: typeof densityBeardifier = densityBeardifier
+export const lerp: typeof densityLerp = densityLerp
 
-export const DensityMappedType = Object.freeze({
+export const DensityMappedType: Readonly<{
+  ABS: 'ABS'
+  CUBE: 'CUBE'
+  HALF_NEGATIVE: 'HALF_NEGATIVE'
+  QUARTER_NEGATIVE: 'QUARTER_NEGATIVE'
+  SQUARE: 'SQUARE'
+  SQUEEZE: 'SQUEEZE'
+}> = Object.freeze({
   ABS: 'ABS',
   CUBE: 'CUBE',
   HALF_NEGATIVE: 'HALF_NEGATIVE',
@@ -773,14 +780,14 @@ export const map = (
   operation: DensityMappedType,
 ): DensityFunction => densityMap(input, normalizeDensityMappedOperation(operation))
 
-export const mappedNoise = densityMappedNoise
+export const mappedNoise: typeof densityMappedNoise = densityMappedNoise
 
 export const spline = (definition: DensitySplineInput): DensityFunction =>
   densitySpline(definition.coordinate, definition.spline)
 
-export const findTopSurface = densityFindTopSurface
+export const findTopSurface: typeof densityFindTopSurface = densityFindTopSurface
 
-export const yClampedGradient = densityYClampedGradient
+export const yClampedGradient: typeof densityYClampedGradient = densityYClampedGradient
 
 export function noise(source: DensityNoiseSource): DensityFunction
 export function noise(source: DensityNoiseSource, yScale: number): DensityFunction
