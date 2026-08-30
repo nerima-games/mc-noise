@@ -1,6 +1,6 @@
 {
   "name": "@nerima-games/mc-noise",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Seeded deterministic noise, portable Minecraft density functions, and sampling primitives. The seed -> value interface is a versioned contract.",
   "homepage": "https://github.com/nerima-games/mc-noise#readme",
