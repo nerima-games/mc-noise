@@ -1,4 +1,5 @@
-import type { NoiseFn2D } from './perlin'
+import { requireFinite, requirePositiveFinite, requirePositiveInteger } from './number-validation.js'
+import type { NoiseFn2D } from './perlin.js'
 
 /** The boundary a value must exceed to count as positive in `requirePositiveInteger`/`requirePositiveFinite`. */
 const POSITIVE_BOUNDARY = 0
@@ -32,28 +33,6 @@ type NormalizedNoiseGrid2DOptions = Readonly<{
   readonly stepZ: number
 }>
 
-const requirePositiveInteger = (name: string, value: number): number => {
-  if (!Number.isInteger(value) || value <= POSITIVE_BOUNDARY) {
-    throw new RangeError(`${name} must be a positive integer, received ${value}`)
-  }
-  return value
-}
-
-const requireFinite = (name: string, value: number): number => {
-  if (!Number.isFinite(value)) {
-    throw new RangeError(`${name} must be finite, received ${value}`)
-  }
-  return value
-}
-
-const requirePositiveFinite = (name: string, value: number): number => {
-  requireFinite(name, value)
-  if (value <= POSITIVE_BOUNDARY) {
-    throw new RangeError(`${name} must be positive, received ${value}`)
-  }
-  return value
-}
-
 const normalizeGridOptions = (options: NoiseGrid2DOptions): NormalizedNoiseGrid2DOptions => {
   const width = requirePositiveInteger('width', options.width)
   const depth = requirePositiveInteger('depth', options.depth)
@@ -84,6 +63,159 @@ export const sampleNoise2DBatch = (
     samples[index] = noise(requireFinite('point.x', point.x), requireFinite('point.z', point.z))
   }
   return samples
+}
+
+export type NoiseInterpolatedGridOptions = Readonly<
+  NoiseGrid2DOptions & {
+    readonly sampleStride?: number
+  }
+>
+
+type CoarseNoiseGrid = Readonly<{
+  readonly samples: Float32Array
+  readonly width: number
+}>
+
+type InterpolationAxis = Readonly<{
+  readonly cellIndex: number
+  readonly nextCellIndex: number
+  readonly weight: number
+}>
+
+type CoarseRowSamplingOptions = Readonly<{
+  readonly noise: NoiseFn2D
+  readonly options: NormalizedNoiseGrid2DOptions
+  readonly sampleStride: number
+  readonly coarseWidth: number
+  readonly rowIndex: number
+  readonly samples: Float32Array
+}>
+
+const sampleCoarseRow = ({
+  noise,
+  options,
+  sampleStride,
+  coarseWidth,
+  rowIndex,
+  samples,
+}: CoarseRowSamplingOptions): void => {
+  const zIndex = Math.min(rowIndex * sampleStride, options.depth - LOOP_STEP)
+  const z = options.originZ + zIndex * options.stepZ
+
+  for (let xIndex = POSITIVE_BOUNDARY; xIndex < coarseWidth; xIndex += LOOP_STEP) {
+    const sampleXIndex = Math.min(xIndex * sampleStride, options.width - LOOP_STEP)
+    const x = options.originX + sampleXIndex * options.stepX
+    samples[rowIndex * coarseWidth + xIndex] = noise(x, z)
+  }
+}
+
+const createCoarseGrid = (
+  noise: NoiseFn2D,
+  options: NormalizedNoiseGrid2DOptions,
+  sampleStride: number,
+): CoarseNoiseGrid => {
+  const width = Math.ceil((options.width - LOOP_STEP) / sampleStride) + LOOP_STEP
+  const depth = Math.ceil((options.depth - LOOP_STEP) / sampleStride) + LOOP_STEP
+  const samples = new Float32Array(width * depth)
+
+  for (let rowIndex = POSITIVE_BOUNDARY; rowIndex < depth; rowIndex += LOOP_STEP) {
+    sampleCoarseRow({
+      coarseWidth: width,
+      noise,
+      options,
+      rowIndex,
+      sampleStride,
+      samples,
+    })
+  }
+  return { samples, width }
+}
+
+const createInterpolationAxis = (
+  index: number,
+  maxIndex: number,
+  sampleStride: number,
+): InterpolationAxis => {
+  const cellIndex = Math.floor(index / sampleStride)
+  const firstIndex = cellIndex * sampleStride
+  const lastIndex = Math.min(firstIndex + sampleStride, maxIndex)
+  let weight = POSITIVE_BOUNDARY
+  if (lastIndex !== firstIndex) {
+    weight = (index - firstIndex) / (lastIndex - firstIndex)
+  }
+  return {
+    cellIndex,
+    nextCellIndex: Math.min(
+      cellIndex + LOOP_STEP,
+      Math.ceil(maxIndex / sampleStride),
+    ),
+    weight,
+  }
+}
+
+const interpolateLinear = (start: number, end: number, weight: number): number =>
+  start + (end - start) * weight
+
+const interpolateCoarseCell = (
+  coarseGrid: CoarseNoiseGrid,
+  xAxis: InterpolationAxis,
+  zAxis: InterpolationAxis,
+): number => {
+  const topLeft =
+    coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.cellIndex]!
+  const topRight =
+    coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.nextCellIndex]!
+  const bottomLeft =
+    coarseGrid.samples[zAxis.nextCellIndex * coarseGrid.width + xAxis.cellIndex]!
+  const bottomRight =
+    coarseGrid.samples[
+      zAxis.nextCellIndex * coarseGrid.width + xAxis.nextCellIndex
+    ]!
+  const top = interpolateLinear(topLeft, topRight, xAxis.weight)
+  const bottom = interpolateLinear(bottomLeft, bottomRight, xAxis.weight)
+  return interpolateLinear(top, bottom, zAxis.weight)
+}
+
+const interpolateGrid = (
+  coarseGrid: CoarseNoiseGrid,
+  options: NormalizedNoiseGrid2DOptions,
+  sampleStride: number,
+): Float32Array => {
+  const samples = new Float32Array(options.width * options.depth)
+
+  for (let zIndex = POSITIVE_BOUNDARY; zIndex < options.depth; zIndex += LOOP_STEP) {
+    const zAxis = createInterpolationAxis(
+      zIndex,
+      options.depth - LOOP_STEP,
+      sampleStride,
+    )
+    for (let xIndex = POSITIVE_BOUNDARY; xIndex < options.width; xIndex += LOOP_STEP) {
+      const xAxis = createInterpolationAxis(
+        xIndex,
+        options.width - LOOP_STEP,
+        sampleStride,
+      )
+      samples[zIndex * options.width + xIndex] = interpolateCoarseCell(
+        coarseGrid,
+        xAxis,
+        zAxis,
+      )
+    }
+  }
+  return samples
+}
+
+export const sampleNoise2DInterpolatedGrid = (
+  noise: NoiseFn2D,
+  options: NoiseInterpolatedGridOptions,
+): Float32Array => {
+  const normalizedOptions = normalizeGridOptions(options)
+  const sampleStride = requirePositiveInteger(
+    'sampleStride',
+    options.sampleStride ?? DEFAULT_GRID_STEP,
+  )
+  const coarseGrid = createCoarseGrid(noise, normalizedOptions, sampleStride)
+  return interpolateGrid(coarseGrid, normalizedOptions, sampleStride)
 }
 
 export const sampleNoise2DGrid = (noise: NoiseFn2D, options: NoiseGrid2DOptions): Float32Array => {

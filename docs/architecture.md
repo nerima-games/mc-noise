@@ -1,12 +1,12 @@
 # アーキテクチャ
 
-- 上位仕様: plan.md（**非公開**。§2 全体像、§3.2 mc-noise）
+- 根拠: 現行の workspace 構成、依存宣言、CI と参照実装
 - 参照実装: `takeokunn/ts-minecraft`（凍結。仕様書兼テストオラクル）
 
 ## 1. なぜ 16 リポジトリなのか
 
 単一リポジトリ（参照実装は 84k LOC）では「正しく動くことが保証される単位」が大きすぎ、
-検証しきれない。plan.md §1 の解決策は次の 1 行に尽きる:
+検証しきれない。分割の解決策は次の 1 行に尽きる:
 
 > ゲーム UX を構成する体験単位ごとにリポジトリを分け、それぞれが「実際にユーザが操作できるプレビュー」を同梱する
 
@@ -79,8 +79,8 @@ graph BT
 ```
 
 実線 = 実行時依存（`dependencies`）、点線 = プレビュー起動時のみ（`devDependencies`）。
-plan.md §2.1 は 15 リポジトリを図示しているが、Step 0 で **mc-dev-meta**（開発用 workspace、実行時依存なし）が加わるため、
-DEPENDENCY_POLICY.md が記録する許可グラフは **16 行**である（旧 `scripts/check-dependency-whitelist.ts` の roster から引き継いだもの。§6 参照）。
+許可グラフの正典は各リポジトリの依存宣言、lint 設定、CI であり、この図と実効設定の
+内容が一致していることをレビューで確認する（§6 参照）。
 
 ## 4. このリポジトリの位置
 
@@ -94,12 +94,12 @@ DEPENDENCY_POLICY.md が記録する許可グラフは **16 行**である（旧
 設定の変更ではない。
 
 子が `mc-worldgen` 1 つしかないのは弱点ではなく、**凍結を可能にする条件**である。
-plan.md §3.2 が「seed→値のインターフェースは凍結扱い」と宣言できるのは、
+このリポジトリが「seed→値のインターフェースは凍結扱い」と宣言できるのは、
 変更の影響範囲が 1 リポジトリに閉じているからではなく、逆に、
 その 1 リポジトリを通じて**過去に生成されたすべてのワールドの地形**に波及するからである。
 詳細は `versioning.md` を読むこと。
 
-## 5. 構成の成立条件（plan.md §2.3）
+## 5. 構成の成立条件
 
 ### 5.1 基盤 = 名詞、体験 = 動詞（§2.3-1）
 
@@ -110,9 +110,7 @@ plan.md §3.2 が「seed→値のインターフェースは凍結扱い」と�
 「採掘 → インベントリに入る」は mx-gameplay が mx-ui を呼ぶのではなく、
 mc-sim の `InventoryService` を経由して実現する。
 
-このルールは DEPENDENCY_POLICY.md の許可グラフに埋め込まれている（§6 参照。かつては
-`scripts/check-dependency-whitelist.ts` の roster と `test/check-dependency-whitelist.test.ts` の
-「has no edges between experience modules」が機械的に保持していたが、両ファイルは撤去された）。
+このルールは依存宣言と lint の許可グラフに埋め込まれている（§6 参照）。
 
 安定ライブラリ層は名詞でも動詞でもなく**関数**である。状態を持たず、サービスを提供せず、
 `Layer` を公開しない。この層に `Ref` が現れたら設計を疑うこと。
@@ -129,9 +127,7 @@ mc-playground-kit は「ミニ平地ワールド + カメラ + レンダラ + �
 
 したがって:
 
-- `mc-playground-kit` が `dependencies` に現れたら CI は失敗する
-  （旧 `check-dependency-whitelist.ts` の `DEV_ONLY_PACKAGES`、rule 6 が担っていた検査。
-  撤去済みで、現在はレビューで守る、DEPENDENCY_POLICY.md §3）。
+- `mc-playground-kit` が `dependencies` に現れたら依存境界に反し、レビューで拒否する。
 - 出荷ソース（`index.ts` と `domain/`）からの import も失敗する。
 - roster では **ノードとしては存在する**（kit 自身は worldgen / sim / render に実行時依存する）が、
   **どの行のターゲットにも現れない**。devDependency は実行時の辺を作らないので、循環にも参加しない。
@@ -152,7 +148,7 @@ interface StageRegistration {
 }
 ```
 
-標準の全順序の骨格（plan.md §4.2）:
+標準の全順序の骨格:
 
 ```
 input
@@ -173,40 +169,36 @@ mc-worldgen がチャンク生成のときに呼ぶ純粋関数だからであ�
 
 ## 6. 依存の実効機構（§2.3-5）
 
-**旧 `scripts/check-dependency-whitelist.ts`（+ `test/check-dependency-whitelist.test.ts` +
-`pnpm check:deps`）は org 標準から撤去された。** 実効機構は各リポジトリの `.oxlintrc.json` の
-`no-restricted-imports` に一本化されており、`pnpm lint` がその役割を吸収する
-（[DEPENDENCY_POLICY.md §5](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#5-実効機構-oxlint-の-no-restricted-imports)、
-[PACKAGE_STANDARD.md「`scripts/check-dependency-whitelist.ts` の廃止」](https://github.com/nerima-games/.github/blob/main/PACKAGE_STANDARD.md#scriptscheck-dependency-whitelistts-の廃止)）。
-以下は旧スクリプトが機械的に強制していた規則で、その内容自体は変わっていない
-（許可グラフの正典は [DEPENDENCY_POLICY.md](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md)）。
+実効機構は各リポジトリの `.oxlintrc.json` の `no-restricted-imports` と `pnpm lint` による
+出荷ソースの import 境界検査であり、循環・推移依存・宣言の一致はレビューで確認する。
 
 | ルール | 内容 | 現在の実効機構 |
 | --- | --- | --- |
-| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `.oxlintrc.json` の `no-restricted-imports`（`patterns[].group: ["@nerima-games/*", "!@nerima-games/mc-kernel"]`。DEPENDENCY_POLICY.md の例が示す `regex` キーは oxlint 1.76.0 では単独でも `group` と併用しても一致せず無効になることを実測済みのため、`group` のみを使っている） |
-| 循環禁止 | 例外リストを設けない | レビュー（DEPENDENCY_POLICY.md §2） |
-| 推移閉包の禁止 | A→B、B→C のとき A は C を import できない | レビュー（DEPENDENCY_POLICY.md §2） |
+| 上位 Tier への依存禁止 | mc-noise（Tier1）は org 内のどの `@nerima-games/*` にも依存できない | `.oxlintrc.json` の `no-restricted-imports`（`mc-kernel` を除外） |
+| 循環禁止 | 例外リストを設けない | レビュー（依存境界の規約） |
+| 推移閉包の禁止 | A→B、B→C のとき A は C を import できない | レビュー（依存境界の規約） |
 | kernel は例外 | mc-kernel はどこからでも import 可。ただし `package.json` への記載は必要 | `.oxlintrc.json` のパターンが `mc-kernel` を除外 |
-| 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない | レビュー（自動チェックなし、DEPENDENCY_POLICY.md §5） |
+| 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載されていなければならない | レビュー（自動チェックなし） |
 | kit は devDependency 専用 | §5.2 のとおり（mc-noise は kit 自体を使わない） | レビュー |
-| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | **代替なし**（oxlint 0.12 未実装、各リポジトリの裁量。`.oxlintrc.json` 冒頭コメント参照） |
+| `Date.now()` 禁止 | `Date.now()` / `new Date()` / `performance.now()` の 3 つ。時刻は注入された Clock Port から取得する | ソースポリシー。現在の lint 設定では自動強制していない |
 
-`Date.now()` 禁止がまだ oxlint に無いのは、oxlint 0.12 が `no-restricted-syntax` も
-`no-restricted-properties` も実装しておらず、`no-restricted-globals` も一覧に出るだけで
-実装されていないためである（0.12.0 で実測確認済み）。旧スクリプトの撤去に伴い、この禁止は
-現時点で自動検査の対象外になった（org 標準として個別スクリプトの復活は要求しない、
-PACKAGE_STANDARD.md 同節）。
+`Date.now()` 禁止は現在、ソースポリシーとして扱っている。リポジトリ内に時間依存を持ち込まない
+ことは `rg` による監査で確認できるが、現在の `.oxlintrc.json` にはこの構文を自動拒否する
+ルールを設定していない。そのため、この方針を CI の lint ゲートであるかのようには扱わない。
+将来、時間を扱う層が必要になった場合も、決定論的なドメイン関数へ時計を直接参照させず、所有側
+から注入する。
 
-## 7. スケルトン段階の依存宣言について
+## 7. 公開依存の境界
 
-**現時点で `package.json` の `dependencies` は `effect` だけである。**
-`@nerima-games/mc-kernel` は入っていない。理由は 2 つ:
+`package.json` の runtime dependency は `effect` と `@nerima-games/mc-kernel` である。
+`src/domain/chunk-sampling.ts` は kernel の `ChunkCoord` と `CHUNK_SIZE_XZ` を使って
+チャンク境界を本リポジトリの補間グリッドへ変換する。座標語彙とチャンク幅は kernel の定義を
+再実装せず、ノイズの seed・勾配・補間・サンプリングは本リポジトリが所有する。
 
-1. まだ何も publish されていない（bottom-up に publish してから pin する方式）。
-2. スケルトンには import すべき兄弟コードがまだ存在しない。
-
-意図されたグラフは DEPENDENCY_POLICY.md と本ドキュメントに記録されている。
-グラフは仕様であり、最初の publish より前に循環検出を意味あるものにしているのはこの記録である。
+設定済みの `NoiseRouter`、地形スプライン、ブロック生成はこの依存境界を越えて持ち込まない。
+それらは上位の `mc-worldgen` が公式仕様とともに管理する。一方、ノイズチャンネルを使う気候・バイオーム分類、
+地形高、湖、水面、表面材質、1 列の純粋な評価と、portable `DensityFunction` の代数・境界値・評価器は
+mc-noise が所有し、`mc-worldgen` はそれらを公式のワールド設定や地形式、チャンクへのブロック適用と組み合わせる。
 
 ## 参照
 

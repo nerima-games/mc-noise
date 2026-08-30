@@ -10,7 +10,7 @@
  * Why this file exists
  * ---------------------------------------------------------------------------
  *
- * `domain/octaves.ts` opens with a performance exception (plan.md §3.2, §5.2):
+ * `domain/octaves.ts` opens with a performance exception (docs/design-notes.md N-1):
  * the octave loops are `let` + `for` and must stay that way. It lists three
  * rewrites that would lose — `Array.from(...).reduce`, `effect`'s
  * `Array.reduce`, `Effect.reduce` — and it ends:
@@ -19,7 +19,7 @@
  *    first, and put the benchmark in the repository."
  *
  * Until now the repository had no benchmark, so that sentence was an IOU.
- * plan.md §5.2 calls this exception "established by measurement", and of the
+ * The design notes call this exception "established by measurement", and of the
  * five exceptions it was the one with the weakest protection — a comment, and
  * nothing else. This file discharges the IOU. Every rewrite the comment names is
  * implemented below and timed against the real thing, so a reviewer arguing for
@@ -29,9 +29,9 @@
  * Methodology and provenance
  * ---------------------------------------------------------------------------
  *
- * Warm up, then take the median of nine timed runs — the reference
- * implementation's `scripts/bench-terrain.ts` shape, whose nine (rather than
- * meshing's seven) is kept because this is the terrain-side workload.
+ * Guards use interleaved implementations with twenty warm-up rounds and nine
+ * timed samples. Workloads use adjacent paired workload/yardstick samples,
+ * alternate measurement order, and gate on the median of per-sample ratios.
  *
  * The workload sizes come from the same place: the reference measures per-chunk
  * terrain generation and multiplies by 81 chunks (renderDistance=4). mc-noise
@@ -64,6 +64,8 @@ import {
   formatWorkload,
   guardRatio,
   measure,
+  measureInterleaved,
+  measurePaired,
   readBaseline,
   SHIPPED_VS_FROZEN_TOLERANCE,
   tolerancesFrom,
@@ -174,18 +176,29 @@ const yardstick = (): void => {
  * frozen copy of its own current shape pins the SHIPPED function, and drops the
  * moment the shipped loop gets slower for any reason.
  *
- * The recorded ratio is 0.84 rather than exactly 1.00, and stably so — spread
- * across five whole-benchmark runs is 1%. The frozen copy is local to this
- * module and V8 inlines it better than the cross-module import; that is a
- * property of the measurement, not of `octaveNoise2D`. A baseline only needs the
- * number to be stable, and this one is the most stable in the file.
+ * The frozen copy includes the same parameter precondition as the shipped
+ * function. Without that precondition, this comparison would measure the
+ * validation boundary rather than the loop body it is meant to pin.
  */
+const validateBenchmarkOctaveParams = (params: OctaveParams): void => {
+  if (!Number.isSafeInteger(params.octaves)) {
+    throw new RangeError('octaves must be a safe integer')
+  }
+  if (!Number.isFinite(params.persistence)) {
+    throw new RangeError('persistence must be finite')
+  }
+  if (!Number.isFinite(params.lacunarity)) {
+    throw new RangeError('lacunarity must be finite')
+  }
+}
+
 const octaveNoiseFrozenImperative = (
   noiseFn: NoiseFn2D,
   x: number,
   z: number,
   params: OctaveParams,
 ): number => {
+  validateBenchmarkOctaveParams(params)
   if (params.octaves < 1) {
     return 0.5
   }
@@ -209,6 +222,7 @@ const octaveNoiseArrayFromReduce = (
   z: number,
   params: OctaveParams,
 ): number => {
+  validateBenchmarkOctaveParams(params)
   if (params.octaves < 1) {
     return 0.5
   }
@@ -236,6 +250,7 @@ const octaveNoiseEffectArrayReduce = (
   z: number,
   params: OctaveParams,
 ): number => {
+  validateBenchmarkOctaveParams(params)
   if (params.octaves < 1) {
     return 0.5
   }
@@ -254,6 +269,7 @@ const octaveNoiseEffectArrayReduce = (
 
 /** Rewrite 3: `Effect.reduce`, one fiber step per octave. */
 const octaveNoiseEffectReduce = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams): number => {
+  validateBenchmarkOctaveParams(params)
   if (params.octaves < 1) {
     return 0.5
   }
@@ -399,11 +415,21 @@ const main = async (): Promise<number> => {
   console.log(`  chunk framing:        ${String(COLUMNS_PER_CHUNK)} columns/chunk, x81 chunks at renderDistance=4\n`)
   console.log(`  equivalence check:    ${octaveEquivalence()}\n`)
 
-  const imperativeMs = measure(armOver(octaveNoise2D), options(3, 6))
-  const frozenMs = measure(armOver(octaveNoiseFrozenImperative), options(3, 6))
-  const arrayFromMs = measure(armOver(octaveNoiseArrayFromReduce), options(3, 6))
-  const effectArrayMs = measure(armOver(octaveNoiseEffectArrayReduce), options(3, 6))
-  const effectReduceMs = measure(armOver(octaveNoiseEffectReduce), options(1, 2))
+  const octaveTimings = measureInterleaved(
+    [
+      armOver(octaveNoise2D),
+      armOver(octaveNoiseFrozenImperative),
+      armOver(octaveNoiseArrayFromReduce),
+      armOver(octaveNoiseEffectArrayReduce),
+      armOver(octaveNoiseEffectReduce),
+    ],
+    options(3, 20),
+  )
+  const imperativeMs = octaveTimings[0] ?? Number.NaN
+  const frozenMs = octaveTimings[1] ?? Number.NaN
+  const arrayFromMs = octaveTimings[2] ?? Number.NaN
+  const effectArrayMs = octaveTimings[3] ?? Number.NaN
+  const effectReduceMs = octaveTimings[4] ?? Number.NaN
 
   const guards: ReadonlyArray<Guard> = [
     {
@@ -443,48 +469,53 @@ const main = async (): Promise<number> => {
     },
   ]
 
-  console.log('the performance exception of domain/octaves.ts, as A/B ratios — machine-independent:\n')
+  console.log('the performance exception of domain/octaves.ts, as interleaved A/B ratios:\n')
   for (const guard of guards) {
     console.log(formatGuard(guard))
   }
   console.log(`\n      all four protect docs/design-notes.md regression: ${guards[0]?.regression ?? ''}\n`)
 
-  const yardstickMs = measure(yardstick, options(2000, 4000))
+  const yardstickOptions = options(2000, 4000)
+  const yardstickMs = measure(yardstick, yardstickOptions)
+  const measureWorkload = (run: () => void, workloadOptions: MeasureOptions): Pick<Workload, 'msPerUnit' | 'ratio'> => {
+    const paired = measurePaired(yardstick, run, yardstickOptions, workloadOptions)
+    return { msPerUnit: paired.slowMs, ratio: paired.ratio }
+  }
 
   const workloads: ReadonlyArray<Workload> = [
     {
       name: 'createNoiseField',
-      msPerUnit: measure(buildFieldWorkload, options(200, 400)),
+      ...measureWorkload(buildFieldWorkload, options(200, 400)),
       unit: 'seed',
       detail: '6 permutation tables + 6 pre-composed fBm samplers; once per world, not per chunk',
     },
     {
       name: 'sample/raw2d-per-chunk-columns',
-      msPerUnit: measure(rawSampling, options(200, 400)),
+      ...measureWorkload(rawSampling, options(200, 400)),
       unit: 'chunk',
       detail: '256 single-octave Perlin samples',
     },
     {
       name: 'sample/raw3d-per-chunk-columns',
-      msPerUnit: measure(raw3dSampling, options(200, 400)),
+      ...measureWorkload(raw3dSampling, options(200, 400)),
       unit: 'chunk',
       detail: '256 single-octave 3D Perlin samples',
     },
     {
       name: 'sample/octave2d-per-chunk-columns',
-      msPerUnit: measure(chunkOctaveSampling, options(100, 200)),
+      ...measureWorkload(chunkOctaveSampling, options(100, 200)),
       unit: 'chunk',
       detail: '256 x 4 octaves, amplitude sum recomputed per sample',
     },
     {
       name: 'sample/all-channels-per-chunk-columns',
-      msPerUnit: measure(chunkChannelSampling, options(50, 100)),
+      ...measureWorkload(chunkChannelSampling, options(50, 100)),
       unit: 'chunk',
       detail: `256 columns x ${String(NOISE_CHANNELS.length)} channels, amplitude sum hoisted`,
     },
   ]
 
-  console.log('end-to-end workloads — absolute figures are indicative only (see harness header):\n')
+  console.log('end-to-end workloads — paired ratios gate; absolute figures are diagnostics:\n')
   console.log(`  ${'yardstick/fade-and-table-lookup'.padEnd(44)} ${yardstickMs.toFixed(4)} ms/pass`)
   for (const workload of workloads) {
     console.log(formatWorkload(workload))
@@ -496,12 +527,15 @@ const main = async (): Promise<number> => {
       version: 1,
       recordedOn: process.env['BENCH_MACHINE'] ?? 'unrecorded machine',
       note:
-        'guards are slow/fast A/B ratios measured in one process and are machine-independent; ' +
-        'workloads are workload/yardstick ratios and are only approximately so. ' +
+        'guards are interleaved slow/fast ratios measured in one process; ' +
+        'workloads use adjacent paired workload/yardstick samples. Both remain environment-sensitive. ' +
         'Regenerate with `pnpm bench --update-baseline` and say in the commit message what moved and why.',
       guards: Object.fromEntries(guards.map((guard) => [guard.name, Number(guardRatio(guard).toPrecision(4))])),
       workloads: Object.fromEntries(
-        workloads.map((workload) => [workload.name, Number((workload.msPerUnit / yardstickMs).toPrecision(4))]),
+        workloads.map((workload) => [
+          workload.name,
+          Number((workload.ratio ?? workload.msPerUnit / yardstickMs).toPrecision(4)),
+        ]),
       ),
     }
     await writeBaseline(BASELINE_PATH, recorded)

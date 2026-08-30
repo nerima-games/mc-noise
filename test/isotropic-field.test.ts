@@ -1,6 +1,7 @@
-import { describe, expect, it } from '@effect/vitest'
+import { describe, expect } from 'vitest'
+import { effectTest } from './effect-test'
 import { Effect } from 'effect'
-import { createIsotropicNoiseField, createNoiseField } from '../src/domain/field'
+import { createNoiseField } from '../src/domain/field'
 import { NOISE_CHANNELS, NoiseSeed, type NoiseChannel } from '../src/domain/seed'
 
 const SAMPLE_COORDINATES = [
@@ -9,11 +10,11 @@ const SAMPLE_COORDINATES = [
   [1_000_000.25, -1_000_000.75],
 ] as const
 
-describe('createIsotropicNoiseField', () => {
-  it.effect('is deterministic across every 2D field path', () =>
+describe('createNoiseField', () => {
+  effectTest('is deterministic across every 2D field path', () =>
     Effect.sync(() => {
-      const first = createIsotropicNoiseField(NoiseSeed(0xdecafbad))
-      const second = createIsotropicNoiseField(NoiseSeed(0xdecafbad))
+      const first = createNoiseField(NoiseSeed(0xdecafbad))
+      const second = createNoiseField(NoiseSeed(0xdecafbad))
 
       for (const [x, z] of SAMPLE_COORDINATES) {
         expect(first.raw2d(x, z)).toBe(second.raw2d(x, z))
@@ -26,10 +27,10 @@ describe('createIsotropicNoiseField', () => {
     }),
   )
 
-  it.effect('keeps finite samples and normalized output within their contracts', () =>
+  effectTest('keeps finite samples and normalized output within their contracts', () =>
     Effect.sync(() => {
       for (let seed = 0; seed < 32; seed += 1) {
-        const field = createIsotropicNoiseField(NoiseSeed(seed))
+        const field = createNoiseField(NoiseSeed(seed))
         for (const [x, z] of SAMPLE_COORDINATES) {
           expect(Number.isFinite(field.raw2d(x, z))).toBe(true)
           expect(field.noise2d(x, z)).toBeGreaterThanOrEqual(0)
@@ -43,44 +44,65 @@ describe('createIsotropicNoiseField', () => {
     }),
   )
 
-  it.effect('removes the legacy half-integer zero degeneracy from full fields', () =>
+  effectTest('keeps normalized 3D samples within the unit interval', () =>
     Effect.sync(() => {
-      const seed = NoiseSeed(20260726)
-      const legacy = createNoiseField(seed)
-      const isotropic = createIsotropicNoiseField(seed)
-      const coordinates = Array.from({ length: 256 }, (_unused, index) => [index + 0.5, index * 2 + 0.5] as const)
-      const legacyZeros = coordinates.filter(([x, z]) => legacy.raw2d(x, z) === 0).length
-      const isotropicZeros = coordinates.filter(([x, z]) => isotropic.raw2d(x, z) === 0).length
+      const sampleHeights = [-31.5, -7.13, 0.25, 42.75]
 
-      expect(legacyZeros).toBeGreaterThan(40)
-      expect(isotropicZeros).toBeLessThan(legacyZeros / 2)
+      for (let seed = 0; seed < 32; seed += 1) {
+        const field = createNoiseField(NoiseSeed(seed))
+        for (const [x, z] of SAMPLE_COORDINATES) {
+          for (const y of sampleHeights) {
+            const sample = field.noise3d(x, y, z)
+            expect(Number.isFinite(sample)).toBe(true)
+            expect(sample).toBeGreaterThanOrEqual(0)
+            expect(sample).toBeLessThanOrEqual(1)
+          }
+        }
+      }
     }),
   )
 
-  it.effect('does not alter the legacy seed-to-value mapping', () =>
+  effectTest('avoids excessive half-integer zero collapse in full fields', () =>
     Effect.sync(() => {
       const field = createNoiseField(NoiseSeed(20260726))
-      expect(field.raw2d(12.37, -7.13)).toBe(0.20774690518930813)
-      expect(field.channel('erosion')(100.37, 200.13)).toBe(0.2726603117072621)
+      const coordinates = Array.from({ length: 256 }, (_unused, index) => [index + 0.5, index * 2 + 0.5] as const)
+      const samples = coordinates.map(([x, z]) => field.raw2d(x, z))
+      const zeros = samples.filter((value) => value === 0).length
+
+      expect(zeros).toBeLessThan(40)
+      expect(new Set(samples).size).toBeGreaterThan(40)
     }),
   )
 
-  it.effect('falls back to the neutral signed value for a channel name outside NOISE_CHANNELS', () =>
+  effectTest('keeps the 3D field mapping stable', () =>
+    Effect.sync(() => {
+      const field = createNoiseField(NoiseSeed(20260726))
+
+      expect(field.raw3d(12.37, -7.13, 4.25)).toBe(-0.039941847301443775)
+    }),
+  )
+
+  effectTest('pins the canonical seed-to-value mapping', () =>
+    Effect.sync(() => {
+      const field = createNoiseField(NoiseSeed(20260726))
+      expect(field.raw2d(12.37, -7.13)).toBe(0.15995536869657265)
+      expect(field.channel('erosion')(100.37, 200.13)).toBe(0.0028109265851947052)
+    }),
+  )
+
+  effectTest('falls back to the neutral signed value for a channel name outside NOISE_CHANNELS', () =>
     Effect.sync(() => {
       // `channel`'s type restricts callers to `NoiseChannel`, but that boundary
       // is a TypeScript-only guarantee: a caller who computes a channel name
       // dynamically (e.g. from external config) and passes it through a cast
       // is not excluded by the type system the way an out-of-range permutation
       // index is, so this fallback is genuinely reachable and worth testing
-      // rather than deleting. It is shared by both field constructors since
-      // both go through `createNoiseFieldWith2DKernel`.
+      // rather than deleting. It is shared by every channel in the field.
       const outOfDomain = 'not-a-real-channel' as unknown as NoiseChannel
-      const legacy = createNoiseField(NoiseSeed(20260726))
-      const isotropic = createIsotropicNoiseField(NoiseSeed(20260726))
+      const field = createNoiseField(NoiseSeed(20260726))
 
-      expect(legacy.channel(outOfDomain)(0, 0)).toBe(0)
-      expect(legacy.channel(outOfDomain)(123.45, -67.89)).toBe(0)
-      expect(isotropic.channel(outOfDomain)(123.45, -67.89)).toBe(0)
+      expect(field.channel(outOfDomain)(0, 0)).toBe(0)
+      expect(field.channel(outOfDomain)(123.45, -67.89)).toBe(0)
     }),
   )
 })

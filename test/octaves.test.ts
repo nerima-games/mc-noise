@@ -8,7 +8,8 @@
  *   noise-signed-fbm-stays-signed
  *   noise-spatial-continuity
  */
-import { describe, expect, it } from '@effect/vitest'
+import { describe, expect } from 'vitest'
+import { effectTest } from './effect-test'
 import { Effect, FastCheck } from 'effect'
 import { createNoiseField } from '../src/domain/field'
 import { clampSigned, normalizeNoise, octaveNoise2D, signedFbm2D } from '../src/domain/octaves'
@@ -21,7 +22,7 @@ const arbitraryCoordinate = FastCheck.double({ min: -1024, max: 1024, noNaN: tru
 const kernelFor = (seed: number) => createPerlinNoise2D(mulberry32(NoiseSeed(seed)))
 
 describe('octaveNoise2D', () => {
-  it.effect('stays inside [0, 1] for every parameter combination the API permits', () =>
+  effectTest('stays inside [0, 1] for every parameter combination the API permits', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(
@@ -44,7 +45,24 @@ describe('octaveNoise2D', () => {
     }),
   )
 
-  it.effect('returns the midpoint 0.5 for a degenerate octave count, never the extreme 0', () =>
+  effectTest('rejects invalid numeric parameters before entering the octave loop', () =>
+    Effect.sync(() => {
+      const invalidParams = [
+        { octaves: Number.NaN, persistence: 0.5, lacunarity: 2 },
+        { octaves: 1.5, persistence: 0.5, lacunarity: 2 },
+        { octaves: Number.MAX_SAFE_INTEGER + 1, persistence: 0.5, lacunarity: 2 },
+        { octaves: 1, persistence: Number.NaN, lacunarity: 2 },
+        { octaves: 1, persistence: 0.5, lacunarity: Number.POSITIVE_INFINITY },
+      ]
+
+      for (const params of invalidParams) {
+        expect(() => octaveNoise2D(() => 0, 0, 0, params)).toThrow(RangeError)
+      }
+      expect(() => signedFbm2D(() => 0, invalidParams[0]!)).toThrow(RangeError)
+    }),
+  )
+
+  effectTest('returns the midpoint 0.5 for a degenerate octave count, never the extreme 0', () =>
     Effect.sync(() => {
       // 0 would be indistinguishable from a real trough downstream. The
       // reference implementation returns 0 here; this repository does not.
@@ -55,7 +73,7 @@ describe('octaveNoise2D', () => {
     }),
   )
 
-  it.effect('a constant kernel collapses to exactly the normalised constant, whatever the parameters', () =>
+  effectTest('a constant kernel collapses to exactly the normalised constant, whatever the parameters', () =>
     Effect.sync(() => {
       // total/maxValue is the amplitude-weighted mean, so a constant input must
       // survive unchanged. This is the algebraic check that the accumulator and
@@ -68,7 +86,7 @@ describe('octaveNoise2D', () => {
     }),
   )
 
-  it.effect('adding octaves changes the result — the loop really iterates', () =>
+  effectTest('adding octaves changes the result — the loop really iterates', () =>
     Effect.sync(() => {
       const kernel = kernelFor(7)
       const values = [1, 2, 3, 4, 8].map((octaves) =>
@@ -80,7 +98,7 @@ describe('octaveNoise2D', () => {
 })
 
 describe('signedFbm2D', () => {
-  it.effect('stays signed and inside [-1, 1], because terrain splines are defined over [-1, 1]', () =>
+  effectTest('stays signed and inside [-1, 1], because terrain splines are defined over [-1, 1]', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(arbitrarySeed, arbitraryCoordinate, arbitraryCoordinate, (seed, x, z) => {
@@ -93,7 +111,7 @@ describe('signedFbm2D', () => {
     }),
   )
 
-  it.effect('actually produces negative values, so "signed" is not vacuously true', () =>
+  effectTest('actually produces negative values, so "signed" is not vacuously true', () =>
     Effect.sync(() => {
       const sampler = signedFbm2D(kernelFor(11), { octaves: 3, persistence: 0.5, lacunarity: 2 })
       const samples = Array.from({ length: 512 }, (_unused, index) => sampler(index * 0.31, index * -0.17))
@@ -102,7 +120,7 @@ describe('signedFbm2D', () => {
     }),
   )
 
-  it.effect('degenerates to the constant 0 rather than to NaN when there are no octaves', () =>
+  effectTest('degenerates to the constant 0 rather than to NaN when there are no octaves', () =>
     Effect.sync(() => {
       // amplitudeSum is 0 there, and 0/0 is NaN. A NaN escaping into terrain
       // generation produces a chunk of void that no test elsewhere explains.
@@ -114,7 +132,7 @@ describe('signedFbm2D', () => {
 })
 
 describe('field-level range and continuity', () => {
-  it.effect('noise2d and noise3d are normalised into [0, 1]; raw2d and raw3d are not', () =>
+  effectTest('noise2d and noise3d are normalised into [0, 1]; raw2d and raw3d are not', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(
@@ -141,7 +159,7 @@ describe('field-level range and continuity', () => {
     }),
   )
 
-  it.effect('is spatially continuous: a small step in x produces a small step in the value', () =>
+  effectTest('is spatially continuous: a small step in x produces a small step in the value', () =>
     Effect.sync(() => {
       // Gradient noise is smooth by construction; this is the property that
       // fails first if the permutation lookup or the fade curve is wrong, and
@@ -156,7 +174,7 @@ describe('field-level range and continuity', () => {
     }),
   )
 
-  it.effect('clampSigned and normalizeNoise are the exact inverses they claim to be at the boundaries', () =>
+  effectTest('clampSigned and normalizeNoise are the exact inverses they claim to be at the boundaries', () =>
     Effect.sync(() => {
       expect(normalizeNoise(-1)).toBe(0)
       expect(normalizeNoise(0)).toBe(0.5)

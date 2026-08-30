@@ -5,14 +5,8 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        maxForks: '50%',
-        minForks: 1,
-        isolate: true,
-        singleFork: false,
-      },
-    },
+    maxWorkers: '50%',
+    isolate: true,
     include: ['test/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/.git/**'],
     testTimeout: 10000,
@@ -29,15 +23,20 @@ export default defineConfig({
       provider: 'v8',
       enabled: false,
       include: ['src/index.ts', 'src/domain/**/*.ts'],
-      exclude: ['**/*.d.ts', '**/*.config.ts', '**/*.test.ts', '**/*.spec.ts'],
-      all: true,
+      exclude: [
+        '**/*.d.ts',
+        '**/*.config.ts',
+        '**/*.test.ts',
+        '**/*.spec.ts',
+        // Type-only modules erase to no executable statements after TypeScript compilation.
+        '**/density-function-types.ts',
+        '**/simplex-points.ts',
+      ],
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // Org-wide immediate rollout (TEST_STANDARD.md §3): all 16 repositories
-      // enable the 4-metric 99% gate on the same day, with no staged ramp-up.
-      // A repository under 99% at rollout time goes red in CI; that is the
-      // accepted, tracked cost of the decision, not a reason to lower this.
-      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      // Every source branch is covered by the deterministic test suite.
+      // Keep this gate at 100% so new behavior cannot silently ship untested.
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
     },
   },
   esbuild: {

@@ -1,14 +1,14 @@
 # 公開 API
 
-- 出典: plan.md §3.2 + **参照実装の実コードによる検証**
+- 根拠: 現行の公開 API + **参照実装の実コードによる検証**
 - 参照実装ルート: `<reference-impl>`（以下パスはこれ相対）
 
-plan.md の API スケッチと参照実装の実装は一致しない箇所がある。
+初期 API スケッチと参照実装の実装は一致しない箇所がある。
 本書は**実コードで確認した事実**を一次資料とし、差分は理由付きで明示する。
 
 ## 1. 最重要の差分: シードは引数ではなくファクトリ
 
-plan.md §3.2 は次のように書く:
+初期 API スケッチは次のように書く:
 
 > **主要な公開API**: `noise2d/3d(seed, x, y, z)`
 
@@ -54,13 +54,12 @@ export type NoisePrimitives = Readonly<{
 
 ```typescript
 export const createNoiseField = (seed: NoiseSeed): NoiseField
-export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 ```
 
-`createNoiseField` は保存済みworld向けのlegacy 4勾配写像を維持する。
-`createIsotropicNoiseField` は `raw2d`、`noise2d`、`octave2d`、全channelへ8勾配
-isotropic kernelを一貫して適用する新規world向けAPIである。`raw3d` / `noise3d` は共通の
-3D kernelを使う。どちらを選んだかはworld metadataへ保存すること。
+`createNoiseField` は `raw2d`、`noise2d`、`octave2d`、全 channel に、軸 4 方向と
+正規化した対角 4 方向からなる canonical 2D Perlin kernel を一貫して適用する。
+`raw3d` / `noise3d` は共通の 3D kernel を使う。seed → 値の写像は versioned contract
+であり、別 kernel を選ぶための公開 API は提供しない。
 
 ## 2. 型
 
@@ -73,7 +72,7 @@ export const toUint32 = (seed: NoiseSeed): number
 ```
 
 参照実装のシードは素の `number` である（`createNoisePrimitives(seed: number)`）。
-本リポジトリでは branded にした。plan.md §3.2 が「凍結扱い」と宣言している契約に入る境界は、
+本リポジトリでは branded にした。凍結扱いとする契約に入る境界は、
 型で見えているべきだからである。
 
 uint32 への正規化（`>>> 0`）により `-1` / `4294967295` / `0xFFFFFFFF` は同じシードになる。
@@ -172,14 +171,12 @@ export const createPerlinNoise3D = (rand?: RandFn): NoiseFn3D => {
 export const PERMUTATION_SIZE = 256
 export const buildPermutation = (rand: RandFn): Uint8Array
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D
-export const createPerlinNoise2DIsotropic = (rand: RandFn): NoiseFn2D
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D
 ```
 
-`createPerlinNoise2D` は4対角勾配を使うlegacyカーネルであり、保存済みworldとの互換性のため
-seed→値を維持する。`createPerlinNoise2DIsotropic` は8つの単位勾配（軸4 + 対角4）を使う
-opt-inカーネルで、半整数座標の退化と方向バイアスを抑える。新規worldで採用する場合は、
-再生成時にも同じカーネルを選べるようカーネル識別子を保存すること。
+`createPerlinNoise2D` は 8 つの勾配（軸 4 + 正規化した対角 4）を均等に使う canonical
+kernel で、半整数座標の退化と方向バイアスを抑える。seed → 値の写像を変更する場合は
+[`docs/versioning.md`](./versioning.md) の breaking-change 手順を適用する。
 
 permutation table は Fisher-Yates で作る。参照実装 `perlin.ts:6-17`:
 
@@ -221,8 +218,8 @@ export const signedFbm2D = (
 ): NoiseFn2D => {
 ```
 
-本リポジトリ（`domain/octaves.ts`）はパラメータ 3 つを 1 つのレコードにまとめた。
-位置引数 3 つ（`octaves, persistence, lacunarity`）は呼び出し側で取り違えても型が通るためである。
+本リポジトリ（`domain/octaves.ts`）は、参照実装互換の位置引数版と、通常のフィールド利用向けの
+レコード版を用途で分けて公開する。バッチ API の引数は位置引数をタプル型で共有する。
 
 ```typescript
 export type OctaveParams = {
@@ -230,17 +227,39 @@ export type OctaveParams = {
   readonly persistence: number
   readonly lacunarity: number
 }
+export type OctaveParameters = readonly [
+  octaves: number,
+  persistence: number,
+  lacunarity: number,
+]
+export type OctaveNoiseArguments = readonly [
+  x: number,
+  z: number,
+  ...octaveParameters: OctaveParameters,
+]
 export const DEFAULT_OCTAVE_PARAMS: OctaveParams
 export const normalizeNoise = (value: number): number
 export const clampSigned = (value: number): number
+export const computeOctaveNoise = (
+  noiseFn: NoiseFn2D,
+  x: number,
+  z: number,
+  octaves: number,
+  persistence: number,
+  lacunarity: number,
+): number
 export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams): number
-export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D
+export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost?: number): NoiseFn2D
 ```
 
-`boost` は落とした。参照実装では `signedFbm2D` の 5 番目の引数で、
+`octaves` は安全整数、`persistence` と `lacunarity` は有限値でなければならない。
+`octaves <= 0` の退化挙動は維持される。`computeOctaveNoise` は 0、レコード版の
+`octaveNoise2D` は正規化された 0.5 を返す。違反した値はループ開始前に `RangeError` になる。
+
+`boost` は維持している。参照実装では `signedFbm2D` の 5 番目の引数で、
 `scale = boost / maxValue` として掛かる（`noise-primitives.ts:119`）。
 これはチャンネルごとの**チューニング値**（continentalness は 1.4、erosion / weirdness は 1.3）であり、
-凍結対象のノイズ関数ではなく地形調整に属する。掛けたい側が掛ければよい。
+`createNoisePrimitives` がこの値を適用する。単独の `signedFbm2D` でも明示的に指定できる。
 
 ### Value noise API
 
@@ -248,6 +267,24 @@ export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams): NoiseFn2D
 `channelSeed` と `latticeValue` は同じ seed と座標から常に同じ値を返し、`valueNoise2D` は
 smoothstep 補間で格子点を補間する。`fbm2D` は `ValueNoiseFbmOptions` で octaves・frequency・
 persistence をまとめて受け取る。
+
+`valueNoise2D` の `frequency` と `ValueNoiseFbmOptions` の連続値は有限値でなければならず、
+`octaves` は安全整数でなければならない。違反した値は `RangeError` になる。
+
+### Piecewise-linear spline API
+
+地形の制御点データを持たない汎用の区分線形スプラインを提供する。
+`createSpline` は入力座標と値が有限で、入力座標が厳密に単調増加していることを検証し、
+制御点と配列を凍結する。`evaluateSpline` は空のスプラインを `0` として扱い、範囲外では
+端点へクランプし、範囲内では隣接する制御点を線形補間する。静的な配列を直接渡す場合も、
+この契約を満たすデータを使用する。
+
+```typescript
+export type ControlPoint = readonly [input: number, value: number]
+export type Spline = ReadonlyArray<ControlPoint>
+export const createSpline = (controlPoints: Spline): Spline
+export const evaluateSpline = (spline: Spline, input: number): number
+```
 
 ## 6. `NoiseField`（本リポジトリの入口）
 
@@ -262,7 +299,6 @@ export type NoiseField = {
   readonly channel: (name: NoiseChannel) => NoiseFn2D                          // 符号付き [-1, 1]
 }
 export const createNoiseField = (seed: NoiseSeed): NoiseField
-export const createIsotropicNoiseField = (seed: NoiseSeed): NoiseField
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 ```
 
@@ -279,7 +315,7 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 | **`primitives.noise3D`** | **符号付き。正規化されない** | `noise-primitives.ts:257` = `raw3D(...)` の素通し |
 | `computeOctaveNoise` | `[0, 1]` | `:93` `normalizeNoise(total / maxValue)` |
 | `signedFbm2D` | ハードクランプ `[-1, 1]` | `:129` `return v < -1 ? -1 : v > 1 ? 1 : v` |
-| `toPV(w)` | `[-1, 1]` | `:48` |
+| `peaksAndValleysFromWeirdness(w)` | `[-1, 1]`（`w ∈ [-1, 1]` の場合） | `src/domain/transforms.ts`。参照式は `noise-primitives.ts:48` |
 
 **`noise2D` は正規化されるのに `noise3D` はされない。** これは誰にも見えないバグを生む種類の非対称である。
 
@@ -288,6 +324,9 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 `test/octaves.test.ts` の「noise2d and noise3d are normalised into [0, 1]; raw2d and raw3d are not」が
 これを保持する。
 
+`peaksAndValleysFromWeirdness` は入力を暗黙に clamp しないため、`w` が `[-1, 1]` の外側では
+出力値域も `[-1, 1]` に限定されない。
+
 ### `octaveNoise2D` の退化ケース
 
 参照実装は `octaves < 1` のとき **0** を返す（`noise-primitives.ts:82`）。
@@ -295,7 +334,7 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 値域が `[0, 1]` である以上 0 は正当な極値であり、退化パラメータが「最も深い谷」と
 区別できないのは下流にとって危険だからである。`design-notes.md` に記録。
 
-## 8. plan.md には無いが必要だったもの
+## 8. 初期 API スケッチには無かったが必要だったもの
 
 | 追加 | 理由 |
 | --- | --- |
@@ -303,12 +342,91 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>>
 | `signedFbm2D` の 0 オクターブ保護 | `amplitudeSum` が 0 になり `0/0 = NaN`。NaN が地形生成に漏れると、どこから来たか分からない虚空のチャンクになる |
 | `NOISE_CHANNELS` / `CHANNEL_SALT` の公開 | ゴールデンテストが salt を固定できるようにするため |
 
-## 9. 参照実装にあって本リポジトリにまだ無いもの
+## 9. 参照実装由来の移管範囲と未移管範囲
 
 | 項目 | 参照実装の場所 | 扱い |
 | --- | --- | --- |
-| `toPV`（peaks and valleys 変換） | `noise-primitives.ts:48` | mc-worldgen 寄り。地形の形の話なので保留 |
-| `computeTerrainChannels`（疎グリッド + 双線形補間） | `noise-primitives.ts:143-150` | 性能最適化。ベンチマークを先に用意してから |
-| バッチヘルパ 5 種 | `noise-primitives.ts:270-334` | 同上 |
-| `spline.ts` / `terrain-splines.ts` | `packages/world/domain/` | mc-worldgen の責務（`responsibility.md` §3.1） |
-| Simplex ノイズ | 存在しない | plan.md は「Perlin/Simplex系」と書くが参照実装に無い |
+| `peaksAndValleysFromWeirdness`（peaks and valleys 変換） | `noise-primitives.ts:48` | **移管済み**。地形固有の意味論から独立した純粋変換として `src/domain/transforms.ts` に配置 |
+| `NoisePrimitives` / `createNoisePrimitives` | `noise-primitives.ts:215-268` | **移管済み**。`src/domain/noise-primitives.ts` に raw / normalized noise、チャンネル、`...At`、チャンクサンプルを集約 |
+| terrain channel サンプル | `noise-primitives.ts:140-213` | **移管済み**。`src/domain/terrain-channels.ts` で 2 刻みの疎グリッドを 16×16 へ双線形展開 |
+| primitive batch helper 5 種 | `noise-primitives.ts:270-334` | **移管済み**。`src/domain/primitive-batches.ts` に座標配列・点配列 API を配置 |
+| `spline.ts` | `packages/world/domain/` | **移管済み**。地形データを持たない区分線形評価を `src/domain/spline.ts` に配置 |
+| `terrain-splines.ts` | `packages/world/domain/` | mc-worldgen の責務。地形固有の制御点データであり、`mc-noise` へ移管しない |
+
+`createNoisePrimitives(seed)` は、参照実装の構成要素を再利用可能な束として返す。
+`sampleTerrainChannels(xStart, zStart)` は continentalness / erosion / peaks-and-valleys /
+jaggedness の 4 配列を 16×16 で返す。これは地形の式そのものではなく、mc-worldgen が
+密度関数やスプラインへ渡すポータブルな材料である。
+
+参照実装に相当する汎用サンプリングは、本リポジトリで次の API として公開済みである。
+
+| API | 実装 | 契約 |
+| --- | --- | --- |
+| `sampleNoise2DBatch` / `sampleNoise3DBatch` | `src/domain/sampling.ts` / `src/domain/sampling-3d.ts` | 明示した座標を一括評価 |
+| `sampleNoise2DGrid` / `sampleNoise3DGrid` | 同上 | 原点・幅・刻みを持つ密な格子を `Float32Array` で返す |
+| `sampleNoise2DInterpolatedGrid` | `src/domain/sampling.ts` | 疎な格子を双線形補間し、評価回数を抑える |
+| `sampleNoise3DInterpolatedGrid` | `src/domain/sampling-3d-interpolation.ts`（`sampling-3d.ts` から再公開） | 疎な格子を三線形補間し、評価回数を抑える |
+| `sampleNoise2DChunk` / `sampleNoise3DChunk` | `src/domain/chunk-sampling.ts` | `mc-kernel` の `ChunkCoord` / `ChunkHeight` をサンプル領域へ変換 |
+
+### Minecraft の気候・バイオーム・地形定義
+
+チャンク状態を変更しない Minecraft の純粋な定義を公開する。
+
+| API | 実装 | 契約 |
+| --- | --- | --- |
+| `MINECRAFT_BIOMES` / `MINECRAFT_CHUNK_BIOMES` / `MINECRAFT_BLOCK` | `src/domain/minecraft-biome.ts` | 公式寄りのバイオーム、チャンク用バイオーム、ブロック ID の静的定義 |
+| `classifyMinecraftBiome` | 同上 | 気候サンプルを直接分類する既定のバイオーム規則 |
+| `classifyMinecraftBiomeFromClimate` / `refineMinecraftBeachBiome` / `minecraftPeaksAndValleysFromWeirdness` | `src/domain/minecraft-biome-classifier.ts` / `src/domain/transforms.ts` | 気候値、河川、山地、海岸の分岐を決定論的に評価 |
+| `minecraftContinentalnessAt` / `minecraftSurfaceHeightAt` / `minecraftClimateAt` | `src/domain/minecraft-terrain.ts` | シードと X/Z から大陸性、地表高、気候をサンプル |
+| `minecraftSurfaceBiomeAt` / `minecraftBiomeFor` | 同上 | 海面・海岸の上書きを含む地表バイオームを評価 |
+| `minecraftComputeLakeBasin` / `minecraftResolveSurfaceY` / `minecraftDetermineWaterLevel` | `src/domain/minecraft-lakes.ts` | 湖盆、地表 Y、水面 Y を副作用なしで判定 |
+| `minecraftShouldFreezeWaterSurface` / `minecraftIsLakeShoreColumn` | 同上 | 凍結・湖岸の判定だけを返す。ブロック配置は行わない |
+| `resolveMinecraftSurfaceMaterial` | `src/domain/minecraft-surface.ts` | バイオームと水面条件から表面材質を返す。`BlockId` は `mc-kernel` の型を使う |
+
+`minecraftBiomeFor` は `MinecraftBiomeQuery` の名前付きオブジェクト（`seed`、`wx`、`wz`、`surfaceY`、任意の `levels`）を受け取る。
+| `minecraftTerrainColumnAt` | `src/domain/minecraft-terrain-column.ts` | 上記の値を 1 列の不変な評価結果へ合成 |
+
+これらはシード、座標、気候・水面の入力から値またはレコードを返し、チャンク・ブロック・構造物を
+変更しない。`minecraftShouldFreezeWaterSurface` の結果を使った氷・雪の配置、カーバー、鉱石、植生、
+構造物、設定済み NoiseRouter の組み立ては `mc-worldgen` が所有する。
+
+### Simplex と DensityFunction
+
+| API | 実装 | 契約 |
+| --- | --- | --- |
+| `createSimplexNoise2D` / `createSimplexNoise3D` | `src/domain/simplex.ts` | Minecraft の初期化順に従うシード付き 2D / 3D Simplex ノイズ。原点は既定でシードから生成し、明示値は有限値を検証 |
+| `densityConstant` / `densityCoordinate` / `densityNoise` | `src/domain/density-function.ts` | immutable な定数・座標・ノイズノード |
+| `createDensityOldBlendedNoiseSource` / `densityOldBlendedNoise` | `src/domain/density-function.ts` / `src/domain/old-blended-noise.ts` | 公式 `old_blended_noise` の係数と main / min / max octave 合成。octave source の解決は callback 境界 |
+| `densityBeardifier` / `beardifier` | `src/domain/density-function.ts` / `src/domain/density-function-context.ts` | 構造物の影響値を context callback から受け取る runtime marker。構造物データは保持しない |
+| `densityShift` / `densityShiftA` / `densityShiftB` / `densityShiftedNoise` | `src/domain/density-function.ts` | 公式の Shift 系を含むシフト値付き portable ノイズノード。Shift / ShiftA / ShiftB は入力座標を 1/4 にして結果を 4 倍する |
+| `densityShiftedNoise2D` / `densityNoiseInRange` / `densityMappedNoise` | `src/domain/density-function.ts` | 2D shifted noise（Y シフトなし）と、ノイズ値を指定範囲へ写像する公式 overload 相当 |
+| `densityLinearOperation` | `src/domain/density-function.ts` | 公式の加算・乗算による線形 DensityFunction ノード |
+| `densityWeirdScaledSampler` | `src/domain/density-function.ts` | 評価値から公式の rarity 倍率を選び、座標をスケールしてサンプルするノード |
+| `densityEndIslands` | `src/domain/density-function.ts` | seed と signed 32-bit X/Z 座標から End Islands の密度を評価するノード |
+| `densityMap` / `densityMapRange` / `densityLerp` | `src/domain/density-function.ts` | 公式の map・mapRange・lerp に対応する純粋な写像・範囲変換・線形補間 |
+| `densityAdd` / `densityMul` / `densityMin` / `densityMax` | `src/domain/density-function.ts` | 二項演算と保守的な境界値 |
+| `densityAbs` / `densitySquare` / `densityCube` / `densitySqueeze` / `densityInvert` など | `src/domain/density-function.ts` | 単項演算と保守的な境界値 |
+| `densityFindTopSurface` | `src/domain/density-function.ts` | 公式の `find_top_surface`。`upperBound` を `cellHeight` に合わせて切り下げ、`density > 0` の最上段を走査し、見つからなければ `lowerBound` |
+| `densityClamp` / `densityRangeChoice` / `densityYClampedGradient` / `densitySpline` | `src/domain/density-function-spatial.ts` | 空間分岐・勾配・汎用スプラインノード |
+| `evaluateDensityFunction` / `densityBounds` | `src/domain/density-function-evaluator.ts` / `density-function-bounds.ts` | `mc-kernel` の `Position` を受け、値と `[minValue, maxValue]` を返す |
+| `encodeDensityFunction` / `decodeDensityFunction` / `parseDensityFunction` | `src/domain/density-function-codec.ts` | source registry callback を受け取る、portable な codec 表現 |
+
+これらは Minecraft Java 1.21.1 の共通 `DensityFunctions` を基本照合基準にし、1.21.8 の静的
+ノード一覧を監査し、1.21.9 で追加された `find_top_surface` を含めた、ワールド固有の設定を含まない
+portable API である。portable な `NoiseRouter` / `Climate` / `Blender` の構造・評価
+ヘルパも公開する。`interpolated`、`flatCache`、`cache2d`、`cacheOnce`、`cacheAllInCell`、
+`blendDensity`、`blendAlpha`、`blendOffset` は、DensityFunction の context-aware なノードとして
+`DensityEvaluationContext` / `DensityEvaluationSession` とともに公開する。セル幅・高さと blend
+callback は呼び出し側が context に与える。設定済みの NoiseRouter、キャッシュのライフサイクル、
+地形定数・制御点などワールド固有の統合は mc-worldgen の責務である。`mapFromUnitTo` と
+`mapRange` は公式では private な補助ファクトリであり、公開 API では `densityMapRange` が
+その範囲変換を担う。
+
+`old_blended_noise` の係数はノードに保持するが、Minecraft の NoiseConfig / noise registry
+にある octave source の解決は mc-worldgen の責務である。`beardifier` も同様に、構造物の
+beardifying 処理を持たず、評価時の context callback を通じて値だけを受け取る。
+
+`DensityFunctionEncoded` と `stringifyDensityFunction` が扱う JSON-like 表現は、パッケージ内で
+DensityFunction の構造を保存・転送するための portable codec であり、Mojang の canonical resource
+JSON や noise registry の解決器ではない。Minecraft の resource / registry 形式への変換と source ID
+の解決は、ワールド設定を所有する mc-worldgen 側で行う。

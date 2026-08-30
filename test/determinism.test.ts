@@ -1,7 +1,7 @@
 /**
  * The single most important property this repository has.
  *
- * plan.md §3.2 declares the seed -> value interface frozen because a change to
+ * docs/versioning.md §5 declares the seed -> value interface frozen because a change to
  * it silently regenerates every saved world. "Frozen" is only meaningful if
  * "same seed produces the same value" is machine-checked, so that is what these
  * tests do — over random seeds and random coordinates, not over a handful of
@@ -13,7 +13,8 @@
  *   noise-determinism-channel-decorrelation
  *   noise-determinism-required-prng
  */
-import { describe, expect, it } from '@effect/vitest'
+import { describe, expect } from 'vitest'
+import { effectTest } from './effect-test'
 import { Effect, FastCheck } from 'effect'
 import { createNoiseField } from '../src/domain/field'
 import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32 } from '../src/domain/seed'
@@ -30,7 +31,7 @@ const arbitraryCoordinate = FastCheck.double({
 })
 
 describe('determinism', () => {
-  it.effect('same seed and same coordinate produce exactly the same value, bit for bit', () =>
+  effectTest('same seed and same coordinate produce exactly the same value, bit for bit', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(arbitrarySeed, arbitraryCoordinate, arbitraryCoordinate, (seed, x, z) => {
@@ -46,7 +47,7 @@ describe('determinism', () => {
     }),
   )
 
-  it.effect('determinism holds for the 3D kernel, the normalised wrappers and the octave stack too', () =>
+  effectTest('determinism holds for the 3D kernel, the normalised wrappers and the octave stack too', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(
@@ -70,7 +71,7 @@ describe('determinism', () => {
     }),
   )
 
-  it.effect('every named channel is deterministic under its seed', () =>
+  effectTest('every named channel is deterministic under its seed', () =>
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(arbitrarySeed, arbitraryCoordinate, arbitraryCoordinate, (seed, x, z) => {
@@ -83,7 +84,7 @@ describe('determinism', () => {
     }),
   )
 
-  it.effect('two fields built from one seed do not share mutable state, so sampling order cannot matter', () =>
+  effectTest('two fields built from one seed do not share mutable state, so sampling order cannot matter', () =>
     Effect.sync(() => {
       const seed = NoiseSeed(20260726)
       const reference = createNoiseField(seed)
@@ -108,7 +109,7 @@ describe('determinism', () => {
 })
 
 describe('seed derivation', () => {
-  it.effect('different seeds disagree somewhere — a constant field would pass every determinism test', () =>
+  effectTest('different seeds disagree somewhere — a constant field would pass every determinism test', () =>
     Effect.sync(() => {
       const left = createNoiseField(NoiseSeed(1))
       const right = createNoiseField(NoiseSeed(2))
@@ -128,7 +129,7 @@ describe('seed derivation', () => {
     }),
   )
 
-  it.effect('channels derived from one seed are decorrelated, not adjacent streams', () =>
+  effectTest('channels derived from one seed are decorrelated, not adjacent streams', () =>
     Effect.sync(() => {
       const seed = NoiseSeed(0)
       const derived = NOISE_CHANNELS.map((name) => deriveSeed(seed, name))
@@ -140,7 +141,7 @@ describe('seed derivation', () => {
     }),
   )
 
-  it.effect('a seed is a bit pattern: negative and out-of-uint32 inputs normalise rather than diverge', () =>
+  effectTest('a seed is a bit pattern: negative and out-of-uint32 inputs normalise rather than diverge', () =>
     Effect.sync(() => {
       const asNegative = createNoiseField(NoiseSeed(-1))
       const asUnsigned = createNoiseField(NoiseSeed(4294967295))
@@ -148,7 +149,15 @@ describe('seed derivation', () => {
     }),
   )
 
-  it.effect('mulberry32 reproduces its stream exactly and advances its state', () =>
+  effectTest('rejects non-safe-integer seeds at the runtime boundary', () =>
+    Effect.sync(() => {
+      for (const invalidSeed of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5]) {
+        expect(() => NoiseSeed(invalidSeed)).toThrow()
+      }
+    }),
+  )
+
+  effectTest('mulberry32 reproduces its stream exactly and advances its state', () =>
     Effect.sync(() => {
       const first = mulberry32(NoiseSeed(42))
       const second = mulberry32(NoiseSeed(42))
@@ -160,6 +169,17 @@ describe('seed derivation', () => {
         expect(value).toBeGreaterThanOrEqual(0)
         expect(value).toBeLessThan(1)
       }
+    }),
+  )
+
+  effectTest('matches the standard Mulberry32 reference vector', () =>
+    Effect.sync(() => {
+      const random = mulberry32(NoiseSeed(42))
+      expect([random(), random(), random()]).toStrictEqual([
+        0.6011037519201636,
+        0.44829055899754167,
+        0.8524657934904099,
+      ])
     }),
   )
 })

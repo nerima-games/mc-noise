@@ -1,22 +1,22 @@
 /**
  * Seeds and the PRNG they drive.
  *
- * FIRST CUT (叩き台). The shape is settled; the tuning constants are not
- * (see README 現状).
+ * The seed mapping is a versioned contract; channel tuning is documented separately
+ * because it changes generated terrain when intentionally revised.
  *
  * ---------------------------------------------------------------------------
  * Why the seed is branded
  * ---------------------------------------------------------------------------
  *
- * plan.md §3.2 declares the seed -> value interface FROZEN: changing it changes
+ * docs/versioning.md §5 declares the seed -> value interface FROZEN: changing it changes
  * the terrain of every world that has ever been generated, which is a
  * save-breaking change disguised as a refactor. A branded `NoiseSeed` makes the
  * boundary at which that contract is entered visible in the type system —
  * you cannot pass an arbitrary `number` to a sampler by accident.
  *
- * The seed is a uint32. It is normalised with `>>> 0` on construction so that
- * `-1`, `4294967295` and `0xFFFFFFFF` are the same seed rather than three
- * seeds, two of which behave identically by coincidence.
+ * The seed accepts any safe integer at the public boundary. It is normalised
+ * with `>>> 0` at PRNG and derived-seed boundaries so that `-1`,
+ * `4294967295` and `0xFFFFFFFF` produce the same uint32 stream.
  *
  * ---------------------------------------------------------------------------
  * Channel decorrelation
