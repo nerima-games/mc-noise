@@ -44,7 +44,11 @@ org 標準から撤去された（[API_STANDARD.md §4](https://github.com/nerim
 
 `tsconfig.release.json` は `dist/` に JavaScript・`.d.ts`・source map を出力する。
 CI は `pnpm package:verify` を通して、公開物に `src/` が混入せず、公開 API がロードできることを確認する。
-publish 自体は maintainer の認証環境で `prepublishOnly` を通して実行する。
+publish 自体は `.github/workflows/release.yaml` が行う: `main` への push ごとに
+`package.json` の version が変化したかを detect し、変化していれば `pnpm verify` と
+`pnpm package:verify` を再実行してから `pnpm publish --no-git-checks` で publish し、
+最後に `v<version>` タグを打つ。version を上げる操作自体（`pnpm changeset version`）は
+手動で行う（マージ後の別 PR）。
 
 ## 4. 公開先: GitHub Packages
 
@@ -53,7 +57,7 @@ publish 自体は maintainer の認証環境で `prepublishOnly` を通して実
 ```json
 "publishConfig": {
   "registry": "https://npm.pkg.github.com",
-  "access": "restricted"
+  "access": "public"
 }
 ```
 

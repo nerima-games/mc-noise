@@ -3,7 +3,7 @@ import type { NoiseFn2D } from './perlin.js'
 import { peaksAndValleysFromWeirdness } from './transforms.js'
 import { requireFiniteNumber } from './number-validation.js'
 
-export const CHUNK_COLUMN_SAMPLE_COUNT = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ
+export const CHUNK_COLUMN_SAMPLE_COUNT: number = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ
 
 export const TERRAIN_SAMPLE_STEP = 2
 const SAMPLE_INDEX_STEP = 1
@@ -17,7 +17,7 @@ export const SCALE_E = 0.001
 export const SCALE_W = 0.002
 export const SCALE_J = 0.02
 
-export const toPV = peaksAndValleysFromWeirdness
+export const toPV: typeof peaksAndValleysFromWeirdness = peaksAndValleysFromWeirdness
 
 export type TerrainChannelSamples = Readonly<{
   continentalness: Float64Array

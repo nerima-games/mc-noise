@@ -203,7 +203,7 @@ export const computeOctaveNoise = (
  * only on `params`, so paying for it per sample would be pure waste. The
  * reference does the same (`noise-primitives.ts:112-118`).
  */
-export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost = UNIT_AMPLITUDE): NoiseFn2D => {
+export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost: number = UNIT_AMPLITUDE): NoiseFn2D => {
   validateSignedFbmArguments(params, boost)
   // PERFORMANCE EXCEPTION — see the file header before changing this.
   let amplitudeSum = 0

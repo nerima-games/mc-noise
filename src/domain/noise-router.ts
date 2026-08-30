@@ -123,7 +123,7 @@ export const mapNoiseRouter = (
   return Object.freeze(mapped)
 }
 
-export const mapAllNoiseRouter = mapNoiseRouter
+export const mapAllNoiseRouter: typeof mapNoiseRouter = mapNoiseRouter
 
 export type NoiseRouterRuntime = NoiseRouter & Readonly<{
   readonly mapAll: (visitor: NoiseRouterVisitor) => NoiseRouter

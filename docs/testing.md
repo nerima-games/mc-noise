@@ -104,19 +104,23 @@ thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 
 ## 5. CI
 
-`.github/workflows/ci.yaml` は `pnpm verify` と同じ内容を job のステップに展開したものである
-（失敗箇所が step 名で分かるようにするため）:
+`.github/workflows/ci.yaml` は org 標準の kernel 形（全ステップ `nix develop --command` 経由）である:
 
-1. Checkout（`actions/checkout` — commit SHA 固定、`persist-credentials: false`）
+1. Checkout（`actions/checkout` — commit SHA 固定、`persist-credentials: false`、`fetch-depth: 0`）
 2. Setup pnpm（`pnpm/action-setup` — commit SHA 固定）
 3. Setup Node.js（pnpm キャッシュ有効。`actions/setup-node` — commit SHA 固定）
-4. `pnpm install --frozen-lockfile --ignore-scripts`
-5. `pnpm typecheck`
-6. `nix develop --command pnpm lint`
-7. `pnpm test`
-8. `pnpm package:verify`
-9. `pnpm test:coverage` —— **ハードゲート**。4 指標 100% しきい値（§3）を下回ると非ゼロ終了する
-10. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
+4. Set up Nix（`.github/actions/nix-setup`。Cachix 経由でバイナリキャッシュ）
+5. Configure GitHub Packages authentication（`NODE_AUTH_TOKEN` を pnpm の user config に設定）
+6. `nix develop --command pnpm install --frozen-lockfile`
+7. `nix develop --command pnpm verify`（typecheck / lint / test の3段）
+8. Changeset status（`pull_request` かつ `docs/` `.github/` 以外の変更があるときだけ）
+9. `nix develop --command pnpm test:coverage` —— **ハードゲート**。4 指標 100% しきい値（§3）を下回ると非ゼロ終了する
+10. `nix develop --command pnpm package:verify`
+11. `nix develop --command pnpm audit`
+12. カバレッジレポートを artifact に upload（`actions/upload-artifact` — commit SHA 固定、7 日保持）
+
+`.github/workflows/release.yaml` は `main` への push を detect → publish → tag の3ジョブで処理する
+（[versioning.md](./versioning.md) §3）。
 
 依存関係の許可グラフは `package.json`、`pnpm-workspace.yaml`、`.oxlintrc.json`、CI
 とレビューで維持する。`.oxlintrc.json` の `no-restricted-imports` と `pnpm lint`
@@ -251,13 +255,13 @@ baseline を黙って上書きするのは、ベンチマークを削除する�
 
 実装や依存境界を変更したときは、変更範囲に応じて次の確認を行う。
 
-1. `corepack pnpm typecheck`
-2. `nix develop --command corepack pnpm lint`
-3. `corepack pnpm test`
-4. `nix develop --command corepack pnpm test:coverage`
-5. `corepack pnpm package:verify`
+1. `nix develop --command pnpm typecheck`
+2. `nix develop --command pnpm lint`
+3. `nix develop --command pnpm test`
+4. `nix develop --command pnpm test:coverage`
+5. `nix develop --command pnpm package:verify`
 6. flake を変更した場合は `nix flake check --all-systems`
-7. 性能の hot loop を変更した場合は `corepack pnpm bench`
+7. 性能の hot loop を変更した場合は `nix develop --command pnpm bench`
 
 benchmark が赤い場合は基準や tolerance を弱めず、同じ条件で再実行して測定器と実装のどちらに
 原因があるかを切り分ける。

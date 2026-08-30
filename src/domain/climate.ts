@@ -25,7 +25,7 @@ import {
 import { densityZero } from './density-function.js'
 
 export const CLIMATE_PARAMETER_COUNT = 6
-export const CLIMATE_HYPERCUBE_DIMENSION = CLIMATE_PARAMETER_COUNT
+export const CLIMATE_HYPERCUBE_DIMENSION: number = CLIMATE_PARAMETER_COUNT
 export const CLIMATE_QUANTIZATION_FACTOR = 10_000
 
 const CLIMATE_LIST_ENTRY_LENGTH = 2
@@ -186,7 +186,7 @@ const createParameterFromQuantized = (
   return Object.freeze({ max: normalizedMax, min: normalizedMin })
 }
 
-export const createClimateParameterFromQuantized = createParameterFromQuantized
+export const createClimateParameterFromQuantized: typeof createParameterFromQuantized = createParameterFromQuantized
 
 export const climateParameter = (point: number): ClimateParameter => {
   const quantized = quantizeCoord(point)
@@ -249,8 +249,8 @@ export function climateParameterSpan(
   throw new TypeError('span bounds must both be numbers or ClimateParameters')
 }
 
-export const point = climateParameter
-export const span = climateParameterSpan
+export const point: typeof climateParameter = climateParameter
+export const span: typeof climateParameterSpan = climateParameterSpan
 
 const normalizeParameter = (
   name: string,
@@ -371,8 +371,8 @@ export function climateParameters(
   return createClimateParameterPointFromQuantized(parameters, quantizeCoord(offset))
 }
 
-export const parameters = climateParameters
-export const parameterPoint = climateParameters
+export const parameters: typeof climateParameters = climateParameters
+export const parameterPoint: typeof climateParameters = climateParameters
 
 export const createClimateTargetPointFromQuantized = (
   ...values: ClimateTargetValues
@@ -404,7 +404,7 @@ export const climateTarget = (
   )
 }
 
-export const target = climateTarget
+export const target: typeof climateTarget = climateTarget
 
 const readTargetPoint = (
   name: string,

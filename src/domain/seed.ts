@@ -49,7 +49,7 @@ const asUint32 = (value: number): number => value >>> UINT32_COERCION_SHIFT
  * is meaning-preserving. Non-integers and non-finite values are rejected,
  * because `1.5` and `1.0` would silently collapse to the same seed.
  */
-export const NoiseSeed = Brand.refined<NoiseSeed>(
+export const NoiseSeed: Brand.Brand.Constructor<NoiseSeed> = Brand.refined<NoiseSeed>(
   (value) => Number.isSafeInteger(value),
   (value) => Brand.error(`NoiseSeed must be a safe integer, received ${value}`),
 )
@@ -73,14 +73,16 @@ export type RandFn = () => number
  * key here; the existing channels keep their streams, so a new channel is a
  * semver-MINOR change rather than a world-breaking one.
  */
-export const CHANNEL_SALT = {
+export const CHANNEL_SALT: Readonly<
+  Record<'base2d' | 'base3d' | 'continentalness' | 'erosion' | 'jaggedness' | 'weirdness', number>
+> = {
   base2d: 0x9e3779b1,
   base3d: 0x9e3779b9,
   continentalness: 0xbb67ae85,
   erosion: 0x3c6ef372,
   jaggedness: 0x510e527f,
   weirdness: 0xa54ff53a,
-} as const satisfies Readonly<Record<string, number>>
+}
 
 export type NoiseChannel = keyof typeof CHANNEL_SALT
 
