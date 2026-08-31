@@ -1,5 +1,13 @@
 # @nerima-games/mc-noise
 
+## 0.3.1
+
+### Patch Changes
+
+- [#21](https://github.com/nerima-games/mc-noise/pull/21) [`56ce1a4`](https://github.com/nerima-games/mc-noise/commit/56ce1a4adfde87105d639d7b31a72ab60d07e19f) Thanks [@takeokunn](https://github.com/takeokunn)! - Pin `@nerima-games/mc-kernel` to `0.7.0` (exact, no caret), up from `^0.4.0`. The used surface — `ChunkCoord`, `ChunkHeight`, `chunkCoord`, `CHUNK_SIZE_XZ`, `Position`, `BlockId`, `blockIdOf` — is unchanged between the two versions, so no call sites needed adaptation. The seed-to-value interface documented in `docs/versioning.md` §5 does not depend on mc-kernel at all; `test/determinism.test.ts` and `test/public-api.test.ts` were confirmed still passing with no changes to any value-producing path.
+
+- [#20](https://github.com/nerima-games/mc-noise/pull/20) [`c227730`](https://github.com/nerima-games/mc-noise/commit/c227730c125d1f067340b896b7cfb46e7c4e4d7e) Thanks [@takeokunn](https://github.com/takeokunn)! - Complete the org toolchain devDependency pin set: knip 6.33.0 (its verify gate arrives in Wave 3; the pin belongs to the Wave 0 table) plus @effect/vitest 0.30.0 where it was missing.
+
 ## 0.3.0
 
 ### Minor Changes
