@@ -1,5 +1,15 @@
 # @nerima-games/mc-noise
 
+## 0.4.0
+
+### Minor Changes
+
+- [#32](https://github.com/nerima-games/mc-noise/pull/32) [`02a7be9`](https://github.com/nerima-games/mc-noise/commit/02a7be919946f4f2e5e887dec0624f65fbd64075) Thanks [@takeokunn](https://github.com/takeokunn)! - Require `@nerima-games/mc-kernel` 0.8.0 while preserving the seeded noise mapping and public sampling behavior. Consumers must align their kernel dependency to 0.8.0 so branded types resolve consistently.
+
+### Patch Changes
+
+- [#31](https://github.com/nerima-games/mc-noise/pull/31) [`9dcb3bb`](https://github.com/nerima-games/mc-noise/commit/9dcb3bba9d7b5eb51332a4c5cb3a7edd5144b0d9) Thanks [@takeokunn](https://github.com/takeokunn)! - Raise the no-type-assertion ast-grep rule to an error and replace decoder boundary assertions with validated Schema-compatible decoders while preserving the seed-to-value golden contract.
+
 ## 0.3.1
 
 ### Patch Changes
