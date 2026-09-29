@@ -1,4 +1,4 @@
-import { CHUNK_SIZE_XZ, type ChunkCoord, type ChunkHeight, chunkCoord, ChunkHeight as createChunkHeight } from '@nerima-games/mc-kernel'
+import { CHUNK_SIZE_XZ, type ChunkCoord, ChunkHeight, chunkCoord } from '@nerima-games/mc-kernel'
 
 import type { NoiseFn2D, NoiseFn3D } from './perlin.js'
 import { sampleNoise2DInterpolatedGrid } from './sampling.js'
@@ -46,7 +46,9 @@ export const sampleNoise3DChunk = (
   options: NoiseChunk3DSamplingOptions,
 ): Float32Array => {
   const validatedChunk = chunkCoord(chunk.cx, chunk.cz)
-  const validatedHeight = createChunkHeight(height)
+  // Kernel brands use an uppercase constructor name by contract.
+  // oxlint-disable-next-line new-cap
+  const validatedHeight = ChunkHeight(height)
 
   return sampleNoise3DGrid(noise, {
     depth: CHUNK_SIZE_XZ,

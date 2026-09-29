@@ -59,7 +59,10 @@ export const createJavaRandom = (seed: bigint): JavaRandom => {
 
   const nextInt = function nextInt(bound?: number): number {
     if (arguments.length > INTEGER_ZERO) {
-      return nextJavaInt(bound as number, nextBits)
+      if (typeof bound !== 'number') {
+        throw new TypeError('bound must be a number')
+      }
+      return nextJavaInt(bound, nextBits)
     }
     return nextBits(JAVA_RANDOM_UNBOUNDED_BITS) | INTEGER_ZERO
   }

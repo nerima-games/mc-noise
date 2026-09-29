@@ -1,6 +1,5 @@
 {
   // Shared compiler options for every tsconfig in this repository.
-  // Copied from @nerima-games/mc-kernel; keep the two in sync.
   // Strictness policy: `strict: true` PLUS every additional strictness flag
   // spelled out explicitly, so that a future TypeScript release changing a
   // default cannot silently weaken this repository.
@@ -8,9 +7,8 @@
     "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // mc-noise is platform-agnostic pure computation: no DOM, no WebWorker,
-    // no Node globals. Noise must produce identical values in a worker, in the
-    // main thread and in a Node test run, so it must not be able to see any of them.
+    // mc-kernel is platform-agnostic: no DOM, no WebWorker, no Node globals.
+    // Repos that need those add them in their own tsconfig.base.json.
     "lib": ["ES2024"],
     "types": [],
 
@@ -49,7 +47,8 @@
     "isolatedModules": true,
     // Public declarations must be derivable from each source file's explicit
     // annotations. This prevents an implementation-only inference change from
-    // silently changing the package API.
+    // silently changing the package API; Effect's Tag idiom is handled by an
+    // explicitly typed base in clock.ts.
     "isolatedDeclarations": true,
     // A type-only import must say so. The emitted JavaScript then follows from
     // the import statement alone, with no whole-program analysis deciding which
@@ -70,8 +69,9 @@
     "newLine": "lf",
     "stripInternal": true,
 
-    // The base config is check-only; tsconfig.release.json opts into emitting
-    // JavaScript, declarations, and source maps for the package boundary.
+    // The default remains check-only. `tsconfig.release.json` is the sole
+    // emitting configuration, so source imports stay type-safe while the
+    // published package exposes only generated JavaScript and declarations.
     "noEmit": true,
 
   }

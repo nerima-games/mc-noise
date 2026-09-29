@@ -10,6 +10,19 @@ import {
 import type { Position } from '@nerima-games/mc-kernel'
 import { requireFiniteNumber } from './number-validation.js'
 
+type BlenderRecord = Partial<Blender> & Readonly<{
+  readonly alpha?: unknown
+  readonly blendingOffset?: unknown
+}>
+
+const isBlenderRecord = (value: unknown): value is BlenderRecord =>
+  value !== null && typeof value === 'object'
+
+const isBlender = (value: unknown): value is Blender =>
+  isBlenderRecord(value) &&
+  typeof value.blendDensity === 'function' &&
+  typeof value.blendOffsetAndFactor === 'function'
+
 export type BlendingOutput = Readonly<{
   readonly alpha: number
   readonly blendingOffset: number
@@ -58,18 +71,15 @@ const readPosition = (position: DensityPosition): Position => ({
 })
 
 const readBlendingOutput = (value: unknown): BlendingOutput => {
-  if (value === null || typeof value !== 'object') {
+  if (!isBlenderRecord(value)) {
     throw new TypeError('blending output must be an object')
   }
-  const output = value as {
-    readonly alpha?: unknown
-    readonly blendingOffset?: unknown
-  }
+  const output = value
   return Object.freeze({
-    alpha: readNumber('blending output alpha', output.alpha),
+    alpha: readNumber('blending output alpha', output['alpha']),
     blendingOffset: readNumber(
       'blending output offset',
-      output.blendingOffset,
+      output['blendingOffset'],
     ),
   })
 }
@@ -105,17 +115,13 @@ export const createBlender = (options: BlenderOptions = {}): Blender => {
 export const emptyBlender = (): Blender => createBlender()
 
 export const requireBlender = (value: unknown): Blender => {
-  if (value === null || typeof value !== 'object') {
+  if (!isBlenderRecord(value)) {
     throw new TypeError('blender must be an object')
   }
-  const candidate = value as Partial<Blender>
-  if (
-    typeof candidate.blendDensity !== 'function' ||
-    typeof candidate.blendOffsetAndFactor !== 'function'
-  ) {
+  if (!isBlender(value)) {
     throw new TypeError('blender must provide blend functions')
   }
-  return candidate as Blender
+  return value
 }
 
 export const createDensityEvaluationContextFromBlender = (

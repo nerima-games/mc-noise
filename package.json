@@ -51,6 +51,7 @@
   "scripts": {
     "bench": "tsx scripts/bench-noise.ts",
     "bench:density": "tsx scripts/bench-density-function.ts",
+    "bench:density:decoded": "tsx scripts/bench-decoded-old-blended.ts",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.release.json --pretty false",
     "lint": "oxlint --deny-warnings src scripts test && ast-grep scan",
     "lint:fix": "oxlint --fix src scripts test",

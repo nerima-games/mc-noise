@@ -60,8 +60,12 @@ export type NoiseRouterValues = Readonly<{
   readonly [channel in NoiseRouterChannel]: number
 }>
 
-const isObject = (value: unknown): value is object =>
+const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object'
+
+const isNoiseRouter = (router: unknown): router is NoiseRouter =>
+  isObject(router) &&
+  NOISE_ROUTER_CHANNELS.every((channel) => isDensityFunction(router[channel]))
 
 const readRouterChannel = (
   router: unknown,
@@ -70,21 +74,28 @@ const readRouterChannel = (
   if (!isObject(router)) {
     throw new TypeError('router must be an object')
   }
-  const value = (router as Partial<Record<NoiseRouterChannel, unknown>>)[
-    channel
-  ]
+  const value = router[channel]
   return requireDensityFunction(`router.${channel}`, value)
 }
 
-const readRouterFields = (router: unknown): NoiseRouter => {
-  const fields = Object.fromEntries(
-    NOISE_ROUTER_CHANNELS.map((channel) => [
-      channel,
-      readRouterChannel(router, channel),
-    ]),
-  ) as NoiseRouter
-  return Object.freeze(fields)
-}
+const readRouterFields = (router: unknown): NoiseRouter => Object.freeze({
+    barrierNoise: readRouterChannel(router, 'barrierNoise'),
+    continents: readRouterChannel(router, 'continents'),
+    depth: readRouterChannel(router, 'depth'),
+    erosion: readRouterChannel(router, 'erosion'),
+    finalDensity: readRouterChannel(router, 'finalDensity'),
+    fluidLevelFloodednessNoise: readRouterChannel(router, 'fluidLevelFloodednessNoise'),
+    fluidLevelSpreadNoise: readRouterChannel(router, 'fluidLevelSpreadNoise'),
+    initialDensityWithoutJaggedness: readRouterChannel(router, 'initialDensityWithoutJaggedness'),
+    lavaNoise: readRouterChannel(router, 'lavaNoise'),
+    ridges: readRouterChannel(router, 'ridges'),
+    temperature: readRouterChannel(router, 'temperature'),
+    vegetation: readRouterChannel(router, 'vegetation'),
+    veinGap: readRouterChannel(router, 'veinGap'),
+    veinRidged: readRouterChannel(router, 'veinRidged'),
+    veinToggle: readRouterChannel(router, 'veinToggle'),
+  })
+
 
 export const createNoiseRouter = (router: NoiseRouter): NoiseRouter =>
   readRouterFields(router)
@@ -92,16 +103,7 @@ export const createNoiseRouter = (router: NoiseRouter): NoiseRouter =>
 export const requireNoiseRouter = (router: unknown): NoiseRouter =>
   readRouterFields(router)
 
-export const isNoiseRouter = (router: unknown): router is NoiseRouter => {
-  if (!isObject(router)) {
-    return false
-  }
-  return NOISE_ROUTER_CHANNELS.every((channel) =>
-    isDensityFunction(
-      (router as Partial<Record<NoiseRouterChannel, unknown>>)[channel],
-    ),
-  )
-}
+export { isNoiseRouter }
 
 export const mapNoiseRouter = (
   router: NoiseRouter,
@@ -111,16 +113,28 @@ export const mapNoiseRouter = (
   if (typeof visitor !== 'function') {
     throw new TypeError('visitor must be a function')
   }
-  const mapped = Object.fromEntries(
-    NOISE_ROUTER_CHANNELS.map((channel) => [
-      channel,
-      requireDensityFunction(
-        `mapped router.${channel}`,
-        visitor(normalizedRouter[channel], channel),
-      ),
-    ]),
-  ) as NoiseRouter
-  return Object.freeze(mapped)
+  const map = (channel: NoiseRouterChannel): DensityFunction =>
+    requireDensityFunction(
+      `mapped router.${channel}`,
+      visitor(normalizedRouter[channel], channel),
+    )
+  return Object.freeze({
+    barrierNoise: map('barrierNoise'),
+    continents: map('continents'),
+    depth: map('depth'),
+    erosion: map('erosion'),
+    finalDensity: map('finalDensity'),
+    fluidLevelFloodednessNoise: map('fluidLevelFloodednessNoise'),
+    fluidLevelSpreadNoise: map('fluidLevelSpreadNoise'),
+    initialDensityWithoutJaggedness: map('initialDensityWithoutJaggedness'),
+    lavaNoise: map('lavaNoise'),
+    ridges: map('ridges'),
+    temperature: map('temperature'),
+    vegetation: map('vegetation'),
+    veinGap: map('veinGap'),
+    veinRidged: map('veinRidged'),
+    veinToggle: map('veinToggle'),
+  })
 }
 
 export const mapAllNoiseRouter: typeof mapNoiseRouter = mapNoiseRouter
@@ -145,7 +159,7 @@ const isDensityEvaluationSession = (
 ): value is DensityEvaluationSession =>
   isObject(value) &&
   'evaluate' in value &&
-  typeof (value as { readonly evaluate?: unknown }).evaluate === 'function'
+  'evaluate' in value && typeof value.evaluate === 'function'
 
 const resolveEvaluator = (
   contextOrSession: DensityEvaluationContext | DensityEvaluationSession | undefined,
@@ -166,9 +180,23 @@ export const evaluateNoiseRouter = (
 ): NoiseRouterValues => {
   const normalizedRouter = requireNoiseRouter(router)
   const evaluate = resolveEvaluator(contextOrSession)
-  const values = {} as Record<NoiseRouterChannel, number>
-  for (const channel of NOISE_ROUTER_CHANNELS) {
-    values[channel] = evaluate(normalizedRouter[channel], position)
-  }
-  return Object.freeze(values)
+  const sample = (channel: NoiseRouterChannel): number =>
+    evaluate(normalizedRouter[channel], position)
+  return Object.freeze({
+    barrierNoise: sample('barrierNoise'),
+    continents: sample('continents'),
+    depth: sample('depth'),
+    erosion: sample('erosion'),
+    finalDensity: sample('finalDensity'),
+    fluidLevelFloodednessNoise: sample('fluidLevelFloodednessNoise'),
+    fluidLevelSpreadNoise: sample('fluidLevelSpreadNoise'),
+    initialDensityWithoutJaggedness: sample('initialDensityWithoutJaggedness'),
+    lavaNoise: sample('lavaNoise'),
+    ridges: sample('ridges'),
+    temperature: sample('temperature'),
+    vegetation: sample('vegetation'),
+    veinGap: sample('veinGap'),
+    veinRidged: sample('veinRidged'),
+    veinToggle: sample('veinToggle'),
+  })
 }

@@ -3,10 +3,18 @@ import type {
   DensityCoordinateAxis,
   DensityFunction,
   DensityNoiseSource,
+  DensityOldBlendedNoiseOctave,
   DensityOldBlendedNoiseSource,
   DensityRarityValueMapper,
   DensityUnaryOperation,
 } from './density-function-types.js'
+import {
+  Record,
+  String,
+  Unknown,
+  decodeUnknownSync,
+  parseJson,
+} from 'effect/Schema'
 import { type Spline, createSpline } from './spline.js'
 import {
   createDensityNoiseSource,
@@ -52,6 +60,8 @@ export type DensityFunctionCodecOptions = Readonly<{
 type EncodedSpline = ReadonlyArray<readonly [number, number]>
 
 const EMPTY_STRING_LENGTH = 0
+const OLD_BLENDED_NOISE_OCTAVE_COUNT = 16
+const OLD_BLENDED_NOISE_OCTAVE_STEP = 1
 const SPLINE_POINT_LENGTH = 2
 const SPLINE_INPUT_INDEX = 0
 const SPLINE_VALUE_INDEX = 1
@@ -192,10 +202,15 @@ const normalizeOptions = (
 }
 
 const readRecord = (name: string, value: unknown): EncodedRecord => {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  try {
+    return decodeUnknownSync(
+      // Schema.Record is a constructor-style API despite returning a schema value.
+      // oxlint-disable-next-line new-cap
+      Record({ key: String, value: Unknown }),
+    )(value)
+  } catch {
     throw new TypeError(`${name} must be an object`)
   }
-  return value as EncodedRecord
 }
 
 const readString = (name: string, value: unknown): string => {
@@ -211,10 +226,11 @@ const readEnum = <Value extends string>(
   allowed: readonly Value[],
 ): Value => {
   const candidate = readString(name, value)
-  if (!allowed.includes(candidate as Value)) {
+  const matching = allowed.find((item) => item === candidate)
+  if (typeof matching === 'undefined') {
     throw new RangeError(`${name} must be one of ${allowed.join(', ')}, received ${candidate}`)
   }
-  return candidate as Value
+  return matching
 }
 
 const readIdentifier = (name: string, value: unknown): string => {
@@ -257,26 +273,39 @@ const decodeSource = (
   if (typeof options.decodeNoiseSource !== 'function') {
     throw new TypeError('decodeNoiseSource is required for noise functions')
   }
-  const value = options.decodeNoiseSource(identifier) as unknown
+  const value = options.decodeNoiseSource(identifier)
   if (value === null || typeof value !== 'object') {
     throw new TypeError('decodeNoiseSource must return a noise source')
   }
-  const candidate = value as {
-    readonly sample?: unknown
-    readonly minValue?: unknown
-    readonly maxValue?: unknown
-  }
-  if (typeof candidate.sample !== 'function') {
+  // The decoder helper is declared below with the complete boundary contract.
+  // oxlint-disable-next-line no-use-before-define
+  if (!isDensityNoiseSourceValue(value)) {
     throw new TypeError('decoded noise source must provide a sample function')
   }
   return createDensityNoiseSource(
-    candidate.sample as DensityNoiseSource['sample'],
+    value.sample,
     {
-      maxValue: readFiniteValue('decoded noise source maxValue', candidate.maxValue),
-      minValue: readFiniteValue('decoded noise source minValue', candidate.minValue),
+      maxValue: readFiniteValue('decoded noise source maxValue', value.maxValue),
+      minValue: readFiniteValue('decoded noise source minValue', value.minValue),
     },
   )
 }
+
+type DensityNoiseSourceValue = Readonly<{
+  readonly sample: DensityNoiseSource['sample']
+  readonly minValue: number
+  readonly maxValue: number
+}>
+
+const isDensityNoiseSourceValue = (value: unknown): value is DensityNoiseSourceValue =>
+  value !== null &&
+  typeof value === 'object' &&
+  'sample' in value &&
+  typeof value.sample === 'function' &&
+  'minValue' in value &&
+  typeof value.minValue === 'number' &&
+  'maxValue' in value &&
+  typeof value.maxValue === 'number'
 
 const encodeOldBlendedNoiseSource = (
   source: DensityOldBlendedNoiseSource,
@@ -294,6 +323,27 @@ const encodeOldBlendedNoiseSource = (
   return identifier
 }
 
+const isDecodedOldBlendedNoiseOctave = (
+  value: unknown,
+): value is DensityOldBlendedNoiseOctave =>
+  value !== null &&
+  typeof value === 'object' &&
+  'sample' in value &&
+  typeof value.sample === 'function'
+
+const validateDecodedOldBlendedNoiseOctave = (
+  field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
+  value: unknown,
+): DensityOldBlendedNoiseOctave | undefined => {
+  if (typeof value === 'undefined') {
+    return
+  }
+  if (!isDecodedOldBlendedNoiseOctave(value)) {
+    throw new TypeError(`decoded old blended noise source ${field} must return an octave`)
+  }
+  return value
+}
+
 const requireOldBlendedNoiseFunction = (
   field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
   value: unknown,
@@ -301,7 +351,14 @@ const requireOldBlendedNoiseFunction = (
   if (typeof value !== 'function') {
     throw new TypeError(`decoded old blended noise source must provide a ${field} function`)
   }
-  return value as DensityOldBlendedNoiseSource['mainNoise']
+  const octaves = new Array<DensityOldBlendedNoiseOctave | undefined>(OLD_BLENDED_NOISE_OCTAVE_COUNT)
+  for (let octave = 0; octave < OLD_BLENDED_NOISE_OCTAVE_COUNT; octave += OLD_BLENDED_NOISE_OCTAVE_STEP) {
+    const result = validateDecodedOldBlendedNoiseOctave(field, value(octave))
+    if (typeof result !== 'undefined') {
+      octaves[octave] = result
+    }
+  }
+  return (octave) => octaves[octave]
 }
 
 const decodeOldBlendedNoiseValue = (value: unknown): DensityOldBlendedNoiseSource => {
@@ -310,27 +367,21 @@ const decodeOldBlendedNoiseValue = (value: unknown): DensityOldBlendedNoiseSourc
       'decodeOldBlendedNoiseSource must return an old blended noise source',
     )
   }
-  const candidate = value as {
-    readonly mainNoise?: unknown
-    readonly minLimitNoise?: unknown
-    readonly maxLimitNoise?: unknown
-    readonly minValue?: unknown
-    readonly maxValue?: unknown
-  }
+  const candidate = readRecord('decoded old blended noise source', value)
   return createDensityOldBlendedNoiseSource(
     {
-      mainNoise: requireOldBlendedNoiseFunction('mainNoise', candidate.mainNoise),
-      maxLimitNoise: requireOldBlendedNoiseFunction('maxLimitNoise', candidate.maxLimitNoise),
-      minLimitNoise: requireOldBlendedNoiseFunction('minLimitNoise', candidate.minLimitNoise),
+      mainNoise: requireOldBlendedNoiseFunction('mainNoise', candidate['mainNoise']),
+      maxLimitNoise: requireOldBlendedNoiseFunction('maxLimitNoise', candidate['maxLimitNoise']),
+      minLimitNoise: requireOldBlendedNoiseFunction('minLimitNoise', candidate['minLimitNoise']),
     },
     {
       maxValue: readFiniteValue(
         'decoded old blended noise source maxValue',
-        candidate.maxValue,
+        candidate['maxValue'],
       ),
       minValue: readFiniteValue(
         'decoded old blended noise source minValue',
-        candidate.minValue,
+        candidate['minValue'],
       ),
     },
   )
@@ -346,7 +397,7 @@ const decodeOldBlendedNoiseSource = (
       'decodeOldBlendedNoiseSource is required for old blended noise functions',
     )
   }
-  return decodeOldBlendedNoiseValue(options.decodeOldBlendedNoiseSource(identifier) as unknown)
+  return decodeOldBlendedNoiseValue(options.decodeOldBlendedNoiseSource(identifier))
 }
 
 const encodeSpline = (spline: Spline): EncodedSpline =>
@@ -597,19 +648,19 @@ const decodeNodeSecond = (
           'rarityValueMapper',
           record['rarityValueMapper'],
           DENSITY_RARITY_VALUE_MAPPERS,
-        ) as DensityRarityValueMapper,
+        ),
       )
     case 'end-islands':
       return densityEndIslands(readSeed(record['seed']))
     case 'binary':
       return densityBinary(
-        readEnum('operation', record['operation'], DENSITY_BINARY_OPERATIONS) as DensityBinaryOperation,
+        readEnum('operation', record['operation'], DENSITY_BINARY_OPERATIONS),
         decode(record['left'], options),
         decode(record['right'], options),
       )
     case 'unary':
       return densityUnary(
-        readEnum('operation', record['operation'], DENSITY_UNARY_OPERATIONS) as DensityUnaryOperation,
+        readEnum('operation', record['operation'], DENSITY_UNARY_OPERATIONS),
         decode(record['input'], options),
       )
     case 'clamp':
@@ -663,7 +714,7 @@ const decodeNodeFirst = (
       return densityConstant(readFiniteField(record, 'value'))
     case 'coordinate':
       return densityCoordinate(
-        readEnum('axis', record['axis'], DENSITY_COORDINATE_AXES) as DensityCoordinateAxis,
+        readEnum('axis', record['axis'], DENSITY_COORDINATE_AXES),
         {
           offset: readFiniteField(record, 'offset'),
           scale: readFiniteField(record, 'scale'),
@@ -741,5 +792,8 @@ export const parseDensityFunction = (
   if (typeof serialized !== 'string') {
     throw new TypeError('serialized density function must be a string')
   }
-  return decodeDensityFunction(JSON.parse(serialized) as unknown, options)
+  return decodeDensityFunction(
+    decodeUnknownSync(parseJson())(serialized),
+    options,
+  )
 }

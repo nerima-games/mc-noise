@@ -5,6 +5,7 @@ import {
   normalizeNoiseGrid3DOptions,
 } from './sampling-3d-grid.js'
 import type { NoiseFn3D } from './perlin.js'
+import { requireDefined } from './defined.js'
 import { requirePositiveInteger } from './number-validation.js'
 
 const DEFAULT_SAMPLE_STRIDE = 1
@@ -145,7 +146,10 @@ const interpolate = (lower: number, upper: number, amount: number): number =>
   lower + (upper - lower) * amount
 
 const readCoarseSample = (grid: CoarseNoiseGrid3D, xIndex: number, zIndex: number, yIndex: number): number =>
-  grid.samples[coarseSampleIndex(xIndex, zIndex, yIndex, { depth: grid.depth, height: grid.height })]!
+  requireDefined(
+    grid.samples[coarseSampleIndex(xIndex, zIndex, yIndex, { depth: grid.depth, height: grid.height })],
+    'coarse sample',
+  )
 
 const interpolateAtY = (
   grid: CoarseNoiseGrid3D,

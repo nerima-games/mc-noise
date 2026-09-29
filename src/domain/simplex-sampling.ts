@@ -30,6 +30,7 @@ import type {
   SimplexPoint3D,
 } from './simplex-points.js'
 import { gradient2, gradient3 } from './simplex-gradients.js'
+import { requireDefined } from './defined.js'
 
 const ZERO_OFFSET_2D: SimplexPoint2D = { x: SIMPLEX_ZERO, z: SIMPLEX_ZERO }
 const ZERO_OFFSET_3D: SimplexPoint3D = {
@@ -132,7 +133,7 @@ const selectOffsets3D = (local: SimplexPoint3D): SimplexOffset3D => {
   if (local.y > local.z) {
     rank |= SIMPLEX_FOUR
   }
-  return THREE_D_OFFSETS[rank & SIMPLEX_RANK_MASK]!
+  return requireDefined(THREE_D_OFFSETS[rank & SIMPLEX_RANK_MASK], 'simplex offset')
 }
 
 const createCorner2D = (

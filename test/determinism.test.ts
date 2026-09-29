@@ -16,7 +16,14 @@
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
 import { Effect, FastCheck } from 'effect'
-import { createNoiseField } from '../src/domain/field'
+import {
+  createDensityNoiseSource,
+  createNoiseField,
+  decodeDensityFunction,
+  densityNoise,
+  encodeDensityFunction,
+} from '../src/index'
+import { evaluateDensityFunction } from '../src/domain/density-function-evaluator'
 import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32 } from '../src/domain/seed'
 
 /** Seeds across the whole uint32 range, including both boundaries. */
@@ -31,6 +38,31 @@ const arbitraryCoordinate = FastCheck.double({
 })
 
 describe('determinism', () => {
+  effectTest('preserves origin/main literal seed-to-value golden values', () =>
+    Effect.sync(() => {
+      const field = createNoiseField(NoiseSeed(20260726))
+      // Captured by running the same inputs against origin/main before this refactor.
+      expect(field.raw2d(12.5, -7.25)).toBe(0.041957997172197795)
+      expect(field.raw3d(12.5, 31.75, -7.25)).toBe(-0.6179636552301517)
+      expect(field.noise2d(12.5, -7.25)).toBe(0.5209789985860989)
+      expect(field.noise3d(12.5, 31.75, -7.25)).toBe(0.19101817238492413)
+      expect(field.octave2d(12.5, -7.25)).toBe(0.4973816805001496)
+
+      const source = createDensityNoiseSource(
+        (x, y, z) => x + y * 2 + z * 3,
+        { minValue: -6, maxValue: 6 },
+      )
+      const density = densityNoise(source, { xzScale: 0.5, yScale: 0.25 })
+      const encoded = encodeDensityFunction(density, {
+        encodeNoiseSource: () => 'source',
+      })
+      const decoded = decodeDensityFunction(encoded, {
+        decodeNoiseSource: () => source,
+      })
+      expect(evaluateDensityFunction(decoded, { x: 12.5, y: 31.75, z: -7.25 })).toBe(11.25)
+    }),
+  )
+
   effectTest('same seed and same coordinate produce exactly the same value, bit for bit', () =>
     Effect.sync(() => {
       FastCheck.assert(

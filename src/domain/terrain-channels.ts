@@ -1,6 +1,7 @@
 import { CHUNK_SIZE_XZ } from '@nerima-games/mc-kernel'
 import type { NoiseFn2D } from './perlin.js'
 import { peaksAndValleysFromWeirdness } from './transforms.js'
+import { requireDefined } from './defined.js'
 import { requireFiniteNumber } from './number-validation.js'
 
 export const CHUNK_COLUMN_SAMPLE_COUNT: number = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ
@@ -56,10 +57,10 @@ const blendSparseChannelSample = (values: Float64Array, baseIndex: number, xWeig
   const inverseXWeight = UNIT_WEIGHT - xWeight
   const inverseZWeight = UNIT_WEIGHT - zWeight
   return (
-    inverseXWeight * inverseZWeight * values[baseIndex]! +
-    xWeight * inverseZWeight * values[baseIndex + TERRAIN_SPARSE_GRID_SIZE]! +
-    inverseXWeight * zWeight * values[baseIndex + SPARSE_GRID_OFFSET]! +
-    xWeight * zWeight * values[baseIndex + TERRAIN_SPARSE_GRID_SIZE + SPARSE_GRID_OFFSET]!
+    inverseXWeight * inverseZWeight * requireDefined(values[baseIndex], 'terrain sample') +
+    xWeight * inverseZWeight * requireDefined(values[baseIndex + TERRAIN_SPARSE_GRID_SIZE], 'terrain sample') +
+    inverseXWeight * zWeight * requireDefined(values[baseIndex + SPARSE_GRID_OFFSET], 'terrain sample') +
+    xWeight * zWeight * requireDefined(values[baseIndex + TERRAIN_SPARSE_GRID_SIZE + SPARSE_GRID_OFFSET], 'terrain sample')
   )
 }
 
