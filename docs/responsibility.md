@@ -86,8 +86,11 @@ context-aware な portable ノードとして含める。`DensityEvaluationConte
 | 親（依存先） | `mc-kernel` のみ |
 | 子（依存元） | `mc-worldgen` のみ |
 
-`package.json` は `@nerima-games/mc-kernel` に依存し、`ChunkCoord`、`ChunkHeight`、チャンク幅の
-共有定義を `src/domain/chunk-sampling.ts` で利用する。ノイズの seed・勾配・補間ロジックは本リポジトリが
+`package.json` は `@nerima-games/mc-kernel` に依存し、公開 root export の `ChunkCoord`、
+`ChunkHeight`、チャンク幅の共有定義を `src/domain/chunk-sampling.ts` で利用する。
+`ChunkCoord` の `ChunkAxis` と、kernel が提供する `BlockAxis` / `LocalAxis` は kernel の
+型境界であり、mc-noise は内部パスから再定義・再公開しない。`test/noise-brands.compile.ts`
+で公開 API に渡す軸 brand の混同をコンパイル時に検査する。ノイズの seed・勾配・補間ロジックは本リポジトリが
 所有する。ポータブルな 4 チャンネルのサンプル材料、気候・バイオーム・地形列・湖・表面材質の純粋定義、
 DensityFunction の代数・評価器も本リポジトリが提供する。一方、密度関数を組み合わせた特定地形の式、
 その制御点データ、設定済みの NoiseRouter とキャッシュ、チャンクへのブロック適用は `mc-worldgen` の責務として

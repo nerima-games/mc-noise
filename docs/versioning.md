@@ -38,6 +38,12 @@ org 標準から撤去された（[API_STANDARD.md §4](https://github.com/nerim
 したがって現在の `package.json` は:
 
 - `dependencies` に `effect` と `@nerima-games/mc-kernel` を宣言する。
+- kernel の座標 brand とチャンク境界は dependency の公開契約として利用する。kernel の
+  consumer migration を適用するときも、`sampleNoise2DChunk` / `sampleNoise3DChunk` の
+  `ChunkCoord` / `ChunkHeight` 境界を保ち、kernel の内部パスへ依存しない。
+- kernel の共有語彙の追加・変更は mc-noise の seed → 値の写像を変更しない限り、
+  mc-noise のバージョン分類では公開型境界の検証とドキュメント同期として扱う。座標
+  brand の取り違えは `test/noise-brands.compile.ts` の compile fixture で検出する。
 - `exports` は `dist/` の JavaScript と宣言ファイルを指し、`files` も `dist/` に限定する。
 - `build` が `tsconfig.release.json` から成果物を生成し、`package:verify` が実行時 API と tarball
   の内容を検査する。`prepublishOnly` は `verify` と `package:verify` を要求する。
