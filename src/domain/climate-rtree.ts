@@ -3,6 +3,7 @@ import type {
   ClimateParameterPoint,
   ClimateTargetPoint,
 } from './climate.js'
+import { requireDefined } from './defined.js'
 
 const CLIMATE_DIMENSIONS = [
   'temperature',
@@ -110,10 +111,10 @@ const mergeBounds = <Value>(
     index < CLIMATE_DIMENSIONS.length;
     index += INDEX_INCREMENT
   ) {
-    const dimension = CLIMATE_DIMENSIONS[index]!
+    const dimension = requireDefined(CLIMATE_DIMENSIONS[index], 'climate dimension')
     const coordinate = pointCoordinate(entry.point, dimension)
-    bounds.lower[index] = Math.min(bounds.lower[index]!, coordinate.lower)
-    bounds.upper[index] = Math.max(bounds.upper[index]!, coordinate.upper)
+    bounds.lower[index] = Math.min(requireDefined(bounds.lower[index], 'lower bound'), coordinate.lower)
+    bounds.upper[index] = Math.max(requireDefined(bounds.upper[index], 'upper bound'), coordinate.upper)
   }
   bounds.offsetLower = Math.min(bounds.offsetLower, entry.point.offset)
   bounds.offsetUpper = Math.max(bounds.offsetUpper, entry.point.offset)
@@ -130,7 +131,7 @@ const freezeBounds = (bounds: MutableBounds): Bounds =>
 const createBounds = <Value>(
   entries: readonly IndexedEntry<Value>[],
 ): Bounds => {
-  const bounds = createMutableBounds(entries[FIRST_ENTRY_INDEX]!)
+  const bounds = createMutableBounds(requireDefined(entries[FIRST_ENTRY_INDEX], 'climate entry'))
   for (const entry of entries.slice(SECOND_ENTRY_INDEX)) {
     mergeBounds(bounds, entry)
   }
@@ -141,7 +142,7 @@ const midpoint = (
   entry: IndexedEntry<unknown>,
   axis: number,
 ): number => {
-  const dimension = CLIMATE_DIMENSIONS[axis]!
+  const dimension = requireDefined(CLIMATE_DIMENSIONS[axis], 'climate dimension')
   const coordinate = pointCoordinate(entry.point, dimension)
   return (coordinate.lower + coordinate.upper) / MIDPOINT_DIVISOR
 }
@@ -149,13 +150,13 @@ const midpoint = (
 const splitAxis = (bounds: Bounds): number => {
   let axis = FIRST_ENTRY_INDEX
   let largestSpan =
-    bounds.upper[FIRST_ENTRY_INDEX]! - bounds.lower[FIRST_ENTRY_INDEX]!
+    requireDefined(bounds.upper[FIRST_ENTRY_INDEX], 'upper bound') - requireDefined(bounds.lower[FIRST_ENTRY_INDEX], 'lower bound')
   for (
     let index = SECOND_ENTRY_INDEX;
     index < CLIMATE_DIMENSIONS.length;
     index += INDEX_INCREMENT
   ) {
-    const span = bounds.upper[index]! - bounds.lower[index]!
+    const span = requireDefined(bounds.upper[index], 'upper bound') - requireDefined(bounds.lower[index], 'lower bound')
     if (span > largestSpan) {
       axis = index
       largestSpan = span
@@ -171,7 +172,7 @@ const buildTree = <Value>(
   if (entries.length === SINGLE_ENTRY_COUNT) {
     return Object.freeze({
       bounds,
-      entry: entries[FIRST_ENTRY_INDEX]!,
+      entry: requireDefined(entries[FIRST_ENTRY_INDEX], 'climate entry'),
       kind: 'leaf' as const,
     })
   }
@@ -211,8 +212,8 @@ const lowerBound = (
   target: ClimateTargetPoint,
 ): number => {
   let result = distanceToInterval(
-    bounds.lower[FIRST_ENTRY_INDEX]!,
-    bounds.upper[FIRST_ENTRY_INDEX]!,
+    requireDefined(bounds.lower[FIRST_ENTRY_INDEX], 'lower bound'),
+    requireDefined(bounds.upper[FIRST_ENTRY_INDEX], 'upper bound'),
     target.temperature,
   )
   for (
@@ -220,10 +221,10 @@ const lowerBound = (
     index < CLIMATE_DIMENSIONS.length;
     index += INDEX_INCREMENT
   ) {
-    const dimension = CLIMATE_DIMENSIONS[index]!
+    const dimension = requireDefined(CLIMATE_DIMENSIONS[index], 'climate dimension')
     result += distanceToInterval(
-      bounds.lower[index]!,
-      bounds.upper[index]!,
+      requireDefined(bounds.lower[index], 'lower bound'),
+      requireDefined(bounds.upper[index], 'upper bound'),
       target[dimension],
     )
   }

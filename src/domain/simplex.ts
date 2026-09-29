@@ -2,6 +2,7 @@ import { type NoiseFn2D, type NoiseFn3D } from './perlin.js'
 import { SIMPLEX_ONE, SIMPLEX_ZERO } from './simplex-constants.js'
 import { sampleSimplex2D, sampleSimplex3D } from './simplex-sampling.js'
 import type { RandFn } from './seed.js'
+import { requireDefined } from './defined.js'
 import { requireFinite } from './number-validation.js'
 
 const SIMPLEX_PERMUTATION_SIZE = 256
@@ -65,8 +66,8 @@ const buildSimplexPermutation = (rand: RandFn): Uint8Array => {
   ) {
     const remaining = SIMPLEX_PERMUTATION_SIZE - index
     const swapWith = index + Math.floor(rand() * remaining)
-    const value = permutation[index]!
-    const swapValue = permutation[swapWith]!
+    const value = requireDefined(permutation[index], 'permutation value')
+    const swapValue = requireDefined(permutation[swapWith], 'permutation value')
     permutation[index] = swapValue
     permutation[swapWith] = value
   }

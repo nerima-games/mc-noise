@@ -36,33 +36,33 @@ type DensityFunctionRecord = Readonly<{
   readonly maxValue?: unknown
 }>
 
+const isDensityFunctionRecord = (value: unknown): value is DensityFunctionRecord =>
+  value !== null && typeof value === 'object'
+
+const isDensityKind = (value: string): value is DensityFunction['kind'] =>
+  Array.from(DENSITY_KINDS).some((kind) => kind === value)
+
+const hasValidDensityBounds = (candidate: DensityFunctionRecord): boolean =>
+  typeof candidate.minValue === 'number' &&
+  typeof candidate.maxValue === 'number' &&
+  !Number.isNaN(candidate.minValue) &&
+  !Number.isNaN(candidate.maxValue) &&
+  candidate.minValue <= candidate.maxValue
+
 export const isDensityFunction = (
   value: unknown,
 ): value is DensityFunction => {
-  if (value === null || typeof value !== 'object') {
+  if (!isDensityFunctionRecord(value)) {
     return false
   }
-
-  const candidate = value as DensityFunctionRecord
+  const candidate = value
   if (
     typeof candidate.kind !== 'string' ||
-    !DENSITY_KINDS.has(candidate.kind as DensityFunction['kind'])
+    !isDensityKind(candidate.kind)
   ) {
     return false
   }
-  if (
-    typeof candidate.minValue !== 'number' ||
-    typeof candidate.maxValue !== 'number'
-  ) {
-    return false
-  }
-  if (
-    Number.isNaN(candidate.minValue) ||
-    Number.isNaN(candidate.maxValue)
-  ) {
-    return false
-  }
-  return candidate.minValue <= candidate.maxValue
+  return hasValidDensityBounds(candidate)
 }
 
 export const requireDensityFunction = (

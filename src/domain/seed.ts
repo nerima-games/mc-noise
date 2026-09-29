@@ -10,7 +10,7 @@
  *
  * docs/versioning.md §5 declares the seed -> value interface FROZEN: changing it changes
  * the terrain of every world that has ever been generated, which is a
- * save-breaking change disguised as a refactor. A branded `NoiseSeed` makes the
+ * save-breaking change disguised by a refactor. A branded `NoiseSeed` makes the
  * boundary at which that contract is entered visible in the type system —
  * you cannot pass an arbitrary `number` to a sampler by accident.
  *
@@ -88,7 +88,7 @@ export type NoiseChannel = keyof typeof CHANNEL_SALT
 
 export const NOISE_CHANNELS: ReadonlyArray<NoiseChannel> = Object.keys(
   CHANNEL_SALT,
-) as ReadonlyArray<NoiseChannel>
+).filter((channel): channel is NoiseChannel => Object.hasOwn(CHANNEL_SALT, channel))
 
 /** The per-channel seed derived from a world seed. Deterministic and total. */
 export const deriveSeed = (seed: NoiseSeed, channel: NoiseChannel): NoiseSeed =>

@@ -1,4 +1,5 @@
 import { type JavaRandom, createJavaRandom } from './java-random.js'
+import { requireDefined } from './defined.js'
 import { requireSafeInteger } from './number-validation.js'
 
 const SIMPLEX_ZERO = 0
@@ -101,8 +102,8 @@ const shufflePermutation = (permutation: Uint8Array, random: JavaRandom): void =
   for (let index = SIMPLEX_ZERO; index < permutation.length; index += SIMPLEX_ONE) {
     const swapOffset = random.nextInt(permutation.length - index)
     const swapIndex = index + swapOffset
-    const current = permutation[index]!
-    permutation[index] = permutation[swapIndex]!
+    const current = requireDefined(permutation[index], 'permutation value')
+    permutation[index] = requireDefined(permutation[swapIndex], 'permutation value')
     permutation[swapIndex] = current
   }
 }
@@ -142,7 +143,7 @@ const firstOffsetFor = (
 const createSimplex2D = (random: JavaRandom): Simplex2D => {
   const permutation = createPermutation(random)
   const permutationAt = (index: number): number =>
-    permutation[index & SIMPLEX_PERMUTATION_MASK]!
+    requireDefined(permutation[index & SIMPLEX_PERMUTATION_MASK], 'permutation value')
   const gradientIndex = (x: number, y: number): number =>
     permutationAt((x & SIMPLEX_PERMUTATION_MASK) + permutationAt(y & SIMPLEX_PERMUTATION_MASK)) %
     SIMPLEX_GRADIENTS.length
@@ -154,7 +155,7 @@ const createSimplex2D = (random: JavaRandom): Simplex2D => {
       return SIMPLEX_ZERO
     }
     attenuation *= attenuation
-    const gradient = SIMPLEX_GRADIENTS[index]!
+    const gradient = requireDefined(SIMPLEX_GRADIENTS[index], 'simplex gradient')
     return (
       attenuation *
       attenuation *

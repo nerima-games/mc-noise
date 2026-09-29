@@ -1,3 +1,4 @@
+import { requireDefined } from './defined.js'
 import { requireFiniteNumber } from './number-validation.js'
 
 export type ControlPoint = readonly [input: number, value: number]
@@ -36,7 +37,7 @@ export const createSpline = (controlPoints: Spline): Spline => {
 }
 
 const controlPointInput = (spline: Spline, index: number): number => {
-  const [input] = spline[index]!
+  const [input] = requireDefined(spline[index], 'spline control point')
   return input
 }
 
@@ -52,16 +53,16 @@ const findUpperIndex = (spline: Spline, input: number): number => {
 }
 
 const interpolate = (spline: Spline, input: number, upperIndex: number): number => {
-  const [lowerInput, lowerValue] = spline[upperIndex - INDEX_OFFSET]!
-  const [upperInput, upperValue] = spline[upperIndex]!
+  const [lowerInput, lowerValue] = requireDefined(spline[upperIndex - INDEX_OFFSET], 'spline control point')
+  const [upperInput, upperValue] = requireDefined(spline[upperIndex], 'spline control point')
   const ratio = (input - lowerInput) / (upperInput - lowerInput)
   return lowerValue + (upperValue - lowerValue) * ratio
 }
 
 const evaluateBoundary = (spline: Spline, input: number): number | null => {
   const [first] = spline
-  const last = spline[spline.length - INDEX_OFFSET]!
-  const [firstInput, firstValue] = first!
+  const last = requireDefined(spline[spline.length - INDEX_OFFSET], 'spline control point')
+  const [firstInput, firstValue] = requireDefined(first, 'spline control point')
   const [lastInput, lastValue] = last
   if (input <= firstInput) {
     return firstValue

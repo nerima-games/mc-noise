@@ -1,7 +1,8 @@
 import { requireFinite, requirePositiveFinite, requirePositiveInteger } from './number-validation.js'
 import type { NoiseFn2D } from './perlin.js'
+import { requireDefined } from './defined.js'
 
-/** The boundary a value must exceed to count as positive in `requirePositiveInteger`/`requirePositiveFinite`. */
+/** The boundary a value must exceed to count positive in `requirePositiveInteger`/`requirePositiveFinite`. */
 const POSITIVE_BOUNDARY = 0
 /** Default grid origin when `originX`/`originZ` is omitted: the coordinate space's zero point. */
 const DEFAULT_GRID_ORIGIN = 0
@@ -162,15 +163,17 @@ const interpolateCoarseCell = (
   zAxis: InterpolationAxis,
 ): number => {
   const topLeft =
-    coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.cellIndex]!
+    requireDefined(coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.cellIndex], 'coarse sample')
   const topRight =
-    coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.nextCellIndex]!
+    requireDefined(coarseGrid.samples[zAxis.cellIndex * coarseGrid.width + xAxis.nextCellIndex], 'coarse sample')
   const bottomLeft =
-    coarseGrid.samples[zAxis.nextCellIndex * coarseGrid.width + xAxis.cellIndex]!
-  const bottomRight =
+    requireDefined(coarseGrid.samples[zAxis.nextCellIndex * coarseGrid.width + xAxis.cellIndex], 'coarse sample')
+  const bottomRight = requireDefined(
     coarseGrid.samples[
       zAxis.nextCellIndex * coarseGrid.width + xAxis.nextCellIndex
-    ]!
+    ],
+    'coarse sample',
+  )
   const top = interpolateLinear(topLeft, topRight, xAxis.weight)
   const bottom = interpolateLinear(bottomLeft, bottomRight, xAxis.weight)
   return interpolateLinear(top, bottom, zAxis.weight)

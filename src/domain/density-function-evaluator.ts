@@ -52,6 +52,7 @@ import type {
 } from './density-function-types.js'
 import { evaluateOldBlendedNoise } from './old-blended-noise.js'
 import { evaluateSpline } from './spline.js'
+import { requireDefined } from './defined.js'
 import { requireDensityEvaluationContext } from './density-function-context.js'
 import { requireFiniteNumber } from './number-validation.js'
 
@@ -484,7 +485,7 @@ const cachedDensityValue = (
     cache.set(density, values)
   }
   if (values.has(key)) {
-    return values.get(key) as number
+    return requireDefined(values.get(key), 'cached density value')
   }
   const value = compute()
   values.set(key, value)
@@ -499,7 +500,7 @@ const evaluateCachedOnce = (
 ): number => {
   requireEvaluationContext(state, density.kind)
   if (state.cacheOnce.has(density)) {
-    return state.cacheOnce.get(density) as number
+    return requireDefined(state.cacheOnce.get(density), 'cached density value')
   }
   const value = evaluate(density.input, position)
   state.cacheOnce.set(density, value)

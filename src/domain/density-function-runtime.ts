@@ -50,6 +50,9 @@ export type DensityFunctionArrayContextProvider =
 const DENSITY_INDEX_INCREMENT = 1
 const DENSITY_INDEX_START = 0
 
+type FunctionContextRecord = Partial<DensityFunctionFunctionContext>
+type ContextProviderRecord = Partial<DensityFunctionContextProvider>
+
 const isDensityEvaluationSession = (
   value: DensityEvaluationContext | DensityEvaluationSession | undefined,
 ): value is DensityEvaluationSession =>
@@ -64,12 +67,12 @@ const isDensityFunctionFunctionContext = (
   if (value === null || typeof value !== 'object') {
     return false
   }
-  const candidate = value as Partial<DensityFunctionFunctionContext>
+  const candidate: FunctionContextRecord = value
   return (
-    typeof candidate.blockX === 'function' &&
-    typeof candidate.blockY === 'function' &&
-    typeof candidate.blockZ === 'function' &&
-    typeof candidate.getBlender === 'function'
+    typeof candidate['blockX'] === 'function' &&
+    typeof candidate['blockY'] === 'function' &&
+    typeof candidate['blockZ'] === 'function' &&
+    typeof candidate['getBlender'] === 'function'
   )
 }
 
@@ -79,10 +82,10 @@ const isDensityFunctionContextProvider = (
   if (value === null || typeof value !== 'object') {
     return false
   }
-  const candidate = value as Partial<DensityFunctionContextProvider>
+  const candidate: ContextProviderRecord = value
   return (
-    typeof candidate.forIndex === 'function' &&
-    typeof candidate.fillAllDirectly === 'function'
+    typeof candidate['forIndex'] === 'function' &&
+    typeof candidate['fillAllDirectly'] === 'function'
   )
 }
 

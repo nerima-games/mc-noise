@@ -9,6 +9,7 @@ import {
   SIMPLEX_Z_INDEX,
 } from './simplex-constants.js'
 import type { SimplexPoint2D, SimplexPoint3D } from './simplex-points.js'
+import { requireDefined } from './defined.js'
 
 const GRADIENTS = [
   [SIMPLEX_ONE, SIMPLEX_ONE, SIMPLEX_ZERO],
@@ -30,7 +31,7 @@ const GRADIENTS = [
 ] as const
 
 const mapPermutation = (permutation: Uint8Array, value: number): number =>
-  permutation[value & SIMPLEX_PERMUTATION_MASK]!
+  requireDefined(permutation[value & SIMPLEX_PERMUTATION_MASK], 'permutation value')
 
 const hash2 = (permutation: Uint8Array, point: SimplexPoint2D): number =>
   mapPermutation(permutation, point.x + mapPermutation(permutation, point.z))
@@ -46,8 +47,8 @@ export const gradient2 = (
   lattice: SimplexPoint2D,
   local: SimplexPoint2D,
 ): number => {
-  const gradient = GRADIENTS[hash2(permutation, lattice) & SIMPLEX_GRADIENT_MASK]!
-  return gradient[SIMPLEX_X_INDEX]! * local.x + gradient[SIMPLEX_Z_INDEX]! * local.z
+  const gradient = requireDefined(GRADIENTS[hash2(permutation, lattice) & SIMPLEX_GRADIENT_MASK], 'simplex gradient')
+  return requireDefined(gradient[SIMPLEX_X_INDEX], 'gradient component') * local.x + requireDefined(gradient[SIMPLEX_Z_INDEX], 'gradient component') * local.z
 }
 
 export const gradient3 = (
@@ -55,10 +56,10 @@ export const gradient3 = (
   lattice: SimplexPoint3D,
   local: SimplexPoint3D,
 ): number => {
-  const gradient = GRADIENTS[hash3(permutation, lattice) & SIMPLEX_GRADIENT_MASK]!
+  const gradient = requireDefined(GRADIENTS[hash3(permutation, lattice) & SIMPLEX_GRADIENT_MASK], 'simplex gradient')
   return (
-    gradient[SIMPLEX_X_INDEX]! * local.x +
-    gradient[SIMPLEX_Y_INDEX]! * local.y +
-    gradient[SIMPLEX_Z_INDEX]! * local.z
+    requireDefined(gradient[SIMPLEX_X_INDEX], 'gradient component') * local.x +
+    requireDefined(gradient[SIMPLEX_Y_INDEX], 'gradient component') * local.y +
+    requireDefined(gradient[SIMPLEX_Z_INDEX], 'gradient component') * local.z
   )
 }

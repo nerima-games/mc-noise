@@ -144,7 +144,7 @@ export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: 
   }
 
   // PERFORMANCE EXCEPTION — see the file header before changing this.
-  // The four accumulators below are declared as one statement, not four, only to stay under `max-statements` without touching the loop itself.
+  // The four accumulators below share one statement to stay under `max-statements` without touching the loop itself.
   let total = 0,
     amplitude = 1,
     frequency = 1,

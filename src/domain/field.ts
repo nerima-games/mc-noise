@@ -7,7 +7,7 @@
  * Seed once, sample many
  * ---------------------------------------------------------------------------
  *
- * The initial public API sketch uses `noise2d(seed, x, y, z)`, with the seed as a
+ * The initial public API sketch uses `noise2d(seed, x, y, z)`, with the seed supplied directly
  * per-call argument. That signature cannot be implemented efficiently: every
  * call would have to rebuild a 256-entry permutation table, turning an O(1)
  * sample into an O(256) one on the hottest path in world generation.

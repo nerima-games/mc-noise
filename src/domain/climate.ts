@@ -23,6 +23,7 @@ import {
   requireSafeInteger,
 } from './number-validation.js'
 import { densityZero } from './density-function.js'
+import { requireDefined } from './defined.js'
 
 export const CLIMATE_PARAMETER_COUNT = 6
 export const CLIMATE_HYPERCUBE_DIMENSION: number = CLIMATE_PARAMETER_COUNT
@@ -136,7 +137,25 @@ type ClimateParameterValues = ClimateSixValues<unknown>
 type ClimateParameterInputValues = ClimateSixValues<number | ClimateParameter>
 type ClimateTargetValues = ClimateSixValues<number>
 
-const isObject = (value: unknown): value is object =>
+type ClimateUnknownObject = Readonly<{
+  readonly min?: unknown
+  readonly max?: unknown
+  readonly temperature?: unknown
+  readonly humidity?: unknown
+  readonly continentalness?: unknown
+  readonly erosion?: unknown
+  readonly depth?: unknown
+  readonly weirdness?: unknown
+  readonly offset?: unknown
+  readonly entries?: unknown
+  readonly spawnTarget?: unknown
+  readonly evaluate?: unknown
+  readonly x?: unknown
+  readonly y?: unknown
+  readonly z?: unknown
+}>
+
+const isObject = (value: unknown): value is ClimateUnknownObject =>
   value !== null && typeof value === 'object'
 
 const defaultIfUndefined = <Value>(
@@ -205,7 +224,7 @@ export const isClimateParameter = (
   if (!isObject(value)) {
     return false
   }
-  const candidate = value as { readonly min?: unknown; readonly max?: unknown }
+  const candidate = value
   if (typeof candidate.min !== 'number' || typeof candidate.max !== 'number') {
     return false
   }
@@ -287,7 +306,7 @@ const readParameterSpace = (
   if (!isObject(value)) {
     throw new TypeError(`${name} must be an object`)
   }
-  const candidate = value as Partial<Record<ClimateChannel, unknown>>
+  const candidate = value
   return createParameterSpace(
     candidate.temperature,
     candidate.humidity,
@@ -317,7 +336,7 @@ export const isClimateParameterPoint = (
   if (!isObject(value)) {
     return false
   }
-  const candidate = value as Partial<ClimateParameterPoint>
+  const candidate = value
   return (
     isClimateParameter(candidate.temperature) &&
     isClimateParameter(candidate.humidity) &&
@@ -413,7 +432,7 @@ const readTargetPoint = (
   if (!isObject(value)) {
     throw new TypeError(`${name} must be an object`)
   }
-  const candidate = value as Partial<ClimateTargetPoint>
+  const candidate = value
   return createClimateTargetPointFromQuantized(
     readQuantized(`${name}.temperature`, candidate.temperature),
     readQuantized(`${name}.humidity`, candidate.humidity),
@@ -430,7 +449,7 @@ export const isClimateTargetPoint = (
   if (!isObject(value)) {
     return false
   }
-  const candidate = value as Partial<ClimateTargetPoint>
+  const candidate = value
   return (
     isQuantized(candidate.temperature) &&
     isQuantized(candidate.humidity) &&
@@ -504,7 +523,7 @@ export const climateParameterPointFitness = (
 }
 
 const normalizeListEntry = <Value>(
-  entry: ClimateParameterListEntry<Value>,
+  entry: unknown,
   entryIndex: number,
 ): ClimateParameterListEntry<Value> => {
   if (!Array.isArray(entry) || entry.length !== CLIMATE_LIST_ENTRY_LENGTH) {
@@ -512,13 +531,12 @@ const normalizeListEntry = <Value>(
       `entries[${entryIndex}] must be a [point, value] tuple`,
     )
   }
-  return Object.freeze([
-    requireClimateParameterPoint(
+  const normalizedPoint = requireClimateParameterPoint(
       `entries[${entryIndex}][${CLIMATE_FIRST_ENTRY_INDEX}]`,
       entry[CLIMATE_FIRST_ENTRY_INDEX],
-    ),
-    entry[CLIMATE_SECOND_ENTRY_INDEX],
-  ]) as ClimateParameterListEntry<Value>
+    )
+  const value = entry[CLIMATE_SECOND_ENTRY_INDEX]
+  return Object.freeze([normalizedPoint, value] as const)
 }
 
 export const createClimateParameterList = <Value>(
@@ -547,12 +565,12 @@ export const requireClimateParameterList = <Value>(
   if (!isObject(value)) {
     throw new TypeError('parameter list must be an object')
   }
-  const { entries } = value as { readonly entries?: unknown }
+  const { entries } = value
   if (!Array.isArray(entries)) {
     throw new TypeError('parameter list.entries must be an array')
   }
   return createClimateParameterList(
-    entries as readonly ClimateParameterListEntry<Value>[],
+    entries.map((entry, entryIndex) => normalizeListEntry<Value>(entry, entryIndex)),
   )
 }
 
@@ -585,7 +603,7 @@ const findClimateValueIndexBruteForce = <Value>(
     entryIndex += CLIMATE_INDEX_INCREMENT
   ) {
     const fitness = calculateClimateParameterPointFitness(
-      list.entries[entryIndex]![CLIMATE_FIRST_ENTRY_INDEX],
+      requireDefined(list.entries[entryIndex], 'climate entry')[CLIMATE_FIRST_ENTRY_INDEX],
       targetPoint,
     )
     if (bestIndex === CLIMATE_NO_INDEX || fitness < bestFitness) {
@@ -611,16 +629,14 @@ export const findClimateValueBruteForce = <Value>(
   if (typeof index === 'undefined') {
     return
   }
-  return list.entries[index]![CLIMATE_SECOND_ENTRY_INDEX]
+  return requireDefined(list.entries[index], 'climate entry')[CLIMATE_SECOND_ENTRY_INDEX]
 }
 
 const readSamplerFields = (value: unknown): ClimateSampler => {
   if (!isObject(value)) {
     throw new TypeError('sampler must be an object')
   }
-  const candidate = value as Partial<ClimateSampler> & {
-    readonly spawnTarget?: unknown
-  }
+  const candidate = value
   const spawnTarget = defaultIfUndefined(candidate.spawnTarget, [])
   if (!Array.isArray(spawnTarget)) {
     throw new TypeError('sampler.spawnTarget must be an array')
@@ -667,7 +683,7 @@ export const isClimateSampler = (value: unknown): value is ClimateSampler => {
   if (!isObject(value)) {
     return false
   }
-  const candidate = value as Partial<ClimateSampler>
+  const candidate = value
   return (
     isDensityFunction(candidate.temperature) &&
     isDensityFunction(candidate.humidity) &&
@@ -685,7 +701,7 @@ const isDensityEvaluationSession = (
 ): value is DensityEvaluationSession =>
   isObject(value) &&
   'evaluate' in value &&
-  typeof (value as { readonly evaluate?: unknown }).evaluate === 'function'
+  typeof value.evaluate === 'function'
 
 const resolveEvaluator = (
   contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
@@ -803,7 +819,7 @@ const readOrigin = (value: unknown): Position => {
   if (!isObject(value)) {
     throw new TypeError('origin must be an object')
   }
-  const candidate = value as Partial<Position>
+  const candidate = value
   return Object.freeze({
     x: readSafeInteger('origin.x', candidate.x),
     y: readSafeInteger('origin.y', candidate.y),
@@ -817,7 +833,7 @@ const readSearchOptions = (
   if (value === null || typeof value !== 'object') {
     throw new TypeError('search options must be an object')
   }
-  const options = value as ClimateSpawnSearchOptions
+  const options = value
   const origin = defaultIfUndefined(options.origin, createDefaultOrigin())
   const radius = readNonNegativeInteger(
     'radius',
@@ -922,7 +938,7 @@ const findBestClimateSpawnPosition = (
       }
     }
   }
-  return (bestCandidate as ClimateSpawnCandidate).position
+  return bestCandidate?.position
 }
 
 export const findClimateSpawnPosition = (
