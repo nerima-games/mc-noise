@@ -1,5 +1,5 @@
 ---
-"@nerima-games/mc-noise": patch
+"@nerima-games/mc-noise": minor
 ---
 
-Follow `@nerima-games/mc-kernel` 0.8.0 while preserving the seeded noise mapping and public sampling behavior.
+Require `@nerima-games/mc-kernel` 0.8.0 while preserving the seeded noise mapping and public sampling behavior. Consumers must align their kernel dependency to 0.8.0 so branded types resolve consistently.
