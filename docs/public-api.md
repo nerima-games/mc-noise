@@ -63,6 +63,19 @@ export const createNoiseField = (seed: NoiseSeed): NoiseField
 
 ## 2. 型
 
+### `mc-kernel` の座標境界
+
+チャンク単位のサンプリング API は、`@nerima-games/mc-kernel` が公開する
+`ChunkCoord` と `ChunkHeight` をそのまま受け取る。`ChunkCoord` の `cx` / `cz` は
+kernel の `ChunkAxis`、チャンク内の座標は `LocalAxis`、ブロック座標は `BlockAxis`
+として管理されるため、これらを `number` や別の軸 brand で置き換えてはならない。
+呼び出し側は kernel の root export から constructor / guard を通して値を作り、
+`mc-noise` はチャンク座標をワールド座標のサンプル領域へ変換する。
+
+`sampleNoise2DChunk` と `sampleNoise3DChunk` はこの境界を公開契約として持つ。
+`test/noise-brands.compile.ts` では、`ChunkAxis`、`BlockAxis`、`LocalAxis`、
+`ChunkHeight` の相互代入がコンパイル時に拒否されることを固定している。
+
 ### `NoiseSeed`（`domain/seed.ts`）
 
 ```typescript
@@ -366,7 +379,7 @@ jaggedness の 4 配列を 16×16 で返す。これは地形の式そのもの�
 | `sampleNoise2DGrid` / `sampleNoise3DGrid` | 同上 | 原点・幅・刻みを持つ密な格子を `Float32Array` で返す |
 | `sampleNoise2DInterpolatedGrid` | `src/domain/sampling.ts` | 疎な格子を双線形補間し、評価回数を抑える |
 | `sampleNoise3DInterpolatedGrid` | `src/domain/sampling-3d-interpolation.ts`（`sampling-3d.ts` から再公開） | 疎な格子を三線形補間し、評価回数を抑える |
-| `sampleNoise2DChunk` / `sampleNoise3DChunk` | `src/domain/chunk-sampling.ts` | `mc-kernel` の `ChunkCoord` / `ChunkHeight` をサンプル領域へ変換 |
+| `sampleNoise2DChunk` / `sampleNoise3DChunk` | `src/domain/chunk-sampling.ts` | `mc-kernel` の `ChunkCoord` / `ChunkHeight` をサンプル領域へ変換。軸 brand を保持する |
 
 ### Minecraft の気候・バイオーム・地形定義
 
