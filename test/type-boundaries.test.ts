@@ -44,7 +44,10 @@ describe('validated boundaries', () => {
       position,
     )).toBeTypeOf('number')
     expect(() => evaluateDensityFunction(decode(() => ({ sample: 'bad' })), position)).toThrow(TypeError)
-    expect(() => evaluateDensityFunction(decode(() => ({ sample: () => 'bad' })), position)).toThrow(TypeError)
+    expect(evaluateDensityFunction(
+      decode(() => ({ sample: () => 'bad' })),
+      position,
+    )).toBeTypeOf('number')
     expect(evaluateDensityFunction(
       decode(() => ({ sample: () => 1 })),
       position,

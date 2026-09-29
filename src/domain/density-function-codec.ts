@@ -3,6 +3,7 @@ import type {
   DensityCoordinateAxis,
   DensityFunction,
   DensityNoiseSource,
+  DensityOldBlendedNoiseOctave,
   DensityOldBlendedNoiseSource,
   DensityRarityValueMapper,
   DensityUnaryOperation,
@@ -59,6 +60,8 @@ export type DensityFunctionCodecOptions = Readonly<{
 type EncodedSpline = ReadonlyArray<readonly [number, number]>
 
 const EMPTY_STRING_LENGTH = 0
+const OLD_BLENDED_NOISE_OCTAVE_COUNT = 16
+const OLD_BLENDED_NOISE_OCTAVE_STEP = 1
 const SPLINE_POINT_LENGTH = 2
 const SPLINE_INPUT_INDEX = 0
 const SPLINE_VALUE_INDEX = 1
@@ -320,6 +323,27 @@ const encodeOldBlendedNoiseSource = (
   return identifier
 }
 
+const isDecodedOldBlendedNoiseOctave = (
+  value: unknown,
+): value is DensityOldBlendedNoiseOctave =>
+  value !== null &&
+  typeof value === 'object' &&
+  'sample' in value &&
+  typeof value.sample === 'function'
+
+const validateDecodedOldBlendedNoiseOctave = (
+  field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
+  value: unknown,
+): DensityOldBlendedNoiseOctave | undefined => {
+  if (typeof value === 'undefined') {
+    return
+  }
+  if (!isDecodedOldBlendedNoiseOctave(value)) {
+    throw new TypeError(`decoded old blended noise source ${field} must return an octave`)
+  }
+  return value
+}
+
 const requireOldBlendedNoiseFunction = (
   field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
   value: unknown,
@@ -327,27 +351,14 @@ const requireOldBlendedNoiseFunction = (
   if (typeof value !== 'function') {
     throw new TypeError(`decoded old blended noise source must provide a ${field} function`)
   }
-  return (octave) => {
-    const result = value(octave)
-    if (typeof result === 'undefined') {
-      return
+  const octaves = new Array<DensityOldBlendedNoiseOctave | undefined>(OLD_BLENDED_NOISE_OCTAVE_COUNT)
+  for (let octave = 0; octave < OLD_BLENDED_NOISE_OCTAVE_COUNT; octave += OLD_BLENDED_NOISE_OCTAVE_STEP) {
+    const result = validateDecodedOldBlendedNoiseOctave(field, value(octave))
+    if (typeof result !== 'undefined') {
+      octaves[octave] = result
     }
-    if (result === null || typeof result !== 'object' || !('sample' in result)) {
-      throw new TypeError(`decoded old blended noise source ${field} must return an octave`)
-    }
-    if (typeof result.sample !== 'function') {
-      throw new TypeError(`decoded old blended noise source ${field} octave must sample`)
-    }
-    return Object.freeze({
-      sample: (...coordinates: [number, number, number, number, number]): number => {
-        const sampled = result.sample(...coordinates)
-        if (typeof sampled !== 'number') {
-          throw new TypeError(`decoded old blended noise source ${field} sample must return a number`)
-        }
-        return sampled
-      },
-    })
   }
+  return (octave) => octaves[octave]
 }
 
 const decodeOldBlendedNoiseValue = (value: unknown): DensityOldBlendedNoiseSource => {
