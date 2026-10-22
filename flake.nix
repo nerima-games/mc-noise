@@ -34,10 +34,10 @@
           pkgs = pkgsFor system;
         in
         {
-          # Node 24 matches the `engines` field and the CI runner. pnpm comes
-          # from corepack rather than nixpkgs so that the version is decided by
-          # the `packageManager` field in package.json — one source of truth
-          # instead of two that can drift.
+          # Node 26 matches the CI runner; engines.node still accepts Node 24.
+          # This nixpkgs pin provides corepack_24 but not corepack_26, so PATH
+          # uses the Node 26 runtime with the Corepack wrapper. packageManager
+          # selects pnpm.
           #
           # oxlint is intentionally Nix-provided rather than a package.json
           # dependency, so the development shell supplies one lockfile-backed
@@ -50,7 +50,7 @@
           # `.ast-grep/rules/` holds that gate.
           default = pkgs.mkShell {
             packages = [
-              pkgs.nodejs_24
+              pkgs.nodejs_26
               pkgs.corepack_24
               pkgs.typescript-language-server
               pkgs.oxlint
