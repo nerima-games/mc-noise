@@ -34,10 +34,10 @@
           pkgs = pkgsFor system;
         in
         {
-          # Node 26 matches the CI runner; engines.node still accepts Node 24.
-          # This nixpkgs pin provides corepack_24 but not corepack_26, so PATH
-          # uses the Node 26 runtime with the Corepack wrapper. packageManager
-          # selects pnpm.
+          # Node 26 matches CI; `engines.node` accepts Node 24. The pinned
+          # `corepack_24` shim uses Node from PATH. Corepack, rather than nixpkgs,
+          # gets pnpm's version from `packageManager` in package.json, avoiding a
+          # second version source that can drift.
           #
           # oxlint is intentionally Nix-provided rather than a package.json
           # dependency, so the development shell supplies one lockfile-backed
