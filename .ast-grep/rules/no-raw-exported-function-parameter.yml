@@ -1,0 +1,117 @@
+id: no-raw-exported-function-parameter
+language: TypeScript
+severity: error
+message: Use a branded type for exported function parameters instead of raw number or string.
+note: >-
+  Only direct export declarations and function expressions or arrows assigned
+  to exported variables are matched. Re-exports are not resolved; function
+  bodies and local helpers are outside the signature. Only literal `number`
+  and `string` annotations are matched; replacement types are not checked for
+  a brand.
+files:
+  - '**/src/**/*.ts'
+  - '**/src/**/*.mts'
+  - '**/src/**/*.cts'
+utils:
+  exported-function:
+    any:
+      - all:
+          - kind: function_declaration
+          - inside:
+              kind: export_statement
+              field: declaration
+              stopBy:
+                any:
+                  - kind: function_declaration
+                  - kind: function_expression
+                  - kind: arrow_function
+      - all:
+          - kind: function_expression
+          - inside:
+              kind: export_statement
+              field: declaration
+              stopBy:
+                any:
+                  - kind: function_declaration
+                  - kind: function_expression
+                  - kind: arrow_function
+      - all:
+          - kind: arrow_function
+          - inside:
+              kind: export_statement
+              field: declaration
+              stopBy:
+                any:
+                  - kind: function_declaration
+                  - kind: function_expression
+                  - kind: arrow_function
+  allowed-coordinate-parameter:
+    all:
+      - regex: '^number$'
+      - inside:
+          any:
+            - kind: required_parameter
+            - kind: optional_parameter
+          has:
+            field: pattern
+            regex: '^(x|z)$'
+          stopBy: end
+      - inside:
+          kind: variable_declarator
+          has:
+            field: name
+            regex: '^(valueNoise2D|fbm2D)$'
+          stopBy: end
+  allowed-wire-parameter:
+    all:
+      - regex: '^string$'
+      - inside:
+          any:
+            - kind: required_parameter
+            - kind: optional_parameter
+          has:
+            field: pattern
+            regex: '^serialized$'
+          stopBy: end
+      - inside:
+          kind: variable_declarator
+          has:
+            field: name
+            regex: '^parseDensityFunction$'
+          stopBy: end
+rule:
+  all:
+    - kind: predefined_type
+    - regex: '^(number|string)$'
+    - inside:
+        any:
+          - kind: required_parameter
+          - kind: optional_parameter
+        field: type
+        stopBy: end
+    - inside:
+        matches: exported-function
+        field: parameters
+        stopBy:
+          any:
+            - kind: function_declaration
+            - kind: function_expression
+            - kind: arrow_function
+    - not:
+        inside:
+          any:
+            - kind: function_type
+            - kind: generic_type
+            - kind: union_type
+            - kind: intersection_type
+            - kind: array_type
+            - kind: tuple_type
+          stopBy:
+            any:
+              - kind: property_signature
+              - kind: required_parameter
+              - kind: optional_parameter
+    - not:
+        any:
+          - matches: allowed-coordinate-parameter
+          - matches: allowed-wire-parameter

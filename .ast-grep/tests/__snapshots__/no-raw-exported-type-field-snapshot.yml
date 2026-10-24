@@ -1,0 +1,152 @@
+id: no-raw-exported-type-field
+snapshots:
+  "export interface User {\n  name: string\n}\n":
+    labels:
+    - source: string
+      style: primary
+      start: 32
+      end: 38
+    - source: "name: string"
+      style: secondary
+      start: 26
+      end: 38
+    - source: |-
+        export interface User {
+          name: string
+        }
+      style: secondary
+      start: 0
+      end: 40
+    - source: |-
+        interface User {
+          name: string
+        }
+      style: secondary
+      start: 7
+      end: 40
+  "export type DensityFunctionOptions = Readonly<{\n  source: string\n  seed: string\n}>\n":
+    labels:
+    - source: string
+      style: primary
+      start: 58
+      end: 64
+    - source: "source: string"
+      style: secondary
+      start: 50
+      end: 64
+    - source: |-
+        export type DensityFunctionOptions = Readonly<{
+          source: string
+          seed: string
+        }>
+      style: secondary
+      start: 0
+      end: 82
+    - source: |-
+        type DensityFunctionOptions = Readonly<{
+          source: string
+          seed: string
+        }>
+      style: secondary
+      start: 7
+      end: 82
+  "export type UnrelatedPoint = Readonly<{\n  x: number\n  z: number\n}>\n":
+    labels:
+    - source: number
+      style: primary
+      start: 45
+      end: 51
+    - source: "x: number"
+      style: secondary
+      start: 42
+      end: 51
+    - source: |-
+        export type UnrelatedPoint = Readonly<{
+          x: number
+          z: number
+        }>
+      style: secondary
+      start: 0
+      end: 66
+    - source: |-
+        type UnrelatedPoint = Readonly<{
+          x: number
+          z: number
+        }>
+      style: secondary
+      start: 7
+      end: 66
+  "export type User = {\n  id: number\n}\n":
+    labels:
+    - source: number
+      style: primary
+      start: 27
+      end: 33
+    - source: "id: number"
+      style: secondary
+      start: 23
+      end: 33
+    - source: |-
+        export type User = {
+          id: number
+        }
+      style: secondary
+      start: 0
+      end: 35
+    - source: |-
+        type User = {
+          id: number
+        }
+      style: secondary
+      start: 7
+      end: 35
+  "export type NoisePoint2D = Readonly<{\n  x: string\n  z: number\n}>\n":
+    labels:
+    - source: string
+      style: primary
+      start: 43
+      end: 49
+    - source: "x: string"
+      style: secondary
+      start: 40
+      end: 49
+    - source: |-
+        export type NoisePoint2D = Readonly<{
+          x: string
+          z: number
+        }>
+      style: secondary
+      start: 0
+      end: 64
+    - source: |-
+        type NoisePoint2D = Readonly<{
+          x: string
+          z: number
+        }>
+      style: secondary
+      start: 7
+      end: 64
+  "export type DensityFunctionEncoded =\n  | Readonly<{ kind: 'noise'; source: number }>\n  | Readonly<{ kind: 'end-islands'; seed: number }>\n":
+    labels:
+    - source: number
+      style: primary
+      start: 75
+      end: 81
+    - source: "source: number"
+      style: secondary
+      start: 67
+      end: 81
+    - source: |-
+        export type DensityFunctionEncoded =
+          | Readonly<{ kind: 'noise'; source: number }>
+          | Readonly<{ kind: 'end-islands'; seed: number }>
+      style: secondary
+      start: 0
+      end: 136
+    - source: |-
+        type DensityFunctionEncoded =
+          | Readonly<{ kind: 'noise'; source: number }>
+          | Readonly<{ kind: 'end-islands'; seed: number }>
+      style: secondary
+      start: 7
+      end: 136

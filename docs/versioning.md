@@ -18,7 +18,10 @@
 「新規構築初期は全界面が高 churn」を挙げ、その対策として
 「npm 公開を遅らせ dev-meta workspace で開発」を指定しているのはこの理由による。
 
-## 2. なぜ今は publish しないのか
+## 2. Why the project remains pre-1.0
+
+The package can be published while the project remains pre-1.0. This section
+explains why the stable `1.0.0` promotion is deferred.
 
 **1.0.0 への昇格に、日数計測ベースの自動ゲートは存在しない。** かつては「4週間 API 無変更で凍結」
 という freeze-clock 言語がここにあったが、その仕組み（`api-lock.md` + `scripts/api-lock.ts`）は
@@ -69,19 +72,12 @@ publish 自体は `.github/workflows/release.yaml` が行う: `main` への push
 }
 ```
 
-初期資料の未決事項に「パッケージ公開先（GitHub Packages / private registry）」があったが、
-Step 0 の実装として GitHub Packages を選んである。組織 `nerima-games` の下に 16 パッケージが並ぶ。
-
 消費側は `.npmrc` に次を要する:
 
 ```
 @nerima-games:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
-
-（本リポジトリの `.npmrc` には**この設定は入っていない**。今は誰も `@nerima-games/*` を
-解決しないためである。現在の `.npmrc` の中身は `fast-check` / `pure-rand` の hoist だけで、
-これは `effect/FastCheck` の型解決のために必要な設定である。）
 
 ## 5. 何が破壊的変更なのか
 

@@ -1,0 +1,158 @@
+id: no-raw-exported-function-parameter
+snapshots:
+  "declare const density: object\nexport const parse = (serialized: string): object => density\n":
+    labels:
+    - source: string
+      style: primary
+      start: 64
+      end: 70
+    - source: "serialized: string"
+      style: secondary
+      start: 52
+      end: 70
+    - source: "export const parse = (serialized: string): object => density"
+      style: secondary
+      start: 30
+      end: 90
+    - source: "(serialized: string): object => density"
+      style: secondary
+      start: 51
+      end: 90
+  "declare const sample: object\nexport const unrelatedFbm = (x: number, z: number): object => sample\n":
+    labels:
+    - source: number
+      style: primary
+      start: 61
+      end: 67
+    - source: "x: number"
+      style: secondary
+      start: 58
+      end: 67
+    - source: "export const unrelatedFbm = (x: number, z: number): object => sample"
+      style: secondary
+      start: 29
+      end: 97
+    - source: "(x: number, z: number): object => sample"
+      style: secondary
+      start: 57
+      end: 97
+  "declare const sample: object\nexport const unrelatedSampler = (x: number, z: number): object => sample\n":
+    labels:
+    - source: number
+      style: primary
+      start: 65
+      end: 71
+    - source: "x: number"
+      style: secondary
+      start: 62
+      end: 71
+    - source: "export const unrelatedSampler = (x: number, z: number): object => sample"
+      style: secondary
+      start: 29
+      end: 101
+    - source: "(x: number, z: number): object => sample"
+      style: secondary
+      start: 61
+      end: 101
+  "export const getName = (id: number): UserName => makeUserName(id)\n":
+    labels:
+    - source: number
+      style: primary
+      start: 28
+      end: 34
+    - source: "id: number"
+      style: secondary
+      start: 24
+      end: 34
+    - source: "export const getName = (id: number): UserName => makeUserName(id)"
+      style: secondary
+      start: 0
+      end: 65
+    - source: "(id: number): UserName => makeUserName(id)"
+      style: secondary
+      start: 23
+      end: 65
+  "export function acceptOptions(options: Readonly<{ x: number }>): void {\n  void options\n}\n":
+    labels:
+    - source: number
+      style: primary
+      start: 53
+      end: 59
+    - source: "options: Readonly<{ x: number }>"
+      style: secondary
+      start: 30
+      end: 62
+    - source: |-
+        export function acceptOptions(options: Readonly<{ x: number }>): void {
+          void options
+        }
+      style: secondary
+      start: 0
+      end: 88
+    - source: |-
+        function acceptOptions(options: Readonly<{ x: number }>): void {
+          void options
+        }
+      style: secondary
+      start: 7
+      end: 88
+  "export function getName(id: string): UserName {\n  return makeUserName(id)\n}\n":
+    labels:
+    - source: string
+      style: primary
+      start: 28
+      end: 34
+    - source: "id: string"
+      style: secondary
+      start: 24
+      end: 34
+    - source: |-
+        export function getName(id: string): UserName {
+          return makeUserName(id)
+        }
+      style: secondary
+      start: 0
+      end: 75
+    - source: |-
+        function getName(id: string): UserName {
+          return makeUserName(id)
+        }
+      style: secondary
+      start: 7
+      end: 75
+  "declare const sample: object\nexport const valueNoise2D = (x: string, z: number): object => sample\n":
+    labels:
+    - source: string
+      style: primary
+      start: 61
+      end: 67
+    - source: "x: string"
+      style: secondary
+      start: 58
+      end: 67
+    - source: "export const valueNoise2D = (x: string, z: number): object => sample"
+      style: secondary
+      start: 29
+      end: 97
+    - source: "(x: string, z: number): object => sample"
+      style: secondary
+      start: 57
+      end: 97
+  "declare const density: object\nexport const parseDensityFunction = (serialized: number): object => density\n":
+    labels:
+    - source: number
+      style: primary
+      start: 79
+      end: 85
+    - source: "serialized: number"
+      style: secondary
+      start: 67
+      end: 85
+    - source: "export const parseDensityFunction = (serialized: number): object => density"
+      style: secondary
+      start: 30
+      end: 105
+    - source: "(serialized: number): object => density"
+      style: secondary
+      start: 66
+      end: 105

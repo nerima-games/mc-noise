@@ -3,20 +3,9 @@
 - 根拠: 本リポジトリの公開 API と `mc-kernel` の依存境界
 - 参照実装: `takeokunn/ts-minecraft`
 
-## 1. 初期責務の要約
+## 1. 責務
 
-> ### 3.2 mc-noise
->
-> - **責務**: シード付き決定論ノイズ（Perlin/Simplex系）・オクターブ合成・密度関数
-> - **依存**: kernel
-> - **主要な公開API**: `noise2d/3d(seed, x, y, z)`、fBm合成、密度関数コンビネータ。**seed→値のインターフェースは凍結扱い**（変更 = 全ワールドの地形が変わる破壊的変更）
-> - **検証**: プロパティテスト（決定論・値域・連続性）+ シード固定のゴールデン値
-> - **移植元**: `packages/world` の noise-primitives.ts / density-function.ts / octave群（756 LOC）
-> - **設計注意**: オクターブループは `let` + `for` を維持（参照実装で実測確定したパフォーマンス例外。状態スレッドを配列foldに「修正」しない）
-
-## 2. 責務の言い換え
-
-**シードと座標だけを入力とし、決定論的な実数を返す純粋関数の集合。**
+**mc-noise provides deterministic seeded sampling and portable terrain calculations; callback and evaluation-context behavior is supplied by callers.**
 
 - シード付き PRNG（`mulberry32`）とチャンネル分岐（`deriveSeed`）
 - Perlin 勾配ノイズカーネル 2D / 3D（`createPerlinNoise2D` / `createPerlinNoise3D`）
@@ -34,7 +23,7 @@
 - `mc-kernel` の `Position` を使う immutable な portable DensityFunction AST、境界値計算、評価器
 - 上記をシード 1 個から束ねる `createNoiseField`
 
-## 3. 明示的にスコープ外のもの
+## 2. Ownership boundaries
 
 | 項目 | どこが所有するか | 理由 |
 | --- | --- | --- |
@@ -60,8 +49,9 @@ portable な DensityFunction の代数を所有する。公開する範囲は次
 - clamp / range-choice / find-top-surface / y-clamped-gradient / 地形データを持たない spline
 - immutable な `minValue` / `maxValue` と `Position` ベースの評価器
 
-共通する公式メソッドは Minecraft Java 1.21.1 を基本照合基準とし、1.21.8 の静的ノード一覧を監査する。
-Minecraft Java 1.21.9 で追加された `find_top_surface` も mc-noise が提供する。portable な `NoiseRouter` / `Climate` /
+公式 DensityFunction の対応範囲は、Minecraft Java 1.21.1 の共通ノード、1.21.8 の静的ノード一覧、
+1.21.9 で追加された `find_top_surface` を照合対象としている。ノードごとの移植範囲は
+[`porting.md` §3](./porting.md#3-移植対象外と追加移植済みの-api) を参照する。portable な `NoiseRouter` / `Climate` /
 `Blender` の構造と評価ヘルパは mc-noise が提供する。一方、Minecraft の公式実装にあるキャッシュ、
 設定済みの NoiseRouter、登録済みの地形定数と制御点は、ワールド設定に依存するため mc-worldgen が所有する。
 `EndIslands` は seed と座標だけで
@@ -79,32 +69,17 @@ context-aware な portable ノードとして含める。`DensityEvaluationConte
 統合は mc-worldgen が所有する。公式の `mapFromUnitTo` と `mapRange` は private なファクトリ
 なので、公開 API ではそれらの挙動を表す `densityMapRange` を提供する。
 
-## 4. 親と子
+## 3. Dependency boundary
 
-| 関係 | リポジトリ |
+| Relationship | Repository |
 | --- | --- |
-| 親（依存先） | `mc-kernel` のみ |
-| 子（依存元） | `mc-worldgen` のみ |
+| Shared domain parent | `mc-kernel` |
+| Runtime package dependencies | `effect`, `mc-kernel` |
+| Downstream consumer | `mc-worldgen` only |
 
-`package.json` は `@nerima-games/mc-kernel` に依存し、公開 root export の `ChunkCoord`、
-`ChunkHeight`、チャンク幅の共有定義を `src/domain/chunk-sampling.ts` で利用する。
-`ChunkCoord` の `ChunkAxis` と、kernel が提供する `BlockAxis` / `LocalAxis` は kernel の
-型境界であり、mc-noise は内部パスから再定義・再公開しない。`test/noise-brands.compile.ts`
-で公開 API に渡す軸 brand の混同をコンパイル時に検査する。ノイズの seed・勾配・補間ロジックは本リポジトリが
-所有する。ポータブルな 4 チャンネルのサンプル材料、気候・バイオーム・地形列・湖・表面材質の純粋定義、
-DensityFunction の代数・評価器も本リポジトリが提供する。一方、密度関数を組み合わせた特定地形の式、
-その制御点データ、設定済みの NoiseRouter とキャッシュ、チャンクへのブロック適用は `mc-worldgen` の責務として
-移植しない。制御点を評価する汎用スプライン処理だけは `mc-noise` が提供する。
-`architecture.md` §7 を参照。
-
-## 5. 完成条件
-
-`testing.md` に詳細。要約すると:
-
-- プロパティテスト（決定論・値域・連続性）が green
-- シード固定のゴールデン値が固定されている
-- カバレッジ 100% ゲート有効化
-
-mc-noise は**プレビューを持たない**。安定ライブラリ層は「操作できる成果物」を持たないので、
-プレビューを要求する完了条件は適用されない。
-最初の遊べる成果物は mc-worldgen の地形プレビューである。
+`@nerima-games/mc-kernel` provides `ChunkCoord` and `PositionAxis` from
+`@nerima-games/mc-kernel/domain/coordinates`, `ChunkHeight` from
+`@nerima-games/mc-kernel/domain/chunk`, and `BlockId` from
+`@nerima-games/mc-kernel/domain/block-registry`. mc-noise preserves these brands at
+its public boundary and does not redefine or re-export them. The compile-time checks
+in `test/noise-brands.compile.ts` prevent axis brands from being interchanged.

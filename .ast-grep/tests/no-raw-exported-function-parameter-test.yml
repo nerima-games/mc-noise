@@ -1,0 +1,63 @@
+id: no-raw-exported-function-parameter
+valid:
+  - |
+    export function getName(id: UserId): UserName {
+      const localValue: string = 'internal'
+      return makeUserName(localValue)
+    }
+  - |
+    export const getName = (id: UserId): UserName => makeUserName(id)
+  - |
+    export function getName(id: UserId): UserName {
+      function localFormat(value: string): UserName {
+        return makeUserName(value)
+      }
+      return localFormat(id)
+    }
+  - |
+    export function format(formatter: () => string): UserName {
+      return formatter()
+    }
+  - |
+    export function acceptLabels(labels: ReadonlyArray<UserName>): void {
+      void labels
+    }
+  - |
+    declare const sample: object
+    export const valueNoise2D = (x: number, z: number): object => sample
+  - |
+    declare const sample: object
+    export const fbm2D = (seed: NoiseSeed, x: number, z: number): object => sample
+  - |
+    declare const density: object
+    export const parseDensityFunction = (serialized: string): object => density
+  - |
+    function localLookup(id: string): UserName {
+      return makeUserName(id)
+    }
+invalid:
+  - |
+    export function getName(id: string): UserName {
+      return makeUserName(id)
+    }
+  - |
+    export const getName = (id: number): UserName => makeUserName(id)
+  - |
+    export function acceptOptions(options: Readonly<{ x: number }>): void {
+      void options
+    }
+  - |
+    declare const sample: object
+    export const unrelatedSampler = (x: number, z: number): object => sample
+  - |
+    declare const density: object
+    export const parse = (serialized: string): object => density
+  - |
+    declare const sample: object
+    export const unrelatedFbm = (x: number, z: number): object => sample
+  - |
+    declare const sample: object
+    export const valueNoise2D = (x: string, z: number): object => sample
+  - |
+    declare const density: object
+    export const parseDensityFunction = (serialized: number): object => density

@@ -1,0 +1,8 @@
+id: no-throw-in-src-ts
+snapshots:
+  "export function parse(input: string): string {\n  throw new Error(input)\n}\n":
+    labels:
+    - source: throw new Error(input)
+      style: primary
+      start: 49
+      end: 71

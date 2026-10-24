@@ -1,0 +1,11 @@
+id: no-throw-in-src-ts
+valid:
+  - |
+    export function parse(input: string): string | undefined {
+      return input || undefined
+    }
+invalid:
+  - |
+    export function parse(input: string): string {
+      throw new Error(input)
+    }

@@ -124,15 +124,10 @@
     // default (`"style": "warn"`) still covers whichever style rules oxlint
     // 1.75.0 still implements under that category.
     "no-array-method-this-argument": "warn",
-    // `NoiseSeed(...)` is an `effect` `Brand.refined` constructor, called as a
-    // plain function per the Effect ecosystem convention (Schema.Struct(...),
-    // Context.Tag(...), etc.) — not a `class`, so `new NoiseSeed(...)` is not
-    // an option. Verified empirically (oxlint 1.75.0): `capIsNewExceptions`
-    // is the rule's own documented escape hatch for exactly this shape (see
-    // the rule's own warning text: "add it to the exceptions list"), so this
-    // is a scoped rule option, not a suppression — every other capitalized
-    // call in src/ still warns.
-    "new-cap": ["warn", { "capIsNewExceptions": ["NoiseSeed"] }],
+    // Branded constructors are callable factories by convention, so they use
+    // PascalCase function calls without `new`. Keep this allowlist scoped to
+    // those factories; `new-cap` remains enabled as a warning for other calls.
+    "new-cap": ["warn", { "capIsNewExceptions": ["BlockAxis", "BoundedNoise", "ChunkAxis", "ChunkHeight", "ClimateDistance", "ClimateFieldName", "ClimateFitness", "ClimateListIndex", "ClimateSearchRadius", "ClimateSearchStep", "ClimateValue", "DefinedValueName", "DensityArrayIndex", "DensityBound", "DensityCellSize", "DensityFunctionFieldName", "DensityOctaveIndex", "DensityScale", "DensityValue", "GridDimension", "GridStep", "JavaRandomBound", "JavaRandomDouble", "JavaRandomInteger", "JavaSkipCount", "LatticeCoordinate", "MinecraftClimateValue", "MinecraftSurfaceFillerDepth", "NoiseAccumulator", "NoiseChannelLabel", "NoiseFrequency", "NoiseSeed", "NormalizedNoise", "OctaveAmplitude", "OctaveCount", "OctaveFrequency", "PositionAxis", "QuantizedClimateValue", "SampleStride", "SimplexCoordinate", "SplineInput", "SplineValue", "ValueNoiseFbmSample"] }],
     // Verified empirically (oxlint 1.75.0) across parameters, type-literal
     // properties, and class fields: `exceptions` is respected in every
     // context, so this is a scoped rule option, not a suppression — any

@@ -32,20 +32,17 @@ Nix を使わない場合は `package.json` の `engines` を満たす Node.js �
 
 ## 2. テストの方針
 
-### Effect テストと純粋な `it`
+### Effect tests and ordinary `it`
 
-mc-noise の大半は同期的な純粋関数なので、その値・境界値・決定論の契約テストには
-Vitest のプレーンな `it` を使う。Effect を要求するコードを検証するときは
-`test/effect-test.ts` の `effectTest` を使い、同期 Effect を `Effect.runSync` で実行する。
+Most mc-noise code is synchronous and pure, so use Vitest's ordinary `it` for value,
+boundary, and determinism contracts. For tests written as Effects, use the `effectTest`
+helper in `test/effect-test.ts`; it delegates execution to `@effect/vitest` 4's `it.effect`.
 
-非同期 Effect を追加する場合は、テスト本体で `Effect.runPromise` を使い、
-Vitest の非同期テスト契約に合わせる。
+### Prefer property tests
 
-### プロパティテストを優先する
-
-`effect` の `FastCheck` re-export（`import { FastCheck } from 'effect'`）を使う。
-`.npmrc` が `fast-check` と `pure-rand` を hoist しているのは、これの型解決と
-Vite からの解決のためである。
+Import `fast-check` directly. It is a direct development dependency, rather than an
+Effect re-export. The workspace `.npmrc` keeps `fast-check` and `pure-rand` available to
+the test toolchain.
 
 mc-noise で最も価値が高いのは**決定論のプロパティテスト**である
 （同一シード → 同一値）。seed→値を凍結契約として扱う以上、
@@ -98,9 +95,9 @@ thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 現在は 4 指標 100% のハードゲートを有効化している。新しい分岐を追加する場合は、
 実装と同じ変更で仕様テストを追加し、ゲートを維持する:
 
-1. publish 手順を maintainer の認証環境で確認（ビルドと tarball 境界は `versioning.md` §3 で実装済み）
-2. `0.x` → `1.0.0`（mc-worldgen が実際に消費して契約を確認したら、maintainer の裁量判断で。
-   `versioning.md` §2）
+公開前の手順は maintainer が認証環境で確認する。ビルドと tarball 境界は
+`versioning.md` §3 に記載する。`1.0.0` への昇格はこの変更の完了条件ではなく、
+mc-worldgen が契約を実際に消費して確認した後に判断する（`versioning.md` §2）。
 
 ## 5. CI
 
@@ -161,16 +158,8 @@ API の破壊的変更は `test/public-api.test.ts` のゴールデン値と人�
 
 ### なぜ必要か
 
-`domain/octaves.ts` の冒頭はこう終わっている:
-
-> もし誰かがこのループの置換を提案したら、答えは「先にベンチマークを書き、それをリポジトリに入れろ」である。
-
-**リポジトリにベンチマークが無かったので、この一文は借用書だった。**
-初期資料はこの例外を「実測で確定した」と書いているが、5 つの例外のうち
-オクターブループは**コメント 1 つしか防護が無い**——最も弱い状態にあった。
-`scripts/bench-noise.ts` はその借用書を清算する。コメントが名指しする書き換えは
-**全部その場に実装してあり**、本物と並べて計測される。
-fold を提案するレビュアーには、主張ではなく数字が返る。
+`scripts/bench-noise.ts` は現在の `for` ループを凍結コピーと配列 `reduce` 版に対して測る。
+ループを変更する提案では、値の一致を確認したうえでこのベンチマークを実行する。
 
 ### 何を測っているか
 
@@ -191,7 +180,7 @@ context-aware な cache / blend は `scripts/bench-density-function.ts` で別�
 
 ### 計測前に**等価性**を検査している
 
-複数の実装形（出荷版・凍結コピー・配列 reduce 版など）が
+複数の実装形（出荷版・スクリプト内の凍結コピー・配列 reduce 版など）が
 1024 座標で**ビット単位で一致する**ことを、どれかを計測する前に確認する。
 一致しない 2 つの関数を比べたベンチマークは何のベンチマークでもないし、
 この検査は書き換えが「都合よく簡略化されていない」ことの担保でもある。
@@ -206,6 +195,9 @@ context-aware な cache / blend は `scripts/bench-density-function.ts` で別�
 | --- | --- | --- | --- |
 | **guard** | 同一プロセス・同一データ上で複数実装を交互に測る比 | ノイズを減らすが、ホストと JIT に依存する | 1.30x。ただし shipped-vs-frozen は 1.15x |
 | **workload** | workload と yardstick を隣接サンプルで交互に測った比 | guard より大きく依存する | 2.00x |
+
+`yardstick` は workload と比べる基準処理である。`shipped-vs-frozen` は出荷関数と、
+現行の関数形を保つスクリプト内コピーとの guard を指す。
 
 `scripts/bench-baseline.json` の数値は、Node やハードウェアを代表する値ではなく、現行の測定方式で
 保持している保守的な履歴基準である。基準や tolerance を、揺れた実行に合わせて下げてはならない。
