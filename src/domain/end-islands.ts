@@ -167,9 +167,10 @@ const createSimplex2D = (random: JavaRandom): DensityFunctionResult<Simplex2D> =
     const permutationAt = (index: number): number =>
       permutationBytes.getUint8(index & SIMPLEX_PERMUTATION_MASK)
     const gradientIndex = (x: number, y: number): number =>
-      (permutationAt(x & SIMPLEX_PERMUTATION_MASK) +
-        permutationAt(y & SIMPLEX_PERMUTATION_MASK)) %
-      SIMPLEX_GRADIENT_COUNT
+      permutationAt(
+        (x & SIMPLEX_PERMUTATION_MASK) +
+          permutationAt(y & SIMPLEX_PERMUTATION_MASK),
+      ) % SIMPLEX_GRADIENT_COUNT
 
     const gradientBytes = new DataView(SIMPLEX_GRADIENTS.buffer)
     const contribution = (

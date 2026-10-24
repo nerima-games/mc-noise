@@ -24,6 +24,22 @@ const SAMPLE_COORDINATES = [
 ] as const
 
 describe('End island density sampler', () => {
+  it('preserves the fixed-seed simplex value mapping', () => {
+    const sampler = unwrap(createEndIslandsSampler(0n))
+    const values = SAMPLE_COORDINATES.map(([x, z]) =>
+      unwrap(sampler.sample(BlockAxis(x), BlockAxis(z))),
+    )
+
+    expect(values).toEqual([
+      -0.6181237697601318,
+      -0.84375,
+      0.5625,
+      0.5625,
+      -0.84375,
+      0.2493494153022766,
+    ])
+  })
+
   it('is deterministic for a seed and changes with the seed', () => {
     const samples = unwrap(createEndIslandsSampler(0n))
     const sameSamples = unwrap(createEndIslandsSampler(0n))
