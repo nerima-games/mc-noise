@@ -15,16 +15,27 @@
  */
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
-import { Effect, FastCheck } from 'effect'
+import { Effect, Result } from 'effect'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import * as FastCheck from 'fast-check'
 import {
   createDensityNoiseSource,
   createNoiseField,
   decodeDensityFunction,
+  DensityBound,
+  DensityScale,
   densityNoise,
   encodeDensityFunction,
 } from '../src/index'
 import { evaluateDensityFunction } from '../src/domain/density-function-evaluator'
 import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32 } from '../src/domain/seed'
+
+const requireSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 /** Seeds across the whole uint32 range, including both boundaries. */
 const arbitrarySeed = FastCheck.integer({ min: 0, max: 4294967295 }).map((value) => NoiseSeed(value))
@@ -46,20 +57,29 @@ describe('determinism', () => {
       expect(field.raw3d(12.5, 31.75, -7.25)).toBe(-0.6179636552301517)
       expect(field.noise2d(12.5, -7.25)).toBe(0.5209789985860989)
       expect(field.noise3d(12.5, 31.75, -7.25)).toBe(0.19101817238492413)
-      expect(field.octave2d(12.5, -7.25)).toBe(0.4973816805001496)
-
-      const source = createDensityNoiseSource(
-        (x, y, z) => x + y * 2 + z * 3,
-        { minValue: -6, maxValue: 6 },
+      expect(requireSuccess(field.octave2d(PositionAxis(12.5), PositionAxis(-7.25)))).toBe(
+        0.4973816805001496,
       )
-      const density = densityNoise(source, { xzScale: 0.5, yScale: 0.25 })
-      const encoded = encodeDensityFunction(density, {
+
+      const source = requireSuccess(createDensityNoiseSource(
+        (x, y, z) => x + y * 2 + z * 3,
+        { minValue: DensityBound(-6), maxValue: DensityBound(6) },
+      ))
+      const density = requireSuccess(densityNoise(source, {
+        xzScale: DensityScale(0.5),
+        yScale: DensityScale(0.25),
+      }))
+      const encoded = requireSuccess(encodeDensityFunction(density, {
         encodeNoiseSource: () => 'source',
-      })
-      const decoded = decodeDensityFunction(encoded, {
+      }))
+      const decoded = requireSuccess(decodeDensityFunction(encoded, {
         decodeNoiseSource: () => source,
-      })
-      expect(evaluateDensityFunction(decoded, { x: 12.5, y: 31.75, z: -7.25 })).toBe(11.25)
+      }))
+      expect(requireSuccess(evaluateDensityFunction(decoded, {
+        x: PositionAxis(12.5),
+        y: PositionAxis(31.75),
+        z: PositionAxis(-7.25),
+      }))).toBe(11.25)
     }),
   )
 
@@ -94,7 +114,10 @@ describe('determinism', () => {
               Object.is(first.raw3d(x, y, z), second.raw3d(x, y, z)) &&
               Object.is(first.noise2d(x, z), second.noise2d(x, z)) &&
               Object.is(first.noise3d(x, y, z), second.noise3d(x, y, z)) &&
-              Object.is(first.octave2d(x, z), second.octave2d(x, z))
+              Object.is(
+                requireSuccess(first.octave2d(PositionAxis(x), PositionAxis(z))),
+                requireSuccess(second.octave2d(PositionAxis(x), PositionAxis(z))),
+              )
             )
           },
         ),
@@ -184,7 +207,7 @@ describe('seed derivation', () => {
   effectTest('rejects non-safe-integer seeds at the runtime boundary', () =>
     Effect.sync(() => {
       for (const invalidSeed of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5]) {
-        expect(() => NoiseSeed(invalidSeed)).toThrow()
+         expect(NoiseSeed.result(invalidSeed)['_tag']).toBe('Failure')
       }
     }),
   )

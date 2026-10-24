@@ -1,4 +1,5 @@
-import { type BlockId, blockIdOf } from '@nerima-games/mc-kernel'
+import { type BlockId, blockIdOf } from '@nerima-games/mc-kernel/domain/block-registry'
+import { Brand, Option } from 'effect'
 import {
   MINECRAFT_HUM_DRY,
   MINECRAFT_HUM_JUNGLE,
@@ -31,6 +32,18 @@ export const MINECRAFT_BIOMES = [
 
 export type MinecraftBiome = (typeof MINECRAFT_BIOMES)[number]
 
+export type MinecraftClimateValue = number & Brand.Brand<'MinecraftClimateValue'>
+const MINECRAFT_CLIMATE_VALUE_MIN = 0
+const MINECRAFT_CLIMATE_VALUE_MAX = 1
+export const MinecraftClimateValue: Brand.Constructor<MinecraftClimateValue> =
+  Brand.make<MinecraftClimateValue>(
+    (value) =>
+      (Number.isFinite(value) &&
+        value >= MINECRAFT_CLIMATE_VALUE_MIN &&
+        value <= MINECRAFT_CLIMATE_VALUE_MAX) ||
+      'Minecraft climate value must be finite and within [0, 1]',
+  )
+
 export const MINECRAFT_CHUNK_BIOMES: readonly [...typeof MINECRAFT_BIOMES, 'NETHER', 'END'] = [
   ...MINECRAFT_BIOMES,
   'NETHER',
@@ -41,7 +54,7 @@ export type MinecraftChunkBiome = (typeof MINECRAFT_CHUNK_BIOMES)[number]
 
 type MinecraftBiomeRule = Readonly<{
   biome: MinecraftBiome
-  when: (temperature: number, humidity: number) => boolean
+  when: (temperature: MinecraftClimateValue, humidity: MinecraftClimateValue) => boolean
 }>
 
 const MINECRAFT_BIOME_RULES: ReadonlyArray<MinecraftBiomeRule> = [
@@ -67,13 +80,16 @@ const MINECRAFT_BIOME_RULES: ReadonlyArray<MinecraftBiomeRule> = [
 
 export const MINECRAFT_FALLBACK_BIOME: MinecraftBiome = 'PLAINS'
 
-export const classifyMinecraftBiome = (temperature: number, humidity: number): MinecraftBiome =>
+export const classifyMinecraftBiome = (
+  temperature: MinecraftClimateValue,
+  humidity: MinecraftClimateValue,
+): MinecraftBiome =>
   MINECRAFT_BIOME_RULES.find((rule) => rule.when(temperature, humidity))?.biome ?? MINECRAFT_FALLBACK_BIOME
 
 export type MinecraftBiomeSurface = Readonly<{
-  top: BlockId
-  filler: BlockId
-  underwaterTop: BlockId
+  top: Option.Option<BlockId>
+  filler: Option.Option<BlockId>
+  underwaterTop: Option.Option<BlockId>
 }>
 
 export const MINECRAFT_BLOCK: Readonly<
@@ -93,7 +109,7 @@ export const MINECRAFT_BLOCK: Readonly<
     | 'SNOW'
     | 'STONE'
     | 'WATER',
-    BlockId
+    Option.Option<BlockId>
   >
 > = {
   AIR: blockIdOf('air'),

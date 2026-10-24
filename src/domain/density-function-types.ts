@@ -1,13 +1,55 @@
+import type { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { Brand, type Result } from 'effect'
 import type { EndIslandsSampler } from './end-islands.js'
 import type { NoiseFn3D } from './perlin.js'
-import type { Position } from '@nerima-games/mc-kernel'
 import type { Spline } from './spline.js'
 
-export type DensityPosition = Position
+const DENSITY_FIELD_NAME_EMPTY_LENGTH = 0
+const DENSITY_CELL_SIZE_LOWER_BOUND = 0
+
+export type DensityValue = number & Brand.Brand<'DensityValue'>
+export const DensityValue: Brand.Constructor<DensityValue> = Brand.make<DensityValue>((value) =>
+  Number.isFinite(value) || 'density value must be finite',
+)
+
+export type DensityFunctionFieldName = string & Brand.Brand<'DensityFunctionFieldName'>
+export const DensityFunctionFieldName: Brand.Constructor<DensityFunctionFieldName> =
+  Brand.make<DensityFunctionFieldName>((value) =>
+    value.length > DENSITY_FIELD_NAME_EMPTY_LENGTH || 'density function field name must not be empty',
+  )
+
+export type DensityBound = number & Brand.Brand<'DensityBound'>
+export const DensityBound: Brand.Constructor<DensityBound> = Brand.make<DensityBound>((value) =>
+  !Number.isNaN(value) || 'density bound must not be NaN',
+)
+
+export type DensityScale = number & Brand.Brand<'DensityScale'>
+export const DensityScale: Brand.Constructor<DensityScale> = Brand.make<DensityScale>((value) =>
+  Number.isFinite(value) || 'density scale must be finite',
+)
+
+export type DensityCellSize = number & Brand.Brand<'DensityCellSize'>
+export const DensityCellSize: Brand.Constructor<DensityCellSize> = Brand.make<DensityCellSize>((value) =>
+  Number.isSafeInteger(value) && value > DENSITY_CELL_SIZE_LOWER_BOUND || 'density cell size must be a positive integer',
+)
+
+export type DensityFunctionError = TypeError | RangeError
+export type DensityFunctionResult<Value> = Result.Result<Value, DensityFunctionError>
+
+export type DensityOctaveIndex = number & Brand.Brand<'DensityOctaveIndex'>
+export const DensityOctaveIndex: Brand.Constructor<DensityOctaveIndex> = Brand.make<DensityOctaveIndex>((value) =>
+  Number.isSafeInteger(value) || 'density octave index must be a safe integer',
+)
+
+export type DensityPosition = Readonly<{
+  readonly x: PositionAxis
+  readonly y: PositionAxis
+  readonly z: PositionAxis
+}>
 
 export type DensityBounds = Readonly<{
-  readonly minValue: number
-  readonly maxValue: number
+  readonly minValue: DensityBound
+  readonly maxValue: DensityBound
 }>
 
 export type DensityNoiseSource = DensityBounds & Readonly<{
@@ -15,19 +57,19 @@ export type DensityNoiseSource = DensityBounds & Readonly<{
 }>
 
 export type DensityOldBlendedNoiseSample = readonly [
-  x: number,
-  y: number,
-  z: number,
-  yScale: number,
-  yMax: number,
+  x: PositionAxis,
+  y: PositionAxis,
+  z: PositionAxis,
+  yScale: DensityScale,
+  yMax: PositionAxis,
 ]
 
 export type DensityOldBlendedNoiseOctave = Readonly<{
-  readonly sample: (...coordinates: DensityOldBlendedNoiseSample) => number
+  readonly sample: (...coordinates: DensityOldBlendedNoiseSample) => DensityValue
 }>
 
 export type DensityOldBlendedNoiseOctaveSource = (
-  octave: number,
+  octave: DensityOctaveIndex,
 ) => DensityOldBlendedNoiseOctave | undefined
 
 export type DensityOldBlendedNoiseSource = DensityBounds & Readonly<{
@@ -53,31 +95,31 @@ export type DensityMappedOperation = Exclude<DensityUnaryOperation, 'invert'>
 
 export type DensityConstant = DensityBounds & Readonly<{
   readonly kind: 'constant'
-  readonly value: number
+  readonly value: DensityValue
 }>
 
 export type DensityCoordinate = DensityBounds & Readonly<{
   readonly kind: 'coordinate'
   readonly axis: DensityCoordinateAxis
-  readonly scale: number
-  readonly offset: number
+  readonly scale: DensityScale
+  readonly offset: PositionAxis
 }>
 
 export type DensityNoise = DensityBounds & Readonly<{
   readonly kind: 'noise'
   readonly source: DensityNoiseSource
-  readonly xzScale: number
-  readonly yScale: number
+  readonly xzScale: DensityScale
+  readonly yScale: DensityScale
 }>
 
 export type DensityOldBlendedNoise = DensityBounds & Readonly<{
   readonly kind: 'old-blended-noise'
   readonly source: DensityOldBlendedNoiseSource
-  readonly xzScale: number
-  readonly yScale: number
-  readonly xzFactor: number
-  readonly yFactor: number
-  readonly smearScaleMultiplier: number
+  readonly xzScale: DensityScale
+  readonly yScale: DensityScale
+  readonly xzFactor: DensityScale
+  readonly yFactor: DensityScale
+  readonly smearScaleMultiplier: DensityScale
 }>
 
 export type DensityBeardifier = DensityBounds & Readonly<{
@@ -105,8 +147,8 @@ export type DensityShiftedNoise = DensityBounds & Readonly<{
   readonly shiftX: DensityFunction
   readonly shiftY: DensityFunction
   readonly shiftZ: DensityFunction
-  readonly xzScale: number
-  readonly yScale: number
+  readonly xzScale: DensityScale
+  readonly yScale: DensityScale
 }>
 
 export type DensityLinearOperationType = 'add' | 'mul'
@@ -115,7 +157,7 @@ export type DensityLinearOperation = DensityBounds & Readonly<{
   readonly kind: 'linear-operation'
   readonly operation: DensityLinearOperationType
   readonly input: DensityFunction
-  readonly argument: number
+  readonly argument: DensityValue
 }>
 
 export type DensityRarityValueMapper = 'type-1' | 'type-2'
@@ -149,15 +191,15 @@ export type DensityUnary = DensityBounds & Readonly<{
 export type DensityClamp = DensityBounds & Readonly<{
   readonly kind: 'clamp'
   readonly input: DensityFunction
-  readonly min: number
-  readonly max: number
+  readonly min: DensityValue
+  readonly max: DensityValue
 }>
 
 export type DensityRangeChoice = DensityBounds & Readonly<{
   readonly kind: 'range-choice'
   readonly input: DensityFunction
-  readonly minInclusive: number
-  readonly maxExclusive: number
+  readonly minInclusive: DensityValue
+  readonly maxExclusive: DensityValue
   readonly inRange: DensityFunction
   readonly outOfRange: DensityFunction
 }>
@@ -166,16 +208,16 @@ export type DensityFindTopSurface = DensityBounds & Readonly<{
   readonly kind: 'find-top-surface'
   readonly density: DensityFunction
   readonly upperBound: DensityFunction
-  readonly lowerBound: number
-  readonly cellHeight: number
+  readonly lowerBound: BlockAxis
+  readonly cellHeight: DensityCellSize
 }>
 
 export type DensityYClampedGradient = DensityBounds & Readonly<{
   readonly kind: 'y-clamped-gradient'
-  readonly fromY: number
-  readonly toY: number
-  readonly fromValue: number
-  readonly toValue: number
+  readonly fromY: BlockAxis
+  readonly toY: BlockAxis
+  readonly fromValue: DensityValue
+  readonly toValue: DensityValue
 }>
 
 export type DensitySpline = DensityBounds & Readonly<{
@@ -253,31 +295,31 @@ export type DensityFunction =
 
 export type DensityFunctionVisitor = (density: DensityFunction) => DensityFunction
 
-export type DensityFunctionValue = DensityFunction | number
+export type DensityFunctionValue = DensityFunction | DensityValue
 
 
 export type DensityEvaluationContext = Readonly<{
-  readonly cellWidth: number
-  readonly cellHeight: number
+  readonly cellWidth: DensityCellSize
+  readonly cellHeight: DensityCellSize
   readonly blendDensity?: (
-    inputValue: number,
+    inputValue: DensityValue,
     position: DensityPosition,
-  ) => number
-  readonly blendAlpha?: (position: DensityPosition) => number
-  readonly blendOffset?: (position: DensityPosition) => number
-  readonly beardifier?: (position: DensityPosition) => number
+  ) => DensityFunctionResult<DensityValue>
+  readonly blendAlpha?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
+  readonly blendOffset?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
+  readonly beardifier?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
 }>
 
 export type DensityEvaluationContextOptions = Readonly<{
-  readonly cellWidth?: number
-  readonly cellHeight?: number
+  readonly cellWidth?: DensityCellSize
+  readonly cellHeight?: DensityCellSize
   readonly blendDensity?: (
-    inputValue: number,
+    inputValue: DensityValue,
     position: DensityPosition,
-  ) => number
-  readonly blendAlpha?: (position: DensityPosition) => number
-  readonly blendOffset?: (position: DensityPosition) => number
-  readonly beardifier?: (position: DensityPosition) => number
+  ) => DensityFunctionResult<DensityValue>
+  readonly blendAlpha?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
+  readonly blendOffset?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
+  readonly beardifier?: (position: DensityPosition) => DensityFunctionResult<DensityValue>
 }>
 
 export type DensityEvaluationSession = Readonly<{
@@ -285,35 +327,35 @@ export type DensityEvaluationSession = Readonly<{
   readonly evaluate: (
     density: DensityFunction,
     position: DensityPosition,
-  ) => number
+  ) => DensityFunctionResult<DensityValue>
   readonly clear: () => void
 }>
 
 export type DensityCoordinateOptions = Readonly<{
-  readonly scale?: number
-  readonly offset?: number
+  readonly scale?: DensityScale
+  readonly offset?: PositionAxis
 }>
 
 export type DensityNoiseOptions = Readonly<{
-  readonly xzScale?: number
-  readonly yScale?: number
+  readonly xzScale?: DensityScale
+  readonly yScale?: DensityScale
 }>
 
 export type DensityOldBlendedNoiseOptions = Readonly<{
-  readonly xzScale: number
-  readonly yScale: number
-  readonly xzFactor: number
-  readonly yFactor: number
-  readonly smearScaleMultiplier: number
+  readonly xzScale: DensityScale
+  readonly yScale: DensityScale
+  readonly xzFactor: DensityScale
+  readonly yFactor: DensityScale
+  readonly smearScaleMultiplier: DensityScale
 }>
 
 export type DensityNoiseInRangeOptions = DensityNoiseOptions & Readonly<{
-  readonly min: number
-  readonly max: number
+  readonly min: DensityValue
+  readonly max: DensityValue
 }>
 
 export type DensityShiftedNoise2DOptions = Readonly<{
-  readonly xzScale?: number
+  readonly xzScale?: DensityScale
 }>
 
 export type DensityShiftedNoise2DShifts = Readonly<{
@@ -328,6 +370,6 @@ export type DensityShiftedNoiseShifts = Readonly<{
 }>
 
 export type DensityRangeChoiceOptions = Readonly<{
-  readonly minInclusive: number
-  readonly maxExclusive: number
+  readonly minInclusive: DensityValue
+  readonly maxExclusive: DensityValue
 }>

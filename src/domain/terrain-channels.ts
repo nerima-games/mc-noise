@@ -1,8 +1,10 @@
+import type { BlockAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { BoundedNoise } from './octaves.js'
 import { CHUNK_SIZE_XZ } from '@nerima-games/mc-kernel'
 import type { NoiseFn2D } from './perlin.js'
+import { Result } from 'effect'
 import { peaksAndValleysFromWeirdness } from './transforms.js'
-import { requireDefined } from './defined.js'
-import { requireFiniteNumber } from './number-validation.js'
+import { requireSafeInteger } from './number-validation.js'
 
 export const CHUNK_COLUMN_SAMPLE_COUNT: number = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ
 
@@ -12,6 +14,9 @@ const UNIT_WEIGHT = 1
 const SPARSE_GRID_OFFSET = 1
 const TERRAIN_SPARSE_GRID_SIZE = CHUNK_SIZE_XZ / TERRAIN_SAMPLE_STEP + SPARSE_GRID_OFFSET
 const TERRAIN_SPARSE_SAMPLE_COUNT = TERRAIN_SPARSE_GRID_SIZE * TERRAIN_SPARSE_GRID_SIZE
+const FLOAT64_BYTES = Float64Array.BYTES_PER_ELEMENT
+const FLOAT64_LITTLE_ENDIAN = true
+const NO_RESULT_VALUE: void = globalThis.undefined
 
 export const SCALE_C = 0.0005
 export const SCALE_E = 0.001
@@ -34,50 +39,102 @@ type TerrainNoiseFunctions = Readonly<{
   weirdness: NoiseFn2D
 }>
 
+type SparseSamples = Readonly<{
+  readonly values: DataView
+}>
+
 type SparseTerrainChannels = {
-  continentalness: Float64Array
-  erosion: Float64Array
-  jaggedness: Float64Array
-  weirdness: Float64Array
+  continentalness: SparseSamples
+  erosion: SparseSamples
+  jaggedness: SparseSamples
+  weirdness: SparseSamples
 }
 
 type TerrainOrigin = Readonly<{
-  xStart: number
-  zStart: number
+  xStart: BlockAxis
+  zStart: BlockAxis
 }>
 
-const createSparseTerrainChannels = (): SparseTerrainChannels => ({
-  continentalness: new Float64Array(TERRAIN_SPARSE_SAMPLE_COUNT),
-  erosion: new Float64Array(TERRAIN_SPARSE_SAMPLE_COUNT),
-  jaggedness: new Float64Array(TERRAIN_SPARSE_SAMPLE_COUNT),
-  weirdness: new Float64Array(TERRAIN_SPARSE_SAMPLE_COUNT),
+type SparseSamplingContext = Readonly<{
+  noiseFunctions: TerrainNoiseFunctions
+  sparse: SparseTerrainChannels
+  origin: TerrainOrigin
+}>
+
+const createSparseSamples = (): SparseSamples => ({
+  values: new DataView(new ArrayBuffer(TERRAIN_SPARSE_SAMPLE_COUNT * FLOAT64_BYTES)),
 })
 
-const blendSparseChannelSample = (values: Float64Array, baseIndex: number, xWeight: number, zWeight: number): number => {
+const createSparseTerrainChannels = (): SparseTerrainChannels => ({
+  continentalness: createSparseSamples(),
+  erosion: createSparseSamples(),
+  jaggedness: createSparseSamples(),
+  weirdness: createSparseSamples(),
+})
+
+const blendSparseChannelSample = (
+  values: DataView,
+  baseIndex: number,
+  xWeight: number,
+  zWeight: number,
+): number => {
   const inverseXWeight = UNIT_WEIGHT - xWeight
   const inverseZWeight = UNIT_WEIGHT - zWeight
+  const read = (index: number): number => values.getFloat64(index * FLOAT64_BYTES, FLOAT64_LITTLE_ENDIAN)
   return (
-    inverseXWeight * inverseZWeight * requireDefined(values[baseIndex], 'terrain sample') +
-    xWeight * inverseZWeight * requireDefined(values[baseIndex + TERRAIN_SPARSE_GRID_SIZE], 'terrain sample') +
-    inverseXWeight * zWeight * requireDefined(values[baseIndex + SPARSE_GRID_OFFSET], 'terrain sample') +
-    xWeight * zWeight * requireDefined(values[baseIndex + TERRAIN_SPARSE_GRID_SIZE + SPARSE_GRID_OFFSET], 'terrain sample')
+    inverseXWeight * inverseZWeight * read(baseIndex) +
+    xWeight * inverseZWeight * read(baseIndex + TERRAIN_SPARSE_GRID_SIZE) +
+    inverseXWeight * zWeight * read(baseIndex + SPARSE_GRID_OFFSET) +
+    xWeight * zWeight * read(baseIndex + TERRAIN_SPARSE_GRID_SIZE + SPARSE_GRID_OFFSET)
   )
 }
 
-const sampleSparseRow = (
+type SampledTerrainValues = Readonly<{
+  continentalness: number
+  erosion: number
+  jaggedness: number
+  weirdness: number
+}>
+
+const sampleTerrainValues = (
   noiseFunctions: TerrainNoiseFunctions,
+  worldX: number,
+  worldZ: number,
+): SampledTerrainValues => ({
+  continentalness: noiseFunctions.continentalness(worldX * SCALE_C, worldZ * SCALE_C),
+  erosion: noiseFunctions.erosion(worldX * SCALE_E, worldZ * SCALE_E),
+  jaggedness: noiseFunctions.jaggedness(worldX * SCALE_J, worldZ * SCALE_J),
+  weirdness: noiseFunctions.weirdness(worldX * SCALE_W, worldZ * SCALE_W),
+})
+
+const storeSparseTerrainValues = (
   sparse: SparseTerrainChannels,
-  sparseX: number,
-  origin: TerrainOrigin,
+  sparseIndex: number,
+  values: SampledTerrainValues,
 ): void => {
-  const worldX = origin.xStart + sparseX * TERRAIN_SAMPLE_STEP
+  sparse.continentalness.values.setFloat64(sparseIndex * FLOAT64_BYTES, values.continentalness, FLOAT64_LITTLE_ENDIAN)
+  sparse.erosion.values.setFloat64(sparseIndex * FLOAT64_BYTES, values.erosion, FLOAT64_LITTLE_ENDIAN)
+  sparse.jaggedness.values.setFloat64(sparseIndex * FLOAT64_BYTES, values.jaggedness, FLOAT64_LITTLE_ENDIAN)
+  sparse.weirdness.values.setFloat64(sparseIndex * FLOAT64_BYTES, values.weirdness, FLOAT64_LITTLE_ENDIAN)
+}
+
+const sampleSparsePoint = (
+  context: SparseSamplingContext,
+  sparseX: number,
+  sparseZ: number,
+): void => {
+  const worldX = context.origin.xStart + sparseX * TERRAIN_SAMPLE_STEP
+  const worldZ = context.origin.zStart + sparseZ * TERRAIN_SAMPLE_STEP
+  const sparseIndex = sparseX * TERRAIN_SPARSE_GRID_SIZE + sparseZ
+  storeSparseTerrainValues(context.sparse, sparseIndex, sampleTerrainValues(context.noiseFunctions, worldX, worldZ))
+}
+
+const sampleSparseRow = (
+  context: SparseSamplingContext,
+  sparseX: number,
+): void => {
   for (let sparseZ = 0; sparseZ < TERRAIN_SPARSE_GRID_SIZE; sparseZ += SAMPLE_INDEX_STEP) {
-    const worldZ = origin.zStart + sparseZ * TERRAIN_SAMPLE_STEP
-    const sparseIndex = sparseX * TERRAIN_SPARSE_GRID_SIZE + sparseZ
-    sparse.continentalness[sparseIndex] = noiseFunctions.continentalness(worldX * SCALE_C, worldZ * SCALE_C)
-    sparse.erosion[sparseIndex] = noiseFunctions.erosion(worldX * SCALE_E, worldZ * SCALE_E)
-    sparse.jaggedness[sparseIndex] = noiseFunctions.jaggedness(worldX * SCALE_J, worldZ * SCALE_J)
-    sparse.weirdness[sparseIndex] = noiseFunctions.weirdness(worldX * SCALE_W, worldZ * SCALE_W)
+    sampleSparsePoint(context, sparseX, sparseZ)
   }
 }
 
@@ -86,8 +143,9 @@ const sampleSparseChannels = (
   origin: TerrainOrigin,
 ): SparseTerrainChannels => {
   const sparse = createSparseTerrainChannels()
+  const context = { noiseFunctions, origin, sparse }
   for (let sparseX = 0; sparseX < TERRAIN_SPARSE_GRID_SIZE; sparseX += SAMPLE_INDEX_STEP) {
-    sampleSparseRow(noiseFunctions, sparse, sparseX, origin)
+    sampleSparseRow(context, sparseX)
   }
   return sparse
 }
@@ -99,38 +157,63 @@ const createTerrainChannelSamples = (): TerrainChannelSamples => ({
   pv: new Float64Array(CHUNK_COLUMN_SAMPLE_COUNT),
 })
 
-const writeExpandedSample = (sparse: SparseTerrainChannels, output: TerrainChannelSamples, x: number, z: number): void => {
+const writeExpandedSample = (
+  sparse: SparseTerrainChannels,
+  output: TerrainChannelSamples,
+  x: number,
+  z: number,
+): Result.Result<void, RangeError> => {
   const sparseZ = Math.floor(z / TERRAIN_SAMPLE_STEP),
     zWeight = (z % TERRAIN_SAMPLE_STEP) / TERRAIN_SAMPLE_STEP,
     sparseX = Math.floor(x / TERRAIN_SAMPLE_STEP),
     xWeight = (x % TERRAIN_SAMPLE_STEP) / TERRAIN_SAMPLE_STEP,
     baseIndex = sparseX * TERRAIN_SPARSE_GRID_SIZE + sparseZ,
     outputIndex = z * CHUNK_SIZE_XZ + x,
-    weirdness = blendSparseChannelSample(sparse.weirdness, baseIndex, xWeight, zWeight)
+    weirdness = blendSparseChannelSample(sparse.weirdness.values, baseIndex, xWeight, zWeight)
+
+  const boundedWeirdness = Result.mapError(
+    BoundedNoise.result(weirdness),
+    (error) => new RangeError(error.message),
+  )
+  if (Result.isFailure(boundedWeirdness)) {
+    return Result.fail(boundedWeirdness.failure)
+  }
 
   output.continentalness[outputIndex] = blendSparseChannelSample(
-    sparse.continentalness,
+    sparse.continentalness.values,
     baseIndex,
     xWeight,
     zWeight,
   )
-  output.erosion[outputIndex] = blendSparseChannelSample(sparse.erosion, baseIndex, xWeight, zWeight)
-  output.jaggedness[outputIndex] = blendSparseChannelSample(sparse.jaggedness, baseIndex, xWeight, zWeight)
-  output.pv[outputIndex] = toPV(weirdness)
+  output.erosion[outputIndex] = blendSparseChannelSample(sparse.erosion.values, baseIndex, xWeight, zWeight)
+  output.jaggedness[outputIndex] = blendSparseChannelSample(sparse.jaggedness.values, baseIndex, xWeight, zWeight)
+  output.pv[outputIndex] = toPV(boundedWeirdness.success)
+  return Result.succeed(NO_RESULT_VALUE)
 }
 
-const expandTerrainRow = (sparse: SparseTerrainChannels, output: TerrainChannelSamples, z: number): void => {
+const expandTerrainRow = (
+  sparse: SparseTerrainChannels,
+  output: TerrainChannelSamples,
+  z: number,
+): Result.Result<void, RangeError> => {
   for (let x = 0; x < CHUNK_SIZE_XZ; x += SAMPLE_INDEX_STEP) {
-    writeExpandedSample(sparse, output, x, z)
+    const written = writeExpandedSample(sparse, output, x, z)
+    if (Result.isFailure(written)) {
+      return Result.fail(written.failure)
+    }
   }
+  return Result.succeed(NO_RESULT_VALUE)
 }
 
-const expandTerrainChannels = (sparse: SparseTerrainChannels): TerrainChannelSamples => {
+const expandTerrainChannels = (sparse: SparseTerrainChannels): Result.Result<TerrainChannelSamples, RangeError> => {
   const output = createTerrainChannelSamples()
   for (let z = 0; z < CHUNK_SIZE_XZ; z += SAMPLE_INDEX_STEP) {
-    expandTerrainRow(sparse, output, z)
+    const expanded = expandTerrainRow(sparse, output, z)
+    if (Result.isFailure(expanded)) {
+      return Result.fail(expanded.failure)
+    }
   }
-  return output
+  return Result.succeed(output)
 }
 
 type TerrainChannelArguments = readonly [
@@ -138,15 +221,20 @@ type TerrainChannelArguments = readonly [
   noiseFnErosion: NoiseFn2D,
   noiseFnWeirdness: NoiseFn2D,
   noiseFnJaggedness: NoiseFn2D,
-  xStart: number,
-  zStart: number,
+  xStart: BlockAxis,
+  zStart: BlockAxis,
 ]
 
-export const computeTerrainChannels = (...args: TerrainChannelArguments): TerrainChannelSamples => {
-  const [noiseFnContinentalness, noiseFnErosion, noiseFnWeirdness, noiseFnJaggedness, xStart, zStart] = args
-  requireFiniteNumber('xStart', xStart)
-  requireFiniteNumber('zStart', zStart)
-  const noiseFunctions = { continentalness: noiseFnContinentalness, erosion: noiseFnErosion, jaggedness: noiseFnJaggedness, weirdness: noiseFnWeirdness }
-  const sparse = sampleSparseChannels(noiseFunctions, { xStart, zStart })
-  return expandTerrainChannels(sparse)
-}
+export const computeTerrainChannels = (...args: TerrainChannelArguments): Result.Result<TerrainChannelSamples, RangeError> =>
+  Result.gen(function* computeTerrainChannelsResult() {
+    const [noiseFnContinentalness, noiseFnErosion, noiseFnWeirdness, noiseFnJaggedness, xStart, zStart] = args
+    yield* requireSafeInteger(xStart, () => `xStart must be a safe integer, received ${xStart}`)
+    yield* requireSafeInteger(zStart, () => `zStart must be a safe integer, received ${zStart}`)
+    const noiseFunctions = {
+      continentalness: noiseFnContinentalness,
+      erosion: noiseFnErosion,
+      jaggedness: noiseFnJaggedness,
+      weirdness: noiseFnWeirdness,
+    }
+    return yield* expandTerrainChannels(sampleSparseChannels(noiseFunctions, { xStart, zStart }))
+  })

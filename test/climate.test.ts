@@ -1,55 +1,319 @@
 import { describe, expect, it } from 'vitest'
+import { Option, Result } from 'effect'
 import {
-  CLIMATE_CHANNELS,
-  CLIMATE_HYPERCUBE_DIMENSION,
-  CLIMATE_PARAMETER_COUNT,
-  CLIMATE_QUANTIZATION_FACTOR,
-  climateParameter,
-  climateParameterDistance,
-  climateParameterPointFitness,
-  climateParameterRange,
-  climateParameterSpace,
-  climateParameterSpan,
-  climateParameters,
-  climateTarget,
-  createClimateParameterFromQuantized,
-  createClimateParameterList,
-  createClimateParameterPointFromQuantized,
-  createClimateParameterSpace,
-  createClimateSampler,
-  createClimateSamplerRuntime,
-  createClimateTargetPointFromQuantized,
-  createDensityEvaluationContext,
-  createDensityEvaluationSession,
-  densityConstant,
-  empty,
-  findClimateSpawnPosition,
-  findClimateValue,
-  findClimateValueBruteForce,
-  findClimateValueIndex,
-  findSpawnPosition,
+  BlockAxis,
+  PositionAxis,
+  blockPosition,
+  position,
+  type BlockPosition,
+  type Position,
+} from '@nerima-games/mc-kernel/domain/coordinates'
+import * as api from '../src/index.js'
+import type {
+  ClimateParameter,
+  ClimateParameterPoint,
+  ClimateParameterSpace,
+  ClimateSampler,
+} from '../src/index.js'
+import {
+  createClimateRTree as createRawClimateRTree,
+  type ClimateRTreeFitness,
+} from '../src/domain/climate-rtree.js'
+
+const unwrap = <Value, ErrorValue>(result: Result.Result<Value, ErrorValue>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+
+const optionValue = <Value>(option: Option.Option<Value>): Value | undefined => {
+  if (Option.isSome(option)) {
+    return option.value
+  }
+  return globalThis.undefined
+}
+
+const resultOptionValue = <Value, ErrorValue>(
+  result: Result.Result<Option.Option<Value>, ErrorValue>,
+): Value | undefined => optionValue(unwrap(result))
+
+const worldPosition = (x: number, y: number, z: number): Position =>
+  position(PositionAxis(x), PositionAxis(y), PositionAxis(z))
+
+const blockPoint = (x: number, y: number, z: number): BlockPosition =>
+  blockPosition(BlockAxis(x), BlockAxis(y), BlockAxis(z))
+
+const climateInput = (value: number | ClimateParameter): api.ClimateValue | ClimateParameter => {
+  if (typeof value === 'number') {
+    return api.ClimateValue(value)
+  }
+  return value
+}
+
+const climateParameter = (value: number): ClimateParameter =>
+  unwrap(api.climateParameter(api.ClimateValue(value)))
+
+const climateParameterRange = (min: number, max: number): ClimateParameter =>
+  unwrap(api.climateParameterRange(api.ClimateValue(min), api.ClimateValue(max)))
+
+const climateParameterSpan = (
+  min: number | ClimateParameter,
+  max: number | ClimateParameter,
+): ClimateParameter => {
+  if (typeof min === 'number' && typeof max === 'number') {
+    return unwrap(api.climateParameterSpan(api.ClimateValue(min), api.ClimateValue(max)))
+  }
+  if (typeof min !== 'number' && typeof max !== 'number') {
+    return unwrap(api.climateParameterSpan(min, max))
+  }
+  return unwrap(api.climateParameterSpan(min as never, max as never))
+}
+
+const createClimateParameterFromQuantized = (min: number, max: number): ClimateParameter =>
+  unwrap(
+    api.createClimateParameterFromQuantized(
+      api.QuantizedClimateValue(min),
+      api.QuantizedClimateValue(max),
+    ),
+  )
+
+const createClimateParameterSpace = (
+  temperature: number | ClimateParameter,
+  humidity: number | ClimateParameter,
+  continentalness: number | ClimateParameter,
+  erosion: number | ClimateParameter,
+  depth: number | ClimateParameter,
+  weirdness: number | ClimateParameter,
+): ClimateParameterSpace =>
+  unwrap(api.createClimateParameterSpace(
+    climateInput(temperature),
+    climateInput(humidity),
+    climateInput(continentalness),
+    climateInput(erosion),
+    climateInput(depth),
+    climateInput(weirdness),
+  ))
+
+const climateParameters = (
+  temperature: number | ClimateParameter,
+  humidity: number | ClimateParameter,
+  continentalness: number | ClimateParameter,
+  erosion: number | ClimateParameter,
+  depth: number | ClimateParameter,
+  weirdness: number | ClimateParameter,
+  offset: number,
+): ClimateParameterPoint => {
+  if (typeof temperature === 'number') {
+    return unwrap(api.climateParameters(
+      api.ClimateValue(temperature),
+      api.ClimateValue(humidity as number),
+      api.ClimateValue(continentalness as number),
+      api.ClimateValue(erosion as number),
+      api.ClimateValue(depth as number),
+      api.ClimateValue(weirdness as number),
+      api.ClimateValue(offset),
+    ))
+  }
+  return unwrap(api.climateParameters(
+    temperature,
+    humidity as ClimateParameter,
+    continentalness as ClimateParameter,
+    erosion as ClimateParameter,
+    depth as ClimateParameter,
+    weirdness as ClimateParameter,
+    api.ClimateValue(offset),
+  ))
+}
+
+const climateTarget = (
+  temperature: number,
+  humidity: number,
+  continentalness: number,
+  erosion: number,
+  depth: number,
+  weirdness: number,
+): api.ClimateTargetPoint =>
+  unwrap(api.climateTarget(
+    api.ClimateValue(temperature),
+    api.ClimateValue(humidity),
+    api.ClimateValue(continentalness),
+    api.ClimateValue(erosion),
+    api.ClimateValue(depth),
+    api.ClimateValue(weirdness),
+  ))
+
+const createClimateParameterPointFromQuantized = (
+  parameters: ClimateParameterSpace,
+  offset: number,
+): ClimateParameterPoint =>
+  unwrap(api.createClimateParameterPointFromQuantized(
+    parameters,
+    api.QuantizedClimateValue(offset),
+  ))
+
+const createClimateTargetPointFromQuantized = (
+  temperature: number,
+  humidity: number,
+  continentalness: number,
+  erosion: number,
+  depth: number,
+  weirdness: number,
+): api.ClimateTargetPoint =>
+  unwrap(api.createClimateTargetPointFromQuantized(
+    api.QuantizedClimateValue(temperature),
+    api.QuantizedClimateValue(humidity),
+    api.QuantizedClimateValue(continentalness),
+    api.QuantizedClimateValue(erosion),
+    api.QuantizedClimateValue(depth),
+    api.QuantizedClimateValue(weirdness),
+  ))
+
+const point = climateParameter
+const span = climateParameterSpan
+const parameters = climateParameters
+const parameterPoint = climateParameters
+const target = climateTarget
+
+const quantizeCoord = (value: number): api.QuantizedClimateValue =>
+  unwrap(api.quantizeCoord(api.ClimateValue(value)))
+
+const unquantizeCoord = (value: number): api.ClimateValue =>
+  unwrap(api.unquantizeCoord(api.QuantizedClimateValue(value)))
+
+const climateParameterDistance = (
+  parameter: ClimateParameter,
+  targetValue: number,
+): api.ClimateDistance =>
+  unwrap(api.climateParameterDistance(parameter, api.QuantizedClimateValue(targetValue)))
+
+const createClimateParameterList = <Value>(
+  entries: readonly api.ClimateParameterListEntry<Value>[],
+): api.ClimateParameterList<Value> => unwrap(api.createClimateParameterList(entries))
+
+const findClimateValueIndex = <Value>(
+  list: api.ClimateParameterList<Value>,
+  targetValue: api.ClimateTargetPoint,
+): number | undefined => resultOptionValue(api.findClimateValueIndex(list, targetValue))
+
+const findClimateValue = <Value>(
+  list: api.ClimateParameterList<Value>,
+  targetValue: api.ClimateTargetPoint,
+): Value | undefined => resultOptionValue(api.findClimateValue(list, targetValue))
+
+const findClimateValueBruteForce = <Value>(
+  list: api.ClimateParameterList<Value>,
+  targetValue: api.ClimateTargetPoint,
+): Value | undefined => resultOptionValue(api.findClimateValueBruteForce(list, targetValue))
+
+const createClimateSampler = (options: api.ClimateSamplerOptions): ClimateSampler =>
+  unwrap(api.createClimateSampler(options))
+
+const createClimateSamplerRuntime = (sampler: ClimateSampler) => {
+  const runtime = unwrap(api.createClimateSamplerRuntime(sampler))
+  return Object.freeze({
+    ...runtime,
+    findSpawnPosition: (options?: api.ClimateSpawnSearchOptions) =>
+      resultOptionValue(runtime.findSpawnPosition(options)),
+    sample: (
+      x: number,
+      y: number,
+      z: number,
+      context?: api.DensityEvaluationContext | api.DensityEvaluationSession,
+    ) => unwrap(runtime.sample(worldPosition(x, y, z), context)),
+  })
+}
+
+const createDensityEvaluationContext = (...args: Parameters<typeof api.createDensityEvaluationContext>) =>
+  unwrap(api.createDensityEvaluationContext(...args))
+
+const createDensityEvaluationSession = (...args: Parameters<typeof api.createDensityEvaluationSession>) =>
+  unwrap(api.createDensityEvaluationSession(...args))
+
+const densityConstant = (value: number): api.DensityFunction =>
+  unwrap(api.densityConstant(api.DensityValue(value)))
+
+const empty = (): ClimateSampler => unwrap(api.empty())
+
+const sampleClimate = (...args: Parameters<typeof api.sampleClimate>) =>
+  unwrap(api.sampleClimate(...args))
+
+const sampleClimateAt = (
+  sampler: ClimateSampler,
+  x: number,
+  y: number,
+  z: number,
+  context?: api.DensityEvaluationContext | api.DensityEvaluationSession,
+) => unwrap(api.sampleClimateAt(sampler, worldPosition(x, y, z), context))
+
+const findClimateSpawnPosition = (...args: Parameters<typeof api.findClimateSpawnPosition>) =>
+  resultOptionValue(api.findClimateSpawnPosition(...args))
+
+const findSpawnPosition = (...args: Parameters<typeof api.findSpawnPosition>) =>
+  resultOptionValue(api.findSpawnPosition(...args))
+
+const requireClimateParameter = (...args: Parameters<typeof api.requireClimateParameter>) =>
+  unwrap(api.requireClimateParameter(...args))
+
+const requireClimateParameterList = <Value>(value: unknown): api.ClimateParameterList<Value> =>
+  unwrap(api.requireClimateParameterList<Value>(value))
+
+const requireClimateParameterPoint = (...args: Parameters<typeof api.requireClimateParameterPoint>) =>
+  unwrap(api.requireClimateParameterPoint(...args))
+
+const requireClimateSampler = (value: unknown): ClimateSampler =>
+  unwrap(api.requireClimateSampler(value))
+
+const {
   isClimateParameter,
   isClimateParameterPoint,
   isClimateSampler,
   isClimateTargetPoint,
-  parameterPoint,
-  parameters,
-  point,
-  quantizeCoord,
-  requireClimateParameter,
-  requireClimateParameterList,
-  requireClimateParameterPoint,
-  requireClimateSampler,
-  sampleClimate,
-  sampleClimateAt,
-  span,
-  target,
-  unquantizeCoord,
-  type ClimateParameterPoint,
-  type ClimateParameterSpace,
-  type ClimateSampler,
-} from '../src/index.js'
-import { createClimateRTree } from '../src/domain/climate-rtree.js'
+} = api
+
+const expectFailure = <Value, ErrorValue>(
+  result: Result.Result<Value, ErrorValue>,
+  message: string,
+): void => {
+  expect(Result.isFailure(result)).toBe(true)
+  if (Result.isFailure(result)) {
+    expect(result.failure).toHaveProperty('message', message)
+  }
+}
+
+const createClimateRTree = <Value>(
+  entries: readonly api.ClimateParameterListEntry<Value>[],
+  fitness: ClimateRTreeFitness,
+): Readonly<{
+  search: (target: api.ClimateTargetPoint) => Value | undefined
+  searchIndex: (target: api.ClimateTargetPoint) => number | undefined
+}> => {
+  const tree = unwrap(createRawClimateRTree(entries, fitness))
+  return Object.freeze({
+    search: (searchTarget) => resultOptionValue(tree.search(searchTarget)),
+    searchIndex: (searchTarget) => resultOptionValue(tree.searchIndex(searchTarget)),
+  })
+}
+
+const climateParameterSpace = (pointValue: ClimateParameterPoint): ClimateParameterSpace =>
+  unwrap(api.climateParameterSpace(pointValue))
+
+const climateParameterPointFitness = (
+  pointValue: ClimateParameterPoint,
+  targetValue: api.ClimateTargetPoint,
+): api.ClimateFitness => unwrap(api.climateParameterPointFitness(pointValue, targetValue))
+
+const climateParameterPointFitnessResult = (
+  pointValue: ClimateParameterPoint,
+  targetValue: api.ClimateTargetPoint,
+) => api.climateParameterPointFitness(pointValue, targetValue)
+
+const {
+  CLIMATE_CHANNELS,
+  CLIMATE_HYPERCUBE_DIMENSION,
+  CLIMATE_PARAMETER_COUNT,
+  CLIMATE_QUANTIZATION_FACTOR,
+} = api
 
 const zeroParameter = climateParameter(0)
 const unitParameter = climateParameter(1)
@@ -86,15 +350,29 @@ describe('Climate quantization and parameter primitives', () => {
     expect(quantizeCoord(0.123456)).toBe(1234)
     expect(quantizeCoord(-0.123456)).toBe(-1234)
     expect(unquantizeCoord(1234)).toBe(0.1234)
-    expect(() => quantizeCoord(Number.NaN)).toThrow('coordinate must be finite')
-    expect(() => unquantizeCoord('bad' as never)).toThrow(
-      'quantized coordinate must be a number',
+    expectFailure(api.quantizeCoord(Number.NaN as never), 'coordinate must be finite')
+    expectFailure(api.unquantizeCoord('bad' as never), 'coordinate must be a number')
+    expectFailure(api.quantizeCoord(Number.MAX_VALUE as never), 'coordinate must be a safe integer')
+    expectFailure(api.unquantizeCoord(1.5 as never), 'coordinate must be a safe integer')
+  })
+
+  it('rejects invalid values for climate scalar brands', () => {
+    expectFailure(api.ClimateValue.result(Number.NaN), 'climate value must be finite')
+    expectFailure(
+      api.QuantizedClimateValue.result(1.5),
+      'quantized climate value must be a safe integer',
     )
-    expect(() => quantizeCoord(Number.MAX_VALUE)).toThrow(
-      'coordinate must be a safe integer',
+    expectFailure(
+      api.ClimateDistance.result(-1),
+      'climate distance must be finite and non-negative',
     )
-    expect(() => unquantizeCoord(1.5)).toThrow(
-      'quantized coordinate must be a safe integer',
+    expectFailure(
+      api.ClimateFitness.result(-1),
+      'climate fitness must be finite and non-negative',
+    )
+    expectFailure(
+      api.ClimateListIndex.result(-1),
+      'climate list index must be a non-negative safe integer',
     )
   })
 
@@ -121,11 +399,11 @@ describe('Climate quantization and parameter primitives', () => {
     expect(isClimateParameter({ min: Number.MAX_SAFE_INTEGER + 1, max: 1 })).toBe(false)
     expect(isClimateParameter({ min: 2, max: 1 })).toBe(false)
     expect(isClimateParameter({ min: 0, max: 1 })).toBe(true)
-    expect(requireClimateParameter('parameter', { min: 0, max: 1 })).toEqual({
+    expect(requireClimateParameter(api.ClimateFieldName('parameter'), { min: 0, max: 1 })).toEqual({
       min: 0,
       max: 1,
     })
-    expect(() => requireClimateParameter('parameter', null)).toThrow(
+    expect(() => requireClimateParameter(api.ClimateFieldName('parameter'), null)).toThrow(
       'parameter must be a ClimateParameter',
     )
   })
@@ -179,15 +457,13 @@ describe('Climate quantization and parameter primitives', () => {
     )
     expect(isClimateParameterPoint(fromSpace)).toBe(true)
     expect(isClimateTargetPoint(targetFromQuantized)).toBe(true)
-    expect(requireClimateParameterPoint('point', fromSpace)).toEqual(fromSpace)
-    expect(() => requireClimateParameterPoint('point', null)).toThrow(
+    expect(requireClimateParameterPoint(api.ClimateFieldName('point'), fromSpace)).toEqual(fromSpace)
+    expect(() => requireClimateParameterPoint(api.ClimateFieldName('point'), null)).toThrow(
       'point must be a ClimateParameterPoint',
     )
     expect(isClimateTargetPoint(null)).toBe(false)
     expect(isClimateTargetPoint({ ...targetFromQuantized, temperature: 1.5 })).toBe(false)
-    expect(() => createClimateTargetPointFromQuantized(1.5, 2, 3, 4, 5, 6)).toThrow(
-      'temperature must be a safe integer',
-    )
+    expect(Result.isFailure(api.createClimateTargetPointFromQuantized(1.5 as never, 2 as never, 3 as never, 4 as never, 5 as never, 6 as never))).toBe(true)
   })
 
   it('short-circuits every climate point validation dimension', () => {
@@ -304,14 +580,14 @@ describe('Climate distance and parameter lists', () => {
     const splitTree = createClimateRTree([
       [zeroPoint, 'zero'],
       [widePoint, 'wide'],
-    ] as const, climateParameterPointFitness)
+    ] as const, climateParameterPointFitnessResult)
     expect(splitTree.search(zeroTarget)).toBe('zero')
 
     const unitPoint = climateParameters(1, 1, 1, 1, 1, 1, 0)
     const directionalTree = createClimateRTree([
       [zeroPoint, 'zero'],
       [unitPoint, 'unit'],
-    ] as const, climateParameterPointFitness)
+    ] as const, climateParameterPointFitnessResult)
     expect(directionalTree.searchIndex(climateTarget(1, 1, 1, 1, 1, 1))).toBe(1)
 
     const tieTree = createClimateRTree([
@@ -340,30 +616,94 @@ describe('Climate distance and parameter lists', () => {
         'second',
       ],
     ] as const, (candidate) =>
-      Number(candidate.temperature.min === -10_000))
+      Result.succeed(api.ClimateFitness(Number(candidate.temperature.min === -10_000))))
     expect(tieTree.search(zeroTarget)).toBe('second')
 
-    const emptyTree = createClimateRTree([], climateParameterPointFitness)
+    const emptyTree = createClimateRTree([], climateParameterPointFitnessResult)
     expect(emptyTree.search(zeroTarget)).toBeUndefined()
     expect(emptyTree.searchIndex(zeroTarget)).toBeUndefined()
-    expect(() => createClimateRTree(null as never, climateParameterPointFitness)).toThrow(
+    expect(() => createClimateRTree(null as never, climateParameterPointFitnessResult)).toThrow(
       'RTree entries must be an array',
     )
     expect(() => createClimateRTree([], null as never)).toThrow(
       'RTree fitness must be a function',
     )
   })
+
+  it('rejects malformed entries and targets at the RTree boundary', () => {
+    expectFailure(
+      createRawClimateRTree([[zeroPoint] as never], climateParameterPointFitnessResult),
+      'entries[0] must be a [point, value] tuple',
+    )
+
+    const tree = unwrap(
+      createRawClimateRTree([[zeroPoint, 'zero']] as const, climateParameterPointFitnessResult),
+    )
+    expectFailure(tree.search(null as never), 'RTree target must be a ClimateTargetPoint')
+  })
+
+  it('validates callback Results and fitness values during RTree search', () => {
+    const entries = [[zeroPoint, 'zero']] as const
+
+    const nonResultTree = unwrap(createRawClimateRTree(entries, (() => 1) as never))
+    expectFailure(nonResultTree.search(zeroTarget), 'RTree fitness must return a Result')
+
+    const invalidErrorTree = unwrap(
+      createRawClimateRTree(entries, (() => Result.fail(new Error('private failure'))) as never),
+    )
+    expectFailure(invalidErrorTree.search(zeroTarget), 'RTree fitness returned an invalid error')
+
+    const invalidValueTree = unwrap(
+      createRawClimateRTree(entries, (() => Result.succeed('not a number')) as never),
+    )
+    expectFailure(invalidValueTree.search(zeroTarget), 'RTree fitness must return a number')
+
+    const infiniteFitnessTree = unwrap(
+      createRawClimateRTree(
+        entries,
+        (() => Result.succeed(Number.POSITIVE_INFINITY)) as never,
+      ),
+    )
+    const infiniteFitnessResult = infiniteFitnessTree.search(zeroTarget)
+    expectFailure(
+      infiniteFitnessResult,
+      'climate fitness must be finite and non-negative',
+    )
+    if (Result.isFailure(infiniteFitnessResult)) {
+      expect(infiniteFitnessResult.failure).toBeInstanceOf(RangeError)
+    }
+
+    const typedFailure = new TypeError('fitness rejected')
+    const failedTree = unwrap(
+      createRawClimateRTree(entries, (() => Result.fail(typedFailure)) as never),
+    )
+    const searchResult = failedTree.search(zeroTarget)
+    expect(Result.isFailure(searchResult)).toBe(true)
+    if (Result.isFailure(searchResult)) {
+      expect(searchResult.failure).toBe(typedFailure)
+    }
+
+    const rangeFailure = new RangeError('fitness out of range')
+    const rangeFailureTree = unwrap(
+      createRawClimateRTree(entries, (() => Result.fail(rangeFailure)) as never),
+    )
+    const rangeSearchResult = rangeFailureTree.search(zeroTarget)
+    expect(Result.isFailure(rangeSearchResult)).toBe(true)
+    if (Result.isFailure(rangeSearchResult)) {
+      expect(rangeSearchResult.failure).toBe(rangeFailure)
+    }
+  })
 })
 
 describe('Climate samplers and spawn search', () => {
   it('samples all six channels through direct, context, and session evaluators', () => {
     const sampler = makeSampler()
-    const position = { x: 1, y: 2, z: 3 }
+    const samplePosition = worldPosition(1, 2, 3)
     const context = createDensityEvaluationContext()
     const session = createDensityEvaluationSession(context)
-    expect(sampleClimate(sampler, position)).toEqual(zeroTarget)
-    expect(sampleClimate(sampler, position, context)).toEqual(zeroTarget)
-    expect(sampleClimate(sampler, position, session)).toEqual(zeroTarget)
+    expect(sampleClimate(sampler, samplePosition)).toEqual(zeroTarget)
+    expect(sampleClimate(sampler, samplePosition, context)).toEqual(zeroTarget)
+    expect(sampleClimate(sampler, samplePosition, session)).toEqual(zeroTarget)
     expect(Object.isFrozen(sampler)).toBe(true)
     expect(Object.isFrozen(sampler.spawnTarget)).toBe(true)
     expect(isClimateSampler(sampler)).toBe(true)
@@ -409,9 +749,7 @@ describe('Climate samplers and spawn search', () => {
       ...sampler,
       temperature: null as never,
     })).toThrow('sampler.temperature must be a DensityFunction')
-    expect(() => sampleClimate(sampler, position, null as never)).toThrow(
-      'evaluation context must be an object',
-    )
+    expect(Result.isFailure(api.sampleClimate(sampler, samplePosition, null as never))).toBe(true)
   })
 
   it('matches the official sampler runtime shape', () => {
@@ -427,73 +765,129 @@ describe('Climate samplers and spawn search', () => {
     expect(runtime.sample(1, 2, 3, context)).toEqual(zeroTarget)
     expect(sampleClimateAt(runtime, 1, 2, 3)).toEqual(zeroTarget)
     expect(runtime.findSpawnPosition({
-      origin: { x: 10, y: 20, z: 30 },
-      radius: 0,
-      verticalRadius: 0,
-      step: 1,
-    })).toEqual({ x: 10, y: 20, z: 30 })
-    expect(() => runtime.sample(1.5, 2, 3)).toThrow(
-      'x must be a safe integer',
-    )
-    expect(() => sampleClimateAt(emptySampler, 1, 2.5, 3)).toThrow(
-      'y must be a safe integer',
-    )
+      origin: blockPoint(10, 20, 30),
+      radius: api.ClimateSearchRadius(0),
+      verticalRadius: api.ClimateSearchRadius(0),
+      step: api.ClimateSearchStep(1),
+    })).toEqual(blockPoint(10, 20, 30))
+    expect(runtime.sample(1.5, 2, 3)).toEqual(zeroTarget)
+    expect(Result.isFailure(api.sampleClimateAt(emptySampler, { x: Number.NaN, y: 0, z: 0 } as never))).toBe(true)
   })
 
   it('uses the configured spawn target and returns the best bounded block', () => {
     const sampler = makeSampler([zeroPoint])
     expect(findClimateSpawnPosition(sampler, globalThis.undefined, {
-      origin: { x: 10, y: 20, z: 30 },
-      radius: 0,
-      verticalRadius: 0,
-      step: 1,
-    })).toEqual({ x: 10, y: 20, z: 30 })
+      origin: blockPoint(10, 20, 30),
+      radius: api.ClimateSearchRadius(0),
+      verticalRadius: api.ClimateSearchRadius(0),
+      step: api.ClimateSearchStep(1),
+    })).toEqual(blockPoint(10, 20, 30))
     expect(findSpawnPosition([zeroPoint], sampler, {
-      origin: { x: 1, y: 2, z: 3 },
-      radius: 0,
-      verticalRadius: 0,
-      step: 1,
+      origin: blockPoint(1, 2, 3),
+      radius: api.ClimateSearchRadius(0),
+      verticalRadius: api.ClimateSearchRadius(0),
+      step: api.ClimateSearchStep(1),
       context: createDensityEvaluationSession(createDensityEvaluationContext()),
-    })).toEqual({ x: 1, y: 2, z: 3 })
-    expect(findClimateSpawnPosition(makeSampler())).toBeUndefined()
+    })).toEqual(blockPoint(1, 2, 3))
     expect(() => findClimateSpawnPosition(sampler, [null as never], {
-      radius: 0,
-      verticalRadius: 0,
+      radius: api.ClimateSearchRadius(0),
+      verticalRadius: api.ClimateSearchRadius(0),
     })).toThrow('targets[0] must be a ClimateParameterPoint')
     expect(() => findClimateSpawnPosition(sampler, [], null as never)).toThrow(
       'search options must be an object',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { step: 0 })).toThrow(
-      'step must be positive',
+    expect(() => findClimateSpawnPosition(sampler, [], { step: 0 } as never)).toThrow(
+      'climate search step must be a positive safe integer',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { radius: -1 })).toThrow(
-      'radius must be non-negative',
+    expect(() => findClimateSpawnPosition(sampler, [], { radius: -1 } as never)).toThrow(
+      'climate search radius must be a non-negative safe integer',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { verticalRadius: -1 })).toThrow(
-      'verticalRadius must be non-negative',
+    expect(() => findClimateSpawnPosition(sampler, [], { verticalRadius: -1 } as never)).toThrow(
+      'climate search radius must be a non-negative safe integer',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { origin: null as never })).toThrow(
+    expect(() => findClimateSpawnPosition(sampler, [], { origin: null as never } as never)).toThrow(
       'origin must be an object',
     )
     expect(() => findClimateSpawnPosition(sampler, [], {
       origin: { x: 1.5, y: 0, z: 0 },
-    })).toThrow('origin.x must be a safe integer')
+    } as never)).toThrow('origin.x must be a safe integer')
   })
 
-  it('covers default search bounds and rejects invalid integer options', () => {
-    const sampler = makeSampler([zeroPoint])
-    expect(findClimateSpawnPosition(sampler)).toBeDefined()
-    expect(() => findClimateSpawnPosition(sampler, [], { radius: 1.5 })).toThrow(
-      'radius must be a safe integer',
+  it('uses default search options for an empty target set and rejects invalid integers', () => {
+    const sampler = makeSampler()
+    expect(findClimateSpawnPosition(sampler)).toBeUndefined()
+    expect(() => findClimateSpawnPosition(sampler, [], { radius: 1.5 } as never)).toThrow(
+      'climate search radius must be a non-negative safe integer',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { radius: null as never })).toThrow(
+    expect(() => findClimateSpawnPosition(sampler, [], { radius: null as never } as never)).toThrow(
       'radius must be a number',
     )
-    expect(() => findClimateSpawnPosition(sampler, [], { step: Number.NaN })).toThrow(
+    expect(() => findClimateSpawnPosition(sampler, [], { step: Number.NaN } as never)).toThrow(
       'step must be a safe integer',
     )
     expect(() => findClimateSpawnPosition(sampler, [], {
       origin: { x: Number.NaN, y: 0, z: 0 },
-    })).toThrow('origin.x must be a safe integer')
+    } as never)).toThrow('origin.x must be a safe integer')
   })
+
+  it('rejects spawn targets that are not an array', () => {
+    expectFailure(
+      api.findClimateSpawnPosition(makeSampler([zeroPoint]), 1 as never),
+      'targets must be an array',
+    )
+  })
+
+  it('keeps the first tied spawn candidate and replaces it with a fitter one', () => {
+    const sampler = createClimateSampler({
+      temperature: unwrap(api.densityCoordinate('x')),
+      humidity: densityConstant(0),
+      continentalness: densityConstant(0),
+      erosion: densityConstant(0),
+      depth: densityConstant(0),
+      weirdness: densityConstant(0),
+      spawnTarget: [zeroPoint],
+    })
+
+    expect(findClimateSpawnPosition(sampler, globalThis.undefined, {
+      origin: blockPoint(0, 0, 0),
+      radius: api.ClimateSearchRadius(1),
+      verticalRadius: api.ClimateSearchRadius(0),
+      step: api.ClimateSearchStep(1),
+    })).toEqual(blockPoint(0, 0, -1))
+  })
+
+  it.each([
+    {
+      axis: 'x',
+      origin: blockPoint(Number.MIN_SAFE_INTEGER, 0, 0),
+      radius: 1,
+      verticalRadius: 0,
+    },
+    {
+      axis: 'y',
+      origin: blockPoint(0, Number.MIN_SAFE_INTEGER, 0),
+      radius: 0,
+      verticalRadius: 1,
+    },
+    {
+      axis: 'z',
+      origin: blockPoint(0, 0, Number.MIN_SAFE_INTEGER),
+      radius: 1,
+      verticalRadius: 0,
+    },
+  ])(
+    'rejects a spawn candidate that overflows the $axis block axis',
+    ({ origin, radius, verticalRadius }) => {
+      const result = api.findClimateSpawnPosition(makeSampler([zeroPoint]), globalThis.undefined, {
+        origin,
+        radius: api.ClimateSearchRadius(radius),
+        verticalRadius: api.ClimateSearchRadius(verticalRadius),
+        step: api.ClimateSearchStep(1),
+      })
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) {
+        expect(result.failure).toBeInstanceOf(RangeError)
+      }
+    },
+  )
 })

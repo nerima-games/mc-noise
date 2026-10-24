@@ -39,21 +39,41 @@
  * claims; see docs/design-notes.md, regression
  * `noise-octave-loop-is-imperative`, and docs/testing.md §7.
  */
-import { requireFiniteNumber, requireSafeInteger } from './number-validation.js'
+import { Brand, Result } from 'effect'
 import type { NoiseFn2D } from './perlin.js'
+import type { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 
 /** Coordinate-space bounds every signed noise sample must land within. */
 const SIGNED_MIN = -1
 const SIGNED_MAX = 1
-/** The signed value with no directional signal — `normalizeNoise` maps it to the midpoint of [0, 1]. */
+/** The signed value with no directional signal — normalization maps it to the midpoint of [0, 1]. */
 const NEUTRAL_SIGNED_VALUE = 0
+const NORMALIZED_MIN = 0
+const NORMALIZED_MAX = 1
 
-/** Map a signed sample in [-1, 1] onto [0, 1]. Linear, so it preserves shape. */
-export const normalizeNoise = (value: number): number =>
+export type BoundedNoise = number & Brand.Brand<'BoundedNoise'>
+export const BoundedNoise: Brand.Constructor<BoundedNoise> = Brand.make<BoundedNoise>(
+  (value) =>
+    (Number.isFinite(value) && value >= SIGNED_MIN && value <= SIGNED_MAX) ||
+    'noise value must be finite and within [-1, 1]',
+)
+
+export type NormalizedNoise = number & Brand.Brand<'NormalizedNoise'>
+export const NormalizedNoise: Brand.Constructor<NormalizedNoise> = Brand.make<NormalizedNoise>(
+  (value) =>
+    (Number.isFinite(value) && value >= NORMALIZED_MIN && value <= NORMALIZED_MAX) ||
+    'normalized noise must be finite and within [0, 1]',
+)
+
+export type NoiseAccumulator = number & Brand.Brand<'NoiseAccumulator'>
+export const NoiseAccumulator: Brand.Constructor<NoiseAccumulator> = Brand.make<NoiseAccumulator>(
+  (value) => Number.isFinite(value) || 'noise accumulator must be finite',
+)
+
+const normalizeNoiseValue = (value: number): number =>
   (value - SIGNED_MIN) / (SIGNED_MAX - SIGNED_MIN)
 
-/** Clamp to [-1, 1]. fBm can overshoot slightly at high octave counts. */
-export const clampSigned = (value: number): number => {
+const clampSignedValue = (value: number): number => {
   if (value < SIGNED_MIN) {
     return SIGNED_MIN
   }
@@ -63,6 +83,20 @@ export const clampSigned = (value: number): number => {
   return value
 }
 
+const makeNormalizedNoise = (value: number): Result.Result<NormalizedNoise, RangeError> =>
+  Result.mapError(
+    NormalizedNoise.result(value),
+    (error) => new RangeError(error.message),
+  )
+
+/** Map a signed sample in [-1, 1] onto [0, 1]. Linear, so it preserves shape. */
+export const normalizeNoise = (value: BoundedNoise): NormalizedNoise =>
+  NormalizedNoise(normalizeNoiseValue(value))
+
+/** Clamp a finite octave sum to [-1, 1]. fBm can overshoot slightly at high octave counts. */
+export const clampSigned = (value: NoiseAccumulator): BoundedNoise =>
+  BoundedNoise(clampSignedValue(value))
+
 /**
  * Parameters of an fBm stack.
  *
@@ -70,43 +104,47 @@ export const clampSigned = (value: number): number => {
  * `persistence`  amplitude ratio between successive bands, typically 0.5.
  * `lacunarity`   frequency ratio between successive bands, typically 2.
  */
+export type OctaveCount = number & Brand.Brand<'OctaveCount'>
+export const OctaveCount: Brand.Constructor<OctaveCount> = Brand.make<OctaveCount>(
+  (value) => Number.isSafeInteger(value) || 'octave count must be a safe integer',
+)
+
+export type OctaveAmplitude = number & Brand.Brand<'OctaveAmplitude'>
+export const OctaveAmplitude: Brand.Constructor<OctaveAmplitude> = Brand.make<OctaveAmplitude>(
+  (value) => Number.isFinite(value) || 'octave amplitude must be finite',
+)
+
+export type OctaveFrequency = number & Brand.Brand<'OctaveFrequency'>
+export const OctaveFrequency: Brand.Constructor<OctaveFrequency> = Brand.make<OctaveFrequency>(
+  (value) => Number.isFinite(value) || 'octave frequency must be finite',
+)
+
 export type OctaveParams = {
-  readonly octaves: number
-  readonly persistence: number
-  readonly lacunarity: number
+  readonly octaves: OctaveCount
+  readonly persistence: OctaveAmplitude
+  readonly lacunarity: OctaveFrequency
 }
 
 export type OctaveParameters = readonly [
-  octaves: number,
-  persistence: number,
-  lacunarity: number,
+  octaves: OctaveCount,
+  persistence: OctaveAmplitude,
+  lacunarity: OctaveFrequency,
 ]
 
 export type OctaveNoiseArguments = readonly [
-  x: number,
-  z: number,
+  x: PositionAxis,
+  z: PositionAxis,
   ...octaveParameters: OctaveParameters,
 ]
 
-const validateOctaveArguments = (octaves: number, persistence: number, lacunarity: number): void => {
-  requireSafeInteger('octaves', octaves)
-  requireFiniteNumber('persistence', persistence)
-  requireFiniteNumber('lacunarity', lacunarity)
-}
-
-const validateOctaveParams = (params: OctaveParams): void => {
-  validateOctaveArguments(params.octaves, params.persistence, params.lacunarity)
-}
-
-const validateSignedFbmArguments = (params: OctaveParams, boost: number): void => {
-  validateOctaveParams(params)
-  requireFiniteNumber('boost', boost)
-}
+const DEFAULT_LACUNARITY = 2
+const DEFAULT_OCTAVE_COUNT = 4
+const DEFAULT_PERSISTENCE = 0.5
 
 export const DEFAULT_OCTAVE_PARAMS: OctaveParams = {
-  lacunarity: 2,
-  octaves: 4,
-  persistence: 0.5,
+  lacunarity: OctaveFrequency(DEFAULT_LACUNARITY),
+  octaves: OctaveCount(DEFAULT_OCTAVE_COUNT),
+  persistence: OctaveAmplitude(DEFAULT_PERSISTENCE),
 }
 
 /** Fewer octaves than this is a degenerate request — see `octaveNoise2D`'s doc comment on why that returns the midpoint, not 0. */
@@ -137,10 +175,14 @@ const UNIT_AMPLITUDE = 1
  * geometric-series limit — is what keeps the result in range for any
  * persistence, including persistence >= 1.
  */
-export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams): number => {
-  validateOctaveParams(params)
+export const octaveNoise2D = (
+  noiseFn: NoiseFn2D,
+  x: PositionAxis,
+  z: PositionAxis,
+  params: OctaveParams,
+): Result.Result<NormalizedNoise, RangeError> => {
   if (params.octaves < MIN_OCTAVES) {
-    return normalizeNoise(NEUTRAL_SIGNED_VALUE)
+    return Result.succeed(NormalizedNoise(normalizeNoiseValue(NEUTRAL_SIGNED_VALUE)))
   }
 
   // PERFORMANCE EXCEPTION — see the file header before changing this.
@@ -156,7 +198,7 @@ export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: 
     frequency *= params.lacunarity
   }
 
-  return normalizeNoise(clampSigned(total / maxValue))
+  return makeNormalizedNoise(normalizeNoiseValue(clampSignedValue(total / maxValue)))
 }
 
 /**
@@ -168,11 +210,10 @@ export const octaveNoise2D = (noiseFn: NoiseFn2D, x: number, z: number, params: 
  */
 export const computeOctaveNoise = (
   ...args: readonly [noiseFn: NoiseFn2D, ...OctaveNoiseArguments]
-): number => {
+): Result.Result<NormalizedNoise, RangeError> => {
   const [noiseFn, x, z, octaves, persistence, lacunarity] = args
-  validateOctaveArguments(octaves, persistence, lacunarity)
   if (octaves < MIN_OCTAVES) {
-    return NO_OCTAVE_SENTINEL
+    return Result.succeed(NormalizedNoise(NO_OCTAVE_SENTINEL))
   }
 
   // PERFORMANCE EXCEPTION — see the file header before changing this.
@@ -189,7 +230,7 @@ export const computeOctaveNoise = (
     maxValue += amplitude
   }
 
-  return normalizeNoise(total / maxValue)
+  return makeNormalizedNoise(normalizeNoiseValue(total / maxValue))
 }
 
 /**
@@ -203,8 +244,7 @@ export const computeOctaveNoise = (
  * only on `params`, so paying for it per sample would be pure waste. The
  * reference does the same (`noise-primitives.ts:112-118`).
  */
-export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost: number = UNIT_AMPLITUDE): NoiseFn2D => {
-  validateSignedFbmArguments(params, boost)
+export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost: OctaveAmplitude = OctaveAmplitude(UNIT_AMPLITUDE)): NoiseFn2D => {
   // PERFORMANCE EXCEPTION — see the file header before changing this.
   let amplitudeSum = 0
   let amplitude = 1
@@ -229,6 +269,6 @@ export const signedFbm2D = (noiseFn: NoiseFn2D, params: OctaveParams, boost: num
       sampleAmplitude *= params.persistence
       frequency *= params.lacunarity
     }
-    return clampSigned(total * scale)
+    return clampSignedValue(total * scale)
   }
 }

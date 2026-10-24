@@ -1,4 +1,5 @@
 import { blockIdOf } from '@nerima-games/mc-kernel'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   classifyMinecraftBiome,
@@ -7,9 +8,19 @@ import {
   MINECRAFT_BLOCK,
   MINECRAFT_CHUNK_BIOMES,
   MINECRAFT_BIOME_TREE_DENSITY,
+  MinecraftClimateValue,
 } from '../src/domain/minecraft-biome.js'
 
 describe('Minecraft biome definitions', () => {
+  it('rejects climate values outside the unit interval', () => {
+    const result = MinecraftClimateValue.result(1.01)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure.message).toBe('Minecraft climate value must be finite and within [0, 1]')
+    }
+  })
+
   it('classifies the direct temperature and humidity rules in order', () => {
     const cases: ReadonlyArray<readonly [number, number, string]> = [
       [0.2, 0.1, 'SNOW'],
@@ -30,7 +41,7 @@ describe('Minecraft biome definitions', () => {
     ]
 
     for (const [temperature, humidity, expected] of cases) {
-      expect(classifyMinecraftBiome(temperature, humidity)).toBe(expected)
+      expect(classifyMinecraftBiome(MinecraftClimateValue(temperature), MinecraftClimateValue(humidity))).toBe(expected)
     }
   })
 

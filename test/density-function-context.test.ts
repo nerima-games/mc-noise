@@ -7,26 +7,31 @@ import {
   cache2d,
   cacheAllInCell,
   cacheOnce,
-  createDensityEvaluationContext,
-  createDensityEvaluationSession,
-  densityAdd,
   densityBlendAlpha,
   densityBlendDensity,
   densityBlendOffset,
   densityCache2D,
   densityCacheAllInCell,
   densityCacheOnce,
-  densityConstant,
-  densityCoordinate,
-  densityCube,
   densityFlatCache,
   densityInterpolated,
-  densitySquare,
   densityBounds,
-  evaluateDensityFunction,
   flatCache,
   interpolated,
 } from '../src/index.js'
+import * as DensityApi from '../src/index.js'
+import {
+  createDensityEvaluationContext,
+  createDensityEvaluationSession,
+  densityAdd,
+  densityConstant,
+  densityCoordinate,
+  densityCube,
+  densitySquare,
+  densityPosition,
+  evaluateDensityFunction,
+  expectResultFailure,
+} from './density-function-test-utils.js'
 
 const position = { x: 1, y: 2, z: 1 }
 
@@ -73,12 +78,12 @@ describe('DensityFunction evaluation contexts', () => {
     const session = createDensityEvaluationSession(createDensityEvaluationContext())
     const cached = cacheOnce(densityCoordinate('x'))
 
-    expect(session.evaluate(cached, { x: 1, y: 2, z: 3 })).toBe(1)
-    expect(session.evaluate(cached, { x: 9, y: 2, z: 3 })).toBe(1)
+    expect(evaluateDensityFunction(cached, { x: 1, y: 2, z: 3 }, session)).toBe(1)
+    expect(evaluateDensityFunction(cached, { x: 9, y: 2, z: 3 }, session)).toBe(1)
     expect(Object.isFrozen(session)).toBe(true)
 
     session.clear()
-    expect(session.evaluate(cached, { x: 9, y: 2, z: 3 })).toBe(9)
+    expect(evaluateDensityFunction(cached, { x: 9, y: 2, z: 3 }, session)).toBe(9)
   })
 
   it('caches flat and two-dimensional values by the horizontal position', () => {
@@ -92,8 +97,8 @@ describe('DensityFunction evaluation contexts', () => {
     expect(evaluateDensityFunction(twoDimensional, { x: 3, y: 8, z: 5 }, context)).toBe(8)
 
     const session = createDensityEvaluationSession(context)
-    expect(session.evaluate(flat, { x: 3, y: 4, z: 5 })).toBe(4)
-    expect(session.evaluate(flat, { x: 3, y: 8, z: 5 })).toBe(4)
+    expect(evaluateDensityFunction(flat, { x: 3, y: 4, z: 5 }, session)).toBe(4)
+    expect(evaluateDensityFunction(flat, { x: 3, y: 8, z: 5 }, session)).toBe(4)
   })
 
   it('caches exact samples within a cell and interpolates all eight corners', () => {
@@ -106,10 +111,10 @@ describe('DensityFunction evaluation contexts', () => {
     const interpolatedDensity = interpolated(nonlinear)
     const session = createDensityEvaluationSession(context)
 
-    expect(session.evaluate(allInCell, position)).toBe(2)
-    expect(session.evaluate(allInCell, position)).toBe(2)
-    expect(session.evaluate(allInCell, { x: 1, y: 3, z: 1 })).toBe(3)
-    expect(session.evaluate(interpolatedDensity, position)).toBe(35)
+    expect(evaluateDensityFunction(allInCell, position, session)).toBe(2)
+    expect(evaluateDensityFunction(allInCell, position, session)).toBe(2)
+    expect(evaluateDensityFunction(allInCell, { x: 1, y: 3, z: 1 }, session)).toBe(3)
+    expect(evaluateDensityFunction(interpolatedDensity, position, session)).toBe(35)
   })
 
   it('delegates blend nodes to the context callbacks', () => {
@@ -145,76 +150,146 @@ describe('DensityFunction evaluation contexts', () => {
 
   it('rejects missing or malformed context data at the evaluation boundary', () => {
     const cached = cacheOnce(densityConstant(1))
-    expect(() => evaluateDensityFunction(cached, position)).toThrow(
-      'cache-once requires an evaluation context',
-    )
-    expect(() => evaluateDensityFunction(blendDensity(densityConstant(1)), position)).toThrow(
-      'blend-density requires an evaluation context',
-    )
-    expect(() => evaluateDensityFunction(densityBlendAlpha(), position)).toThrow(
-      'blend-alpha requires an evaluation context',
-    )
-    expect(() => evaluateDensityFunction(densityBlendOffset(), position)).toThrow(
-      'blend-offset requires an evaluation context',
-    )
-    expect(() => evaluateDensityFunction(beardifier(), position)).toThrow(
-      'beardifier requires an evaluation context',
-    )
-    expect(() => evaluateDensityFunction(
-      densityBlendDensity(densityConstant(1)),
-      position,
-      createDensityEvaluationContext(),
-    )).toThrow('blend-density requires context.blendDensity')
-    expect(() => evaluateDensityFunction(
-      densityBlendAlpha(),
-      position,
-      createDensityEvaluationContext(),
-    )).toThrow('blend-alpha requires context.blendAlpha')
-    expect(() => evaluateDensityFunction(
-      densityBlendOffset(),
-      position,
-      createDensityEvaluationContext(),
-    )).toThrow('blend-offset requires context.blendOffset')
-    expect(() => evaluateDensityFunction(
-      beardifier(),
-      position,
-      createDensityEvaluationContext(),
-    )).toThrow('beardifier requires context.beardifier')
-    expect(() => createDensityEvaluationSession(null as never)).toThrow(
-      'evaluation context must be an object',
-    )
-    expect(() => evaluateDensityFunction(densityConstant(1), null as never)).toThrow(
-      'position must be an object',
-    )
-    expect(() => evaluateDensityFunction(densityConstant(1), position, null as never)).toThrow(
-      'evaluation context must be an object',
-    )
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(cached, densityPosition(position)),
+      ).message,
+    ).toContain('cache-once requires an evaluation context')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          blendDensity(densityConstant(1)),
+          densityPosition(position),
+        ),
+      ).message,
+    ).toContain('blend-density requires an evaluation context')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(densityBlendAlpha(), densityPosition(position)),
+      ).message,
+    ).toContain('blend-alpha requires an evaluation context')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(densityBlendOffset(), densityPosition(position)),
+      ).message,
+    ).toContain('blend-offset requires an evaluation context')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(beardifier(), densityPosition(position)),
+      ).message,
+    ).toContain('beardifier requires an evaluation context')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityBlendDensity(densityConstant(1)),
+          densityPosition(position),
+          createDensityEvaluationContext(),
+        ),
+      ).message,
+    ).toContain('blend-density requires context.blendDensity')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityBlendAlpha(),
+          densityPosition(position),
+          createDensityEvaluationContext(),
+        ),
+      ).message,
+    ).toContain('blend-alpha requires context.blendAlpha')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityBlendOffset(),
+          densityPosition(position),
+          createDensityEvaluationContext(),
+        ),
+      ).message,
+    ).toContain('blend-offset requires context.blendOffset')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          beardifier(),
+          densityPosition(position),
+          createDensityEvaluationContext(),
+        ),
+      ).message,
+    ).toContain('beardifier requires context.beardifier')
+    expect(
+      expectResultFailure(DensityApi.createDensityEvaluationSession(null as never)).message,
+    ).toContain('evaluation context must be an object')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(densityConstant(1), null as never),
+      ).message,
+    ).toContain('position must be an object')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityConstant(1),
+          densityPosition(position),
+          null as never,
+        ),
+      ).message,
+    ).toContain('evaluation context must be an object')
   })
 
   it('rejects invalid cell sizes and callback values', () => {
-    expect(() => createDensityEvaluationContext({ cellWidth: 0 })).toThrow(
-      'cellWidth must be a positive integer',
+    expect(
+      expectResultFailure(DensityApi.createDensityEvaluationContext(null as never)).message,
+    ).toContain('evaluation context options must be an object')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ cellWidth: 0 as never }),
+      ).message,
+    ).toContain('cellWidth must be a positive integer')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ cellWidth: 1.5 as never }),
+      ).message,
+    ).toContain('cellWidth must be a positive integer')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ cellHeight: -1 as never }),
+      ).message,
+    ).toContain('cellHeight must be a positive integer')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({
+          cellHeight: Number.NaN as never,
+        }),
+      ).message,
+    ).toContain('cellHeight must be a positive integer')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ blendDensity: null as never }),
+      ).message,
+    ).toContain('context.blendDensity must be a function when provided')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ blendAlpha: null as never }),
+      ).message,
+    ).toContain('context.blendAlpha must be a function when provided')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ blendOffset: null as never }),
+      ).message,
+    ).toContain('context.blendOffset must be a function when provided')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityEvaluationContext({ beardifier: null as never }),
+      ).message,
+    ).toContain('context.beardifier must be a function when provided')
+    const overflowingInput = densityBlendDensity(
+      densitySquare(densityConstant(Number.MAX_VALUE)),
     )
-    expect(() => createDensityEvaluationContext({ cellWidth: 1.5 })).toThrow(
-      'cellWidth must be a positive integer',
-    )
-    expect(() => createDensityEvaluationContext({ cellHeight: -1 })).toThrow(
-      'cellHeight must be a positive integer',
-    )
-    expect(() => createDensityEvaluationContext({ cellHeight: Number.NaN })).toThrow(
-      'cellHeight must be finite',
-    )
-    expect(() => createDensityEvaluationContext({ blendDensity: null as never })).toThrow(
-      'context.blendDensity must be a function when provided',
-    )
-    expect(() => createDensityEvaluationContext({ blendAlpha: null as never })).toThrow(
-      'context.blendAlpha must be a function when provided',
-    )
-    expect(() => createDensityEvaluationContext({ blendOffset: null as never })).toThrow(
-      'context.blendOffset must be a function when provided',
-    )
-    expect(() => createDensityEvaluationContext({ beardifier: null as never })).toThrow(
-      'context.beardifier must be a function when provided',
-    )
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          overflowingInput,
+          densityPosition(position),
+          createDensityEvaluationContext({ blendDensity: (value) => value }),
+        ),
+      ).message,
+    ).toContain('density value must be finite')
   })
 })

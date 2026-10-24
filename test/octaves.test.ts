@@ -10,14 +10,38 @@
  */
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
-import { Effect, FastCheck } from 'effect'
+import { Effect, Result } from 'effect'
+import * as FastCheck from 'fast-check'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import { createNoiseField } from '../src/domain/field'
-import { clampSigned, normalizeNoise, octaveNoise2D, signedFbm2D } from '../src/domain/octaves'
+import {
+  BoundedNoise,
+  NoiseAccumulator,
+  OctaveAmplitude,
+  OctaveCount,
+  OctaveFrequency,
+  clampSigned,
+  computeOctaveNoise,
+  normalizeNoise,
+  octaveNoise2D,
+  signedFbm2D,
+} from '../src/domain/octaves'
 import { createPerlinNoise2D } from '../src/domain/perlin'
 import { mulberry32, NoiseSeed } from '../src/domain/seed'
 
 const arbitrarySeed = FastCheck.integer({ min: 0, max: 4294967295 }).map((value) => NoiseSeed(value))
 const arbitraryCoordinate = FastCheck.double({ min: -1024, max: 1024, noNaN: true, noDefaultInfinity: true })
+const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+const octaveParams = (octaves: number, persistence: number, lacunarity: number) => ({
+  octaves: OctaveCount(octaves),
+  persistence: OctaveAmplitude(persistence),
+  lacunarity: OctaveFrequency(lacunarity),
+})
 
 const kernelFor = (seed: number) => createPerlinNoise2D(mulberry32(NoiseSeed(seed)))
 
@@ -36,7 +60,12 @@ describe('octaveNoise2D', () => {
           FastCheck.double({ min: 0.1, max: 1.5, noNaN: true, noDefaultInfinity: true }),
           FastCheck.double({ min: 1.5, max: 3, noNaN: true, noDefaultInfinity: true }),
           (seed, x, z, octaves, persistence, lacunarity) => {
-            const value = octaveNoise2D(kernelFor(seed), x, z, { octaves, persistence, lacunarity })
+            const value = expectSuccess(octaveNoise2D(
+              kernelFor(seed),
+              PositionAxis(x),
+              PositionAxis(z),
+              octaveParams(octaves, persistence, lacunarity),
+            ))
             return value >= 0 && value <= 1
           },
         ),
@@ -47,18 +76,33 @@ describe('octaveNoise2D', () => {
 
   effectTest('rejects invalid numeric parameters before entering the octave loop', () =>
     Effect.sync(() => {
-      const invalidParams = [
-        { octaves: Number.NaN, persistence: 0.5, lacunarity: 2 },
-        { octaves: 1.5, persistence: 0.5, lacunarity: 2 },
-        { octaves: Number.MAX_SAFE_INTEGER + 1, persistence: 0.5, lacunarity: 2 },
-        { octaves: 1, persistence: Number.NaN, lacunarity: 2 },
-        { octaves: 1, persistence: 0.5, lacunarity: Number.POSITIVE_INFINITY },
-      ]
-
-      for (const params of invalidParams) {
-        expect(() => octaveNoise2D(() => 0, 0, 0, params)).toThrow(RangeError)
+      for (const octaves of [Number.NaN, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(Result.isFailure(OctaveCount.result(octaves))).toBe(true)
       }
-      expect(() => signedFbm2D(() => 0, invalidParams[0]!)).toThrow(RangeError)
+      expect(Result.isFailure(OctaveAmplitude.result(Number.NaN))).toBe(true)
+      expect(Result.isFailure(OctaveFrequency.result(Number.POSITIVE_INFINITY))).toBe(true)
+      expect(Result.isFailure(NoiseAccumulator.result(Number.NaN))).toBe(true)
+    }),
+  )
+
+  effectTest('returns a typed failure when a sampler produces a non-normalizable value', () =>
+    Effect.sync(() => {
+      const invalidNamed = octaveNoise2D(
+        () => Number.NaN,
+        PositionAxis(0),
+        PositionAxis(0),
+        octaveParams(1, 0.5, 2),
+      )
+      const invalidPositional = computeOctaveNoise(
+        () => Number.NaN,
+        PositionAxis(0),
+        PositionAxis(0),
+        OctaveCount(1),
+        OctaveAmplitude(0.5),
+        OctaveFrequency(2),
+      )
+      expect(Result.isFailure(invalidNamed)).toBe(true)
+      expect(Result.isFailure(invalidPositional)).toBe(true)
     }),
   )
 
@@ -68,7 +112,14 @@ describe('octaveNoise2D', () => {
       // reference implementation returns 0 here; this repository does not.
       // See docs/design-notes.md.
       for (const octaves of [0, -1, -100]) {
-        expect(octaveNoise2D(kernelFor(1), 1.5, 2.5, { octaves, persistence: 0.5, lacunarity: 2 })).toBe(0.5)
+        expect(
+          expectSuccess(octaveNoise2D(
+            kernelFor(1),
+            PositionAxis(1.5),
+            PositionAxis(2.5),
+            octaveParams(octaves, 0.5, 2),
+          )),
+        ).toBe(0.5)
       }
     }),
   )
@@ -80,8 +131,13 @@ describe('octaveNoise2D', () => {
       // the normaliser agree — the thing a "clever" rewrite of the loop breaks.
       const constant = 0.25
       for (const octaves of [1, 2, 5, 12]) {
-        const value = octaveNoise2D(() => constant, 0, 0, { octaves, persistence: 0.5, lacunarity: 2 })
-        expect(value).toBeCloseTo(normalizeNoise(constant), 12)
+        const value = expectSuccess(octaveNoise2D(
+          () => constant,
+          PositionAxis(0),
+          PositionAxis(0),
+          octaveParams(octaves, 0.5, 2),
+        ))
+        expect(value).toBeCloseTo(normalizeNoise(BoundedNoise(constant)), 12)
       }
     }),
   )
@@ -90,7 +146,7 @@ describe('octaveNoise2D', () => {
     Effect.sync(() => {
       const kernel = kernelFor(7)
       const values = [1, 2, 3, 4, 8].map((octaves) =>
-        octaveNoise2D(kernel, 3.25, -8.75, { octaves, persistence: 0.5, lacunarity: 2 }),
+        expectSuccess(octaveNoise2D(kernel, PositionAxis(3.25), PositionAxis(-8.75), octaveParams(octaves, 0.5, 2))),
       )
       expect(new Set(values).size).toBe(values.length)
     }),
@@ -102,7 +158,7 @@ describe('signedFbm2D', () => {
     Effect.sync(() => {
       FastCheck.assert(
         FastCheck.property(arbitrarySeed, arbitraryCoordinate, arbitraryCoordinate, (seed, x, z) => {
-          const sampler = signedFbm2D(kernelFor(seed), { octaves: 4, persistence: 0.5, lacunarity: 2 })
+          const sampler = signedFbm2D(kernelFor(seed), octaveParams(4, 0.5, 2))
           const value = sampler(x, z)
           return value >= -1 && value <= 1
         }),
@@ -113,7 +169,7 @@ describe('signedFbm2D', () => {
 
   effectTest('actually produces negative values, so "signed" is not vacuously true', () =>
     Effect.sync(() => {
-      const sampler = signedFbm2D(kernelFor(11), { octaves: 3, persistence: 0.5, lacunarity: 2 })
+      const sampler = signedFbm2D(kernelFor(11), octaveParams(3, 0.5, 2))
       const samples = Array.from({ length: 512 }, (_unused, index) => sampler(index * 0.31, index * -0.17))
       expect(samples.some((value) => value < 0)).toBe(true)
       expect(samples.some((value) => value > 0)).toBe(true)
@@ -124,7 +180,7 @@ describe('signedFbm2D', () => {
     Effect.sync(() => {
       // amplitudeSum is 0 there, and 0/0 is NaN. A NaN escaping into terrain
       // generation produces a chunk of void that no test elsewhere explains.
-      const sampler = signedFbm2D(kernelFor(3), { octaves: 0, persistence: 0.5, lacunarity: 2 })
+      const sampler = signedFbm2D(kernelFor(3), octaveParams(0, 0.5, 2))
       expect(sampler(1.5, 2.5)).toBe(0)
       expect(Number.isNaN(sampler(0, 0))).toBe(false)
     }),
@@ -176,12 +232,12 @@ describe('field-level range and continuity', () => {
 
   effectTest('clampSigned and normalizeNoise are the exact inverses they claim to be at the boundaries', () =>
     Effect.sync(() => {
-      expect(normalizeNoise(-1)).toBe(0)
-      expect(normalizeNoise(0)).toBe(0.5)
-      expect(normalizeNoise(1)).toBe(1)
-      expect(clampSigned(-5)).toBe(-1)
-      expect(clampSigned(5)).toBe(1)
-      expect(clampSigned(0.25)).toBe(0.25)
+      expect(normalizeNoise(BoundedNoise(-1))).toBe(0)
+      expect(normalizeNoise(BoundedNoise(0))).toBe(0.5)
+      expect(normalizeNoise(BoundedNoise(1))).toBe(1)
+      expect(clampSigned(NoiseAccumulator(-5))).toBe(-1)
+      expect(clampSigned(NoiseAccumulator(5))).toBe(1)
+      expect(clampSigned(NoiseAccumulator(0.25))).toBe(0.25)
     }),
   )
 })

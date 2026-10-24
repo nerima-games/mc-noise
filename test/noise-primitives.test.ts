@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
+import { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   createNoisePrimitives,
   WEYL_3D,
@@ -9,6 +11,14 @@ import {
 } from '../src/domain/noise-primitives'
 import { NoiseSeed } from '../src/domain/seed'
 import { SCALE_C, SCALE_E, SCALE_J, SCALE_W } from '../src/domain/terrain-channels'
+import { OctaveAmplitude, OctaveCount, OctaveFrequency } from '../src/domain/octaves'
+
+const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 describe('createNoisePrimitives', () => {
   it('assembles deterministic raw, normalized, octave, and terrain-channel samplers', () => {
@@ -22,7 +32,10 @@ describe('createNoisePrimitives', () => {
     expect(first.raw3D(x, y, z)).toBe(second.raw3D(x, y, z))
     expect(first.noise2D(x, z)).toBe(second.noise2D(x, z))
     expect(first.noise3D(x, y, z)).toBe(first.raw3D(x, y, z))
-    expect(first.octaveNoise2D(x, z, 4, 0.5, 2)).toBe(second.octaveNoise2D(x, z, 4, 0.5, 2))
+    const octaveArguments = [OctaveCount(4), OctaveAmplitude(0.5), OctaveFrequency(2)] as const
+    expect(expectSuccess(first.octaveNoise2D(PositionAxis(x), PositionAxis(z), ...octaveArguments))).toBe(
+      expectSuccess(second.octaveNoise2D(PositionAxis(x), PositionAxis(z), ...octaveArguments)),
+    )
 
     for (const value of [
       first.noise2D(x, z),
@@ -47,12 +60,14 @@ describe('createNoisePrimitives', () => {
     expect(first.weirdnessAt(x, z)).toBe(first.weirdness(x * SCALE_W, z * SCALE_W))
     expect(first.jaggednessAt(x, z)).toBe(first.jaggedness(x * SCALE_J, z * SCALE_J))
 
-    const channels = first.sampleTerrainChannels(0, 0)
+    const channels = expectSuccess(first.sampleTerrainChannels(BlockAxis(0), BlockAxis(0)))
     expect(channels.continentalness).toHaveLength(256)
     expect(channels.erosion).toHaveLength(256)
     expect(channels.pv).toHaveLength(256)
     expect(channels.jaggedness).toHaveLength(256)
-    expect([...channels.continentalness]).toEqual([...second.sampleTerrainChannels(0, 0).continentalness])
+    expect([...channels.continentalness]).toEqual(
+      [...expectSuccess(second.sampleTerrainChannels(BlockAxis(0), BlockAxis(0))).continentalness],
+    )
   })
 
   it('keeps the published Weyl salts stable', () => {
@@ -67,6 +82,14 @@ describe('createNoisePrimitives', () => {
 
   it('preserves the portable no-octave sentinel', () => {
     const primitives = createNoisePrimitives(NoiseSeed(1))
-    expect(primitives.octaveNoise2D(1, 2, 0, 0.5, 2)).toBe(0)
+    expect(
+      expectSuccess(primitives.octaveNoise2D(
+        PositionAxis(1),
+        PositionAxis(2),
+        OctaveCount(0),
+        OctaveAmplitude(0.5),
+        OctaveFrequency(2),
+      )),
+    ).toBe(0)
   })
 })

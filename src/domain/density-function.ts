@@ -1,3 +1,4 @@
+import { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   DENSITY_DEFAULT_OFFSET,
   DENSITY_DEFAULT_SCALE,
@@ -11,40 +12,49 @@ import {
   DENSITY_TWO,
   DENSITY_ZERO,
 } from './density-function-constants.js'
-import type {
-  DensityBinaryOperation,
-  DensityBlendAlpha,
-  DensityBlendDensity,
-  DensityBlendOffset,
-  DensityBounds,
-  DensityCache2D,
-  DensityCacheAllInCell,
-  DensityCacheOnce,
-  DensityCoordinateAxis,
-  DensityCoordinateOptions,
-  DensityFindTopSurface,
-  DensityFlatCache,
-  DensityFunction,
-  DensityFunctionValue,
-  DensityInterpolated,
-  DensityLinearOperationType,
-  DensityMappedOperation,
-  DensityNoiseInRangeOptions,
-  DensityNoiseOptions,
-  DensityNoiseSource,
-  DensityOldBlendedNoiseOptions,
-  DensityOldBlendedNoiseSource,
-  DensityRarityValueMapper,
-  DensityShiftedNoise2DOptions,
-  DensityShiftedNoise2DShifts,
-  DensityShiftedNoiseShifts,
-  DensityUnaryOperation,
+import {
+  type DensityBinaryOperation,
+  type DensityBlendAlpha,
+  type DensityBlendDensity,
+  type DensityBlendOffset,
+  DensityBound,
+  type DensityBounds,
+  type DensityCache2D,
+  type DensityCacheAllInCell,
+  type DensityCacheOnce,
+  DensityCellSize,
+  type DensityCellSize as DensityCellSizeValue,
+  type DensityCoordinateAxis,
+  type DensityCoordinateOptions,
+  type DensityFindTopSurface,
+  type DensityFlatCache,
+  type DensityFunction,
+  type DensityFunctionResult,
+  type DensityFunctionValue,
+  type DensityInterpolated,
+  type DensityLinearOperationType,
+  type DensityMappedOperation,
+  type DensityNoiseInRangeOptions,
+  type DensityNoiseOptions,
+  type DensityNoiseSource,
+  type DensityOldBlendedNoiseOptions,
+  type DensityOldBlendedNoiseSource,
+  type DensityRarityValueMapper,
+  DensityScale,
+  type DensityScale as DensityScaleValue,
+  type DensityShiftedNoise2DOptions,
+  type DensityShiftedNoise2DShifts,
+  type DensityShiftedNoiseShifts,
+  type DensityUnaryOperation,
+  DensityValue,
+  type DensityValue as DensityValueType,
 } from './density-function-types.js'
 import {
   END_ISLANDS_MAX_VALUE,
   END_ISLANDS_MIN_VALUE,
   createEndIslandsSampler,
 } from './end-islands.js'
+import { type Spline, createSpline } from './spline.js'
 import {
   boundsForBinary,
   boundsForCoordinate,
@@ -57,111 +67,165 @@ import {
   createDensityBounds,
   densityBounds,
 } from './density-function-bounds.js'
-import {
-  densityRangeChoice,
-  densitySpline,
-  densityYClampedGradient,
-} from './density-function-spatial.js'
-import {
-  requireFiniteNumber,
-  requirePositiveInteger,
-  requireSafeInteger,
-} from './number-validation.js'
+import { densityRangeChoice, densitySpline, densityYClampedGradient } from './density-function-spatial.js'
+import { requireFiniteNumber, requirePositiveInteger, requireSafeInteger } from './number-validation.js'
 import type { NoiseFn3D } from './perlin.js'
-import { createSpline } from './spline.js'
+import { Result } from 'effect'
 
 type NoiseParameters = Readonly<{
-  readonly xzScale: number
-  readonly yScale: number
+  readonly xzScale: DensityScaleValue
+  readonly yScale: DensityScaleValue
 }>
 
-const requireAxis = (axis: DensityCoordinateAxis): DensityCoordinateAxis => {
-  if (axis !== 'x' && axis !== 'y' && axis !== 'z') {
-    throw new RangeError(`axis must be x, y, or z, received ${String(axis)}`)
+const DEFAULT_DENSITY_SCALE = DensityScale(DENSITY_DEFAULT_SCALE)
+const DEFAULT_POSITION_OFFSET = PositionAxis(DENSITY_DEFAULT_OFFSET)
+const ZERO_DENSITY_VALUE = DensityValue(DENSITY_ZERO)
+const SHIFT_OUTPUT_SCALE = DensityScale(DENSITY_SHIFT_OUTPUT_SCALE)
+const UNBOUNDED_DENSITY_BOUNDS: DensityBounds = Object.freeze({
+  maxValue: DensityBound(DENSITY_INFINITY),
+  minValue: DensityBound(DENSITY_NEGATIVE_INFINITY),
+})
+
+const requireAxis = (
+  axis: DensityCoordinateAxis,
+): Result.Result<DensityCoordinateAxis, RangeError> => {
+  if (axis === 'x' || axis === 'y' || axis === 'z') {
+    return Result.succeed(axis)
   }
-  return axis
+  return Result.fail(new RangeError(`axis must be x, y, or z, received ${String(axis)}`))
 }
 
-const requireBinaryOperation = (operation: DensityBinaryOperation): DensityBinaryOperation => {
-  if (operation !== 'add' && operation !== 'mul' && operation !== 'min' && operation !== 'max') {
-    throw new RangeError(`unsupported binary operation, received ${String(operation)}`)
+const requireBinaryOperation = (
+  operation: DensityBinaryOperation,
+): Result.Result<DensityBinaryOperation, RangeError> => {
+  if (operation === 'add' || operation === 'mul' || operation === 'min' || operation === 'max') {
+    return Result.succeed(operation)
   }
-  return operation
+  return Result.fail(new RangeError(`unsupported binary operation, received ${String(operation)}`))
 }
 
-const requireUnaryOperation = (operation: DensityUnaryOperation): DensityUnaryOperation => {
+const requireUnaryOperation = (
+  operation: DensityUnaryOperation,
+): Result.Result<DensityUnaryOperation, RangeError> => {
   if (
-    operation !== 'abs' &&
-    operation !== 'square' &&
-    operation !== 'cube' &&
-    operation !== 'half-negative' &&
-    operation !== 'quarter-negative' &&
-    operation !== 'squeeze' &&
-    operation !== 'invert'
+    operation === 'abs' ||
+    operation === 'square' ||
+    operation === 'cube' ||
+    operation === 'half-negative' ||
+    operation === 'quarter-negative' ||
+    operation === 'squeeze' ||
+    operation === 'invert'
   ) {
-    throw new RangeError(`unsupported unary operation, received ${String(operation)}`)
+    return Result.succeed(operation)
   }
-  return operation
+  return Result.fail(new RangeError(`unsupported unary operation, received ${String(operation)}`))
 }
 
 const requireLinearOperation = (
   operation: DensityLinearOperationType,
-): DensityLinearOperationType => {
-  if (operation !== 'add' && operation !== 'mul') {
-    throw new RangeError(`unsupported linear operation, received ${String(operation)}`)
+): Result.Result<DensityLinearOperationType, RangeError> => {
+  if (operation === 'add' || operation === 'mul') {
+    return Result.succeed(operation)
   }
-  return operation
+  return Result.fail(new RangeError(`unsupported linear operation, received ${String(operation)}`))
 }
 
 const requireRarityValueMapper = (
   mapper: DensityRarityValueMapper,
-): DensityRarityValueMapper => {
-  if (mapper !== 'type-1' && mapper !== 'type-2') {
-    throw new RangeError(`unsupported rarity value mapper, received ${String(mapper)}`)
+): Result.Result<DensityRarityValueMapper, RangeError> => {
+  if (mapper === 'type-1' || mapper === 'type-2') {
+    return Result.succeed(mapper)
   }
-  return mapper
+  return Result.fail(
+    new RangeError(`unsupported rarity value mapper, received ${String(mapper)}`),
+  )
 }
 
-const readNoiseParameters = (options: DensityNoiseOptions): NoiseParameters => ({
-  xzScale: requireFiniteNumber('xzScale', options.xzScale ?? DENSITY_DEFAULT_SCALE),
-  yScale: requireFiniteNumber('yScale', options.yScale ?? DENSITY_DEFAULT_SCALE),
-})
+const requireDensityScale = (
+  name: string,
+  value: DensityScaleValue,
+): Result.Result<DensityScaleValue, RangeError> =>
+  Result.map(requireFiniteNumber(value, () => `${name} must be finite`), DensityScale)
 
-const normalizeNoiseSource = (source: DensityNoiseSource): DensityNoiseSource => {
-  if (typeof source.sample !== 'function') {
-    throw new TypeError('noise source sample must be a function')
+const requireDensityValue = (
+  name: string,
+  value: DensityValueType,
+): Result.Result<DensityValueType, RangeError> =>
+  Result.map(requireFiniteNumber(value, () => `${name} must be finite`), DensityValue)
+
+const requirePositionAxis = (
+  name: string,
+  value: PositionAxis,
+): Result.Result<PositionAxis, RangeError> =>
+  Result.map(requireFiniteNumber(value, () => `${name} must be finite`), PositionAxis)
+
+const requireBlockAxis = (
+  name: string,
+  value: BlockAxis,
+): Result.Result<BlockAxis, RangeError> =>
+  Result.map(requireSafeInteger(value, () => `${name} must be a safe integer`), BlockAxis)
+
+const readNoiseParameters = (
+  options: DensityNoiseOptions,
+): DensityFunctionResult<NoiseParameters> => {
+  if (options === null || typeof options !== 'object') {
+    return Result.fail(new TypeError('noise options must be an object'))
   }
-  const bounds = createDensityBounds(source.minValue, source.maxValue)
-  return Object.freeze({
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    sample: source.sample,
+  return Result.gen(function* readNoiseParametersResult() {
+    const xzScale = yield* requireDensityScale(
+      'xzScale',
+      options.xzScale ?? DEFAULT_DENSITY_SCALE,
+    )
+    const yScale = yield* requireDensityScale(
+      'yScale',
+      options.yScale ?? DEFAULT_DENSITY_SCALE,
+    )
+    return { xzScale, yScale }
   })
+}
+
+const normalizeNoiseSource = (
+  source: DensityNoiseSource,
+): DensityFunctionResult<DensityNoiseSource> => {
+  if (source === null || typeof source !== 'object') {
+    return Result.fail(new TypeError('noise source must be an object'))
+  }
+  if (typeof source.sample !== 'function') {
+    return Result.fail(new TypeError('noise source sample must be a function'))
+  }
+  return Result.map(createDensityBounds(source.minValue, source.maxValue), (bounds) =>
+    Object.freeze({
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      sample: source.sample,
+    }),
+  )
 }
 
 const normalizeOldBlendedNoiseSource = (
   source: DensityOldBlendedNoiseSource,
-): DensityOldBlendedNoiseSource => {
+): DensityFunctionResult<DensityOldBlendedNoiseSource> => {
   if (source === null || typeof source !== 'object') {
-    throw new TypeError('old blended noise source must be an object')
+    return Result.fail(new TypeError('old blended noise source must be an object'))
   }
   if (typeof source.mainNoise !== 'function') {
-    throw new TypeError('old blended noise mainNoise must be a function')
+    return Result.fail(new TypeError('old blended noise mainNoise must be a function'))
   }
   if (typeof source.minLimitNoise !== 'function') {
-    throw new TypeError('old blended noise minLimitNoise must be a function')
+    return Result.fail(new TypeError('old blended noise minLimitNoise must be a function'))
   }
   if (typeof source.maxLimitNoise !== 'function') {
-    throw new TypeError('old blended noise maxLimitNoise must be a function')
+    return Result.fail(new TypeError('old blended noise maxLimitNoise must be a function'))
   }
-  const bounds = createDensityBounds(source.minValue, source.maxValue)
-  return Object.freeze({
-    mainNoise: source.mainNoise,
-    maxLimitNoise: source.maxLimitNoise,
-    maxValue: bounds.maxValue,
-    minLimitNoise: source.minLimitNoise,
-    minValue: bounds.minValue,
-  })
+  return Result.map(createDensityBounds(source.minValue, source.maxValue), (bounds) =>
+    Object.freeze({
+      mainNoise: source.mainNoise,
+      maxLimitNoise: source.maxLimitNoise,
+      maxValue: bounds.maxValue,
+      minLimitNoise: source.minLimitNoise,
+      minValue: bounds.minValue,
+    }),
+  )
 }
 
 const freezeDensity = <DensityNode extends DensityFunction>(density: DensityNode): DensityNode =>
@@ -170,16 +234,20 @@ const freezeDensity = <DensityNode extends DensityFunction>(density: DensityNode
 export const createDensityNoiseSource = (
   sample: NoiseFn3D,
   bounds: DensityBounds,
-): DensityNoiseSource => {
+): DensityFunctionResult<DensityNoiseSource> => {
   if (typeof sample !== 'function') {
-    throw new TypeError('noise source sample must be a function')
+    return Result.fail(new TypeError('noise source sample must be a function'))
   }
-  const normalizedBounds = createDensityBounds(bounds.minValue, bounds.maxValue)
-  return Object.freeze({
-    maxValue: normalizedBounds.maxValue,
-    minValue: normalizedBounds.minValue,
-    sample,
-  })
+  if (bounds === null || typeof bounds !== 'object') {
+    return Result.fail(new TypeError('noise source bounds must be an object'))
+  }
+  return Result.map(createDensityBounds(bounds.minValue, bounds.maxValue), (normalizedBounds) =>
+    Object.freeze({
+      maxValue: normalizedBounds.maxValue,
+      minValue: normalizedBounds.minValue,
+      sample,
+    }),
+  )
 }
 
 export const createDensityOldBlendedNoiseSource = (
@@ -188,33 +256,42 @@ export const createDensityOldBlendedNoiseSource = (
     'mainNoise' | 'minLimitNoise' | 'maxLimitNoise'
   >,
   bounds: DensityBounds,
-): DensityOldBlendedNoiseSource => {
+): DensityFunctionResult<DensityOldBlendedNoiseSource> => {
   if (source === null || typeof source !== 'object') {
-    throw new TypeError('old blended noise source must be an object')
+    return Result.fail(new TypeError('old blended noise source must be an object'))
   }
-  const normalizedBounds = createDensityBounds(bounds.minValue, bounds.maxValue)
-  return normalizeOldBlendedNoiseSource({
-    mainNoise: source.mainNoise,
-    maxLimitNoise: source.maxLimitNoise,
-    maxValue: normalizedBounds.maxValue,
-    minLimitNoise: source.minLimitNoise,
-    minValue: normalizedBounds.minValue,
-  })
+  if (bounds === null || typeof bounds !== 'object') {
+    return Result.fail(new TypeError('old blended noise bounds must be an object'))
+  }
+  return Result.flatMap(
+    createDensityBounds(bounds.minValue, bounds.maxValue),
+    (normalizedBounds) =>
+      normalizeOldBlendedNoiseSource({
+        mainNoise: source.mainNoise,
+        maxLimitNoise: source.maxLimitNoise,
+        maxValue: normalizedBounds.maxValue,
+        minLimitNoise: source.minLimitNoise,
+        minValue: normalizedBounds.minValue,
+      }),
+  )
 }
 
-export const densityConstant = (value: number): DensityFunction => {
-  const finiteValue = requireFiniteNumber('value', value)
-  return freezeDensity({
+const makeDensityConstant = (value: DensityValueType): DensityFunction =>
+  freezeDensity({
     kind: 'constant',
-    maxValue: finiteValue,
-    minValue: finiteValue,
-    value: finiteValue,
+    maxValue: DensityBound(value),
+    minValue: DensityBound(value),
+    value,
   })
-}
 
-export const densityZero: DensityFunction = densityConstant(DENSITY_ZERO)
+export const densityConstant = (
+  value: DensityValueType,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(requireDensityValue('value', value), makeDensityConstant)
 
-type DensitySplineDefinition = ReturnType<typeof createSpline>
+export const densityZero: DensityFunction = makeDensityConstant(ZERO_DENSITY_VALUE)
+
+type DensitySplineDefinition = Spline
 
 export type DensitySplineInput = Readonly<{
   readonly coordinate: DensityFunction
@@ -224,294 +301,344 @@ export type DensitySplineInput = Readonly<{
 export const createDensitySpline = (
   coordinate: DensityFunction,
   spline: DensitySplineDefinition,
-): DensitySplineInput =>
-  Object.freeze({
-    coordinate,
-    spline: createSpline(spline),
-  })
+): DensityFunctionResult<DensitySplineInput> =>
+  Result.map(createSpline(spline), (normalizedSpline) =>
+    Object.freeze({
+      coordinate,
+      spline: normalizedSpline,
+    }),
+  )
 
 const normalizeDensityValue = (
   name: 'min' | 'max',
   value: DensityFunctionValue,
-): DensityFunction => {
+): DensityFunctionResult<DensityFunction> => {
   if (typeof value === 'number') {
-    return densityConstant(requireFiniteNumber(name, value))
+    return Result.map(requireDensityValue(name, value), makeDensityConstant)
   }
-  return value
+  return Result.succeed(value)
 }
 
 export const densityCoordinate = (
   axis: DensityCoordinateAxis,
   options: DensityCoordinateOptions = {},
-): DensityFunction => {
-  const coordinateAxis = requireAxis(axis)
-  const scale = requireFiniteNumber('scale', options.scale ?? DENSITY_DEFAULT_SCALE)
-  const offset = requireFiniteNumber('offset', options.offset ?? DENSITY_DEFAULT_OFFSET)
-  const bounds = boundsForCoordinate(scale, offset)
-  return freezeDensity({
-    axis: coordinateAxis,
-    kind: 'coordinate',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    offset,
-    scale,
+): DensityFunctionResult<DensityFunction> => {
+  if (options === null || typeof options !== 'object') {
+    return Result.fail(new TypeError('coordinate options must be an object'))
+  }
+  return Result.gen(function* densityCoordinateResult() {
+    const coordinateAxis = yield* requireAxis(axis)
+    const scale = yield* requireDensityScale(
+      'scale',
+      options.scale ?? DEFAULT_DENSITY_SCALE,
+    )
+    const offset = yield* requirePositionAxis(
+      'offset',
+      options.offset ?? DEFAULT_POSITION_OFFSET,
+    )
+    const bounds = boundsForCoordinate(scale, offset)
+    return freezeDensity({
+      axis: coordinateAxis,
+      kind: 'coordinate',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      offset,
+      scale,
+    })
   })
 }
 
 export const densityNoise = (
   source: DensityNoiseSource,
   options: DensityNoiseOptions = {},
-): DensityFunction => {
-  const normalizedSource = normalizeNoiseSource(source)
-  const parameters = readNoiseParameters(options)
-  const bounds = boundsForNoise(normalizedSource)
-  return freezeDensity({
-    kind: 'noise',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    source: normalizedSource,
-    xzScale: parameters.xzScale,
-    yScale: parameters.yScale,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityNoiseResult() {
+    const normalizedSource = yield* normalizeNoiseSource(source)
+    const parameters = yield* readNoiseParameters(options)
+    const bounds = boundsForNoise(normalizedSource)
+    return freezeDensity({
+      kind: 'noise',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      source: normalizedSource,
+      xzScale: parameters.xzScale,
+      yScale: parameters.yScale,
+    })
   })
-}
 
 export const densityOldBlendedNoise = (
   source: DensityOldBlendedNoiseSource,
   options: DensityOldBlendedNoiseOptions,
-): DensityFunction => {
+): DensityFunctionResult<DensityFunction> => {
   if (options === null || typeof options !== 'object') {
-    throw new TypeError('old blended noise options must be an object')
+    return Result.fail(new TypeError('old blended noise options must be an object'))
   }
-  const normalizedSource = normalizeOldBlendedNoiseSource(source)
-  return freezeDensity({
-    kind: 'old-blended-noise',
-    maxValue: normalizedSource.maxValue,
-    minValue: normalizedSource.minValue,
-    smearScaleMultiplier: requireFiniteNumber(
+  return Result.gen(function* densityOldBlendedNoiseResult() {
+    const normalizedSource = yield* normalizeOldBlendedNoiseSource(source)
+    const smearScaleMultiplier = yield* requireDensityScale(
       'smearScaleMultiplier',
       options.smearScaleMultiplier,
-    ),
-    source: normalizedSource,
-    xzFactor: requireFiniteNumber('xzFactor', options.xzFactor),
-    xzScale: requireFiniteNumber('xzScale', options.xzScale),
-    yFactor: requireFiniteNumber('yFactor', options.yFactor),
-    yScale: requireFiniteNumber('yScale', options.yScale),
+    )
+    const xzFactor = yield* requireDensityScale('xzFactor', options.xzFactor)
+    const xzScale = yield* requireDensityScale('xzScale', options.xzScale)
+    const yFactor = yield* requireDensityScale('yFactor', options.yFactor)
+    const yScale = yield* requireDensityScale('yScale', options.yScale)
+    return freezeDensity({
+      kind: 'old-blended-noise',
+      maxValue: normalizedSource.maxValue,
+      minValue: normalizedSource.minValue,
+      smearScaleMultiplier,
+      source: normalizedSource,
+      xzFactor,
+      xzScale,
+      yFactor,
+      yScale,
+    })
   })
 }
 
 export const densityBeardifier = (): DensityFunction =>
   freezeDensity({
     kind: 'beardifier',
-    maxValue: DENSITY_INFINITY,
-    minValue: DENSITY_NEGATIVE_INFINITY,
+    maxValue: DensityBound(DENSITY_INFINITY),
+    minValue: DensityBound(DENSITY_NEGATIVE_INFINITY),
   })
 
-export const densityShift = (source: DensityNoiseSource): DensityFunction => {
-  const normalizedSource = normalizeNoiseSource(source)
-  const bounds = boundsForScaledNoise(normalizedSource, DENSITY_SHIFT_OUTPUT_SCALE)
-  return freezeDensity({
-    kind: 'shift',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    source: normalizedSource,
+export const densityShift = (
+  source: DensityNoiseSource,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(normalizeNoiseSource(source), (normalizedSource) => {
+    const bounds = boundsForScaledNoise(normalizedSource, SHIFT_OUTPUT_SCALE)
+    return freezeDensity({
+      kind: 'shift',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      source: normalizedSource,
+    })
   })
-}
 
-export const densityShiftA = (source: DensityNoiseSource): DensityFunction => {
-  const normalizedSource = normalizeNoiseSource(source)
-  const bounds = boundsForScaledNoise(normalizedSource, DENSITY_SHIFT_OUTPUT_SCALE)
-  return freezeDensity({
-    kind: 'shift-a',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    source: normalizedSource,
+export const densityShiftA = (
+  source: DensityNoiseSource,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(normalizeNoiseSource(source), (normalizedSource) => {
+    const bounds = boundsForScaledNoise(normalizedSource, SHIFT_OUTPUT_SCALE)
+    return freezeDensity({
+      kind: 'shift-a',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      source: normalizedSource,
+    })
   })
-}
 
-export const densityShiftB = (source: DensityNoiseSource): DensityFunction => {
-  const normalizedSource = normalizeNoiseSource(source)
-  const bounds = boundsForScaledNoise(normalizedSource, DENSITY_SHIFT_OUTPUT_SCALE)
-  return freezeDensity({
-    kind: 'shift-b',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    source: normalizedSource,
+export const densityShiftB = (
+  source: DensityNoiseSource,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(normalizeNoiseSource(source), (normalizedSource) => {
+    const bounds = boundsForScaledNoise(normalizedSource, SHIFT_OUTPUT_SCALE)
+    return freezeDensity({
+      kind: 'shift-b',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      source: normalizedSource,
+    })
   })
-}
 
 export const densityShiftedNoise = (
   source: DensityNoiseSource,
   shifts: DensityShiftedNoiseShifts,
   options: DensityNoiseOptions = {},
-): DensityFunction => {
-  const normalizedSource = normalizeNoiseSource(source)
-  const parameters = readNoiseParameters(options)
-  const bounds = boundsForNoise(normalizedSource)
-  return freezeDensity({
-    kind: 'shifted-noise',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    shiftX: shifts.x,
-    shiftY: shifts.y,
-    shiftZ: shifts.z,
-    source: normalizedSource,
-    xzScale: parameters.xzScale,
-    yScale: parameters.yScale,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityShiftedNoiseResult() {
+    const normalizedSource = yield* normalizeNoiseSource(source)
+    const parameters = yield* readNoiseParameters(options)
+    const bounds = boundsForNoise(normalizedSource)
+    return freezeDensity({
+      kind: 'shifted-noise',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      shiftX: shifts.x,
+      shiftY: shifts.y,
+      shiftZ: shifts.z,
+      source: normalizedSource,
+      xzScale: parameters.xzScale,
+      yScale: parameters.yScale,
+    })
   })
-}
 
 export const densityLinearOperation = (
   operation: DensityLinearOperationType,
   input: DensityFunction,
-  argument: number,
-): DensityFunction => {
-  const linearOperation = requireLinearOperation(operation)
-  const finiteArgument = requireFiniteNumber('argument', argument)
-  const bounds = boundsForLinearOperation(linearOperation, input, finiteArgument)
-  return freezeDensity({
-    argument: finiteArgument,
-    input,
-    kind: 'linear-operation',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    operation: linearOperation,
+  argument: DensityValueType,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityLinearOperationResult() {
+    const linearOperation = yield* requireLinearOperation(operation)
+    const finiteArgument = yield* requireDensityValue('argument', argument)
+    const bounds = boundsForLinearOperation(linearOperation, input, finiteArgument)
+    return freezeDensity({
+      argument: finiteArgument,
+      input,
+      kind: 'linear-operation',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      operation: linearOperation,
+    })
   })
-}
 
-const maxRarityFor = (mapper: DensityRarityValueMapper): number => {
+const maxRarityFor = (mapper: DensityRarityValueMapper): DensityScaleValue => {
   if (mapper === 'type-1') {
-    return DENSITY_THREE
+    return DensityScale(DENSITY_THREE)
   }
-  return DENSITY_TWO
+  return DensityScale(DENSITY_TWO)
 }
 
 export const densityWeirdScaledSampler = (
   input: DensityFunction,
   source: DensityNoiseSource,
   rarityValueMapper: DensityRarityValueMapper,
-): DensityFunction => {
-  const mapper = requireRarityValueMapper(rarityValueMapper)
-  const normalizedSource = normalizeNoiseSource(source)
-  const bounds = boundsForWeirdScaledSampler(normalizedSource, maxRarityFor(mapper))
-  return freezeDensity({
-    input,
-    kind: 'weird-scaled-sampler',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    rarityValueMapper: mapper,
-    source: normalizedSource,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityWeirdScaledSamplerResult() {
+    const mapper = yield* requireRarityValueMapper(rarityValueMapper)
+    const normalizedSource = yield* normalizeNoiseSource(source)
+    const bounds = boundsForWeirdScaledSampler(normalizedSource, maxRarityFor(mapper))
+    return freezeDensity({
+      input,
+      kind: 'weird-scaled-sampler',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      rarityValueMapper: mapper,
+      source: normalizedSource,
+    })
   })
-}
 
-export const densityEndIslands = (seed: bigint): DensityFunction => {
-  const sampler = createEndIslandsSampler(seed)
-  return freezeDensity({
-    kind: 'end-islands',
-    maxValue: END_ISLANDS_MAX_VALUE,
-    minValue: END_ISLANDS_MIN_VALUE,
-    sampler,
-    seed,
-  })
-}
+export const densityEndIslands = (
+  seed: bigint,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(createEndIslandsSampler(seed), (sampler) =>
+    freezeDensity({
+      kind: 'end-islands',
+      maxValue: DensityBound(END_ISLANDS_MAX_VALUE),
+      minValue: DensityBound(END_ISLANDS_MIN_VALUE),
+      sampler,
+      seed,
+    }),
+  )
 
 export const densityBinary = (
   operation: DensityBinaryOperation,
   left: DensityFunction,
   right: DensityFunction,
-): DensityFunction => {
-  const binaryOperation = requireBinaryOperation(operation)
-  const bounds = boundsForBinary(binaryOperation, left, right)
-  return freezeDensity({
-    kind: 'binary',
-    left,
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    operation: binaryOperation,
-    right,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityBinaryResult() {
+    const binaryOperation = yield* requireBinaryOperation(operation)
+    const bounds = boundsForBinary(binaryOperation, left, right)
+    return freezeDensity({
+      kind: 'binary',
+      left,
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      operation: binaryOperation,
+      right,
+    })
   })
-}
 
-export const densityAdd = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+export const densityAdd = (
+  left: DensityFunction,
+  right: DensityFunction,
+): DensityFunctionResult<DensityFunction> =>
   densityBinary('add', left, right)
 
-export const densityMul = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+export const densityMul = (
+  left: DensityFunction,
+  right: DensityFunction,
+): DensityFunctionResult<DensityFunction> =>
   densityBinary('mul', left, right)
 
-export const densityMin = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+export const densityMin = (
+  left: DensityFunction,
+  right: DensityFunction,
+): DensityFunctionResult<DensityFunction> =>
   densityBinary('min', left, right)
 
-export const densityMax = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+export const densityMax = (
+  left: DensityFunction,
+  right: DensityFunction,
+): DensityFunctionResult<DensityFunction> =>
   densityBinary('max', left, right)
 
 export const densityUnary = (
   operation: DensityUnaryOperation,
   input: DensityFunction,
-): DensityFunction => {
-  const unaryOperation = requireUnaryOperation(operation)
-  const bounds = boundsForUnary(unaryOperation, input)
-  return freezeDensity({
-    input,
-    kind: 'unary',
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    operation: unaryOperation,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityUnaryResult() {
+    const unaryOperation = yield* requireUnaryOperation(operation)
+    const bounds = boundsForUnary(unaryOperation, input)
+    return freezeDensity({
+      input,
+      kind: 'unary',
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      operation: unaryOperation,
+    })
   })
-}
 
-export const densityAbs = (input: DensityFunction): DensityFunction => densityUnary('abs', input)
+export const densityAbs = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
+  densityUnary('abs', input)
 
-export const densitySquare = (input: DensityFunction): DensityFunction => densityUnary('square', input)
+export const densitySquare = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
+  densityUnary('square', input)
 
-export const densityCube = (input: DensityFunction): DensityFunction => densityUnary('cube', input)
+export const densityCube = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
+  densityUnary('cube', input)
 
-export const densityHalfNegative = (input: DensityFunction): DensityFunction =>
+export const densityHalfNegative = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
   densityUnary('half-negative', input)
 
-export const densityQuarterNegative = (input: DensityFunction): DensityFunction =>
+export const densityQuarterNegative = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
   densityUnary('quarter-negative', input)
 
-export const densitySqueeze = (input: DensityFunction): DensityFunction =>
+export const densitySqueeze = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
   densityUnary('squeeze', input)
 
-export const densityInvert = (input: DensityFunction): DensityFunction =>
+export const densityInvert = (input: DensityFunction): DensityFunctionResult<DensityFunction> =>
   densityUnary('invert', input)
 
 export const densityMap = (
   input: DensityFunction,
   operation: DensityMappedOperation,
-): DensityFunction => densityUnary(operation, input)
+): DensityFunctionResult<DensityFunction> => densityUnary(operation, input)
 
 export const densityMapRange = (
   input: DensityFunction,
-  min: number,
-  max: number,
-): DensityFunction => {
-  const finiteMin = requireFiniteNumber('min', min)
-  const finiteMax = requireFiniteNumber('max', max)
-  const midpoint = requireFiniteNumber(
-    'map range midpoint',
-    (finiteMin + finiteMax) * DENSITY_HALF,
-  )
-  const scale = requireFiniteNumber(
-    'map range scale',
-    (finiteMax - finiteMin) * DENSITY_HALF,
-  )
-  return densityAdd(
-    densityConstant(midpoint),
-    densityLinearOperation('mul', input, scale),
-  )
-}
+  min: DensityValueType,
+  max: DensityValueType,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityMapRangeResult() {
+    const finiteMin = yield* requireDensityValue('min', min)
+    const finiteMax = yield* requireDensityValue('max', max)
+    const midpointNumber = yield* requireFiniteNumber(
+      (finiteMin + finiteMax) * DENSITY_HALF,
+      () => 'map range midpoint must be finite',
+    )
+    const scaleNumber = yield* requireFiniteNumber(
+      (finiteMax - finiteMin) * DENSITY_HALF,
+      () => 'map range scale must be finite',
+    )
+    const midpoint = DensityValue(midpointNumber)
+    const scale = DensityValue(scaleNumber)
+    const scaled = yield* densityLinearOperation('mul', input, scale)
+    return yield* densityAdd(makeDensityConstant(midpoint), scaled)
+  })
 
 export type DensityMappedNoiseArguments =
-  | readonly [fromY: number, toY: number]
-  | readonly [yScale: number, fromY: number, toY: number]
-  | readonly [xzScale: number, yScale: number, fromY: number, toY: number]
+  | readonly [fromY: BlockAxis, toY: BlockAxis]
+  | readonly [yScale: DensityScaleValue, fromY: BlockAxis, toY: BlockAxis]
+  | readonly [xzScale: DensityScaleValue, yScale: DensityScaleValue, fromY: BlockAxis, toY: BlockAxis]
 
 type DensityMappedNoiseParameters = Readonly<{
-  readonly fromY: number
-  readonly toY: number
-  readonly xzScale: number
-  readonly yScale: number
+  readonly fromY: BlockAxis
+  readonly toY: BlockAxis
+  readonly xzScale: DensityScaleValue
+  readonly yScale: DensityScaleValue
 }>
 
 const readDensityMappedNoiseParameters = (
@@ -522,8 +649,8 @@ const readDensityMappedNoiseParameters = (
     return {
       fromY,
       toY,
-      xzScale: DENSITY_DEFAULT_SCALE,
-      yScale: DENSITY_DEFAULT_SCALE,
+      xzScale: DEFAULT_DENSITY_SCALE,
+      yScale: DEFAULT_DENSITY_SCALE,
     }
   }
   if (parameters.length === DENSITY_THREE) {
@@ -531,7 +658,7 @@ const readDensityMappedNoiseParameters = (
     return {
       fromY,
       toY,
-      xzScale: DENSITY_DEFAULT_SCALE,
+      xzScale: DEFAULT_DENSITY_SCALE,
       yScale,
     }
   }
@@ -547,36 +674,39 @@ const readDensityMappedNoiseParameters = (
 export const densityMappedNoise = (
   source: DensityNoiseSource,
   ...parameters: DensityMappedNoiseArguments
-): DensityFunction => {
+): DensityFunctionResult<DensityFunction> => {
   const mapped = readDensityMappedNoiseParameters(parameters)
-  return densityMapRange(
+  return Result.flatMap(
     densityNoise(source, {
       xzScale: mapped.xzScale,
       yScale: mapped.yScale,
     }),
-    mapped.fromY,
-    mapped.toY,
+    (noiseDensity) =>
+      densityMapRange(
+        noiseDensity,
+        DensityValue(mapped.fromY),
+        DensityValue(mapped.toY),
+      ),
   )
 }
 
 export const densityNoiseInRange = (
   source: DensityNoiseSource,
   options: DensityNoiseInRangeOptions,
-): DensityFunction =>
-  densityMapRange(
+): DensityFunctionResult<DensityFunction> =>
+  Result.flatMap(
     densityNoise(source, {
-      xzScale: options.xzScale ?? DENSITY_DEFAULT_SCALE,
-      yScale: options.yScale ?? DENSITY_DEFAULT_SCALE,
+      xzScale: options.xzScale ?? DEFAULT_DENSITY_SCALE,
+      yScale: options.yScale ?? DEFAULT_DENSITY_SCALE,
     }),
-    options.min,
-    options.max,
+    (noiseDensity) => densityMapRange(noiseDensity, options.min, options.max),
   )
 
 export const densityShiftedNoise2D = (
   source: DensityNoiseSource,
   shifts: DensityShiftedNoise2DShifts,
   options: DensityShiftedNoise2DOptions = {},
-): DensityFunction =>
+): DensityFunctionResult<DensityFunction> =>
   densityShiftedNoise(
     source,
     {
@@ -585,8 +715,8 @@ export const densityShiftedNoise2D = (
       z: shifts.z,
     },
     {
-      xzScale: options.xzScale ?? DENSITY_DEFAULT_SCALE,
-      yScale: DENSITY_ZERO,
+      xzScale: options.xzScale ?? DEFAULT_DENSITY_SCALE,
+      yScale: DensityScale(DENSITY_ZERO),
     },
   )
 
@@ -594,27 +724,31 @@ const densityContextBounds = (input: DensityFunction): DensityBounds =>
   densityBounds(input)
 
 const densityUnboundedBounds = (): DensityBounds =>
-  createDensityBounds(DENSITY_NEGATIVE_INFINITY, DENSITY_INFINITY)
+  UNBOUNDED_DENSITY_BOUNDS
 
 export const densityFindTopSurface = (
   density: DensityFunction,
   upperBound: DensityFunction,
-  lowerBound: number,
-  cellHeight: number,
-): DensityFindTopSurface => {
-  const normalizedLowerBound = requireSafeInteger('lowerBound', lowerBound)
-  const normalizedCellHeight = requirePositiveInteger('cellHeight', cellHeight)
-  const bounds = boundsForFindTopSurface(densityBounds(upperBound), normalizedLowerBound)
-  return freezeDensity({
-    cellHeight: normalizedCellHeight,
-    density,
-    kind: 'find-top-surface',
-    lowerBound: normalizedLowerBound,
-    maxValue: bounds.maxValue,
-    minValue: bounds.minValue,
-    upperBound,
+  lowerBound: BlockAxis,
+  cellHeight: DensityCellSizeValue,
+): DensityFunctionResult<DensityFindTopSurface> =>
+  Result.gen(function* densityFindTopSurfaceResult() {
+    const normalizedLowerBound = yield* requireBlockAxis('lowerBound', lowerBound)
+    const normalizedCellHeight = yield* Result.map(
+      requirePositiveInteger(cellHeight, () => 'cellHeight must be a positive integer'),
+      DensityCellSize,
+    )
+    const bounds = boundsForFindTopSurface(densityBounds(upperBound), normalizedLowerBound)
+    return freezeDensity({
+      cellHeight: normalizedCellHeight,
+      density,
+      kind: 'find-top-surface',
+      lowerBound: normalizedLowerBound,
+      maxValue: bounds.maxValue,
+      minValue: bounds.minValue,
+      upperBound,
+    })
   })
-}
 
 export const densityInterpolated = (input: DensityFunction): DensityInterpolated => {
   const bounds = densityContextBounds(input)
@@ -679,7 +813,10 @@ export const densityBlendDensity = (input: DensityFunction): DensityBlendDensity
 }
 
 export const densityBlendAlpha = (): DensityBlendAlpha => {
-  const bounds = createDensityBounds(DENSITY_ZERO, DENSITY_ONE)
+  const bounds = Object.freeze({
+    maxValue: DensityBound(DENSITY_ONE),
+    minValue: DensityBound(DENSITY_ZERO),
+  })
   return freezeDensity({
     kind: 'blend-alpha',
     maxValue: bounds.maxValue,
@@ -709,15 +846,19 @@ export const densityLerp = (
   delta: DensityFunction,
   min: DensityFunctionValue,
   max: DensityFunctionValue,
-): DensityFunction => {
-  const minDensity = normalizeDensityValue('min', min)
-  const maxDensity = normalizeDensityValue('max', max)
-  const difference = densityAdd(
-    maxDensity,
-    densityLinearOperation('mul', minDensity, DENSITY_NEGATIVE_ONE),
-  )
-  return densityAdd(minDensity, densityMul(delta, difference))
-}
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* densityLerpResult() {
+    const minDensity = yield* normalizeDensityValue('min', min)
+    const maxDensity = yield* normalizeDensityValue('max', max)
+    const negativeMin = yield* densityLinearOperation(
+      'mul',
+      minDensity,
+      DensityValue(DENSITY_NEGATIVE_ONE),
+    )
+    const difference = yield* densityAdd(maxDensity, negativeMin)
+    const scaledDelta = yield* densityMul(delta, difference)
+    return yield* densityAdd(minDensity, scaledDelta)
+  })
 
 
 export const zero = (): DensityFunction => densityZero
@@ -767,40 +908,45 @@ const densityMappedOperationByName: Readonly<
 
 const normalizeDensityMappedOperation = (
   operation: DensityMappedType,
-): DensityMappedOperation => {
+): Result.Result<DensityMappedOperation, RangeError> => {
   const normalized = densityMappedOperationByName[operation]
   if (typeof normalized === 'undefined') {
-    throw new RangeError(`unsupported mapped operation, received ${String(operation)}`)
+    return Result.fail(
+      new RangeError(`unsupported mapped operation, received ${String(operation)}`),
+    )
   }
-  return normalized
+  return Result.succeed(normalized)
 }
 
 export const map = (
   input: DensityFunction,
   operation: DensityMappedType,
-): DensityFunction => densityMap(input, normalizeDensityMappedOperation(operation))
+): DensityFunctionResult<DensityFunction> =>
+  Result.flatMap(normalizeDensityMappedOperation(operation), (normalized) =>
+    densityMap(input, normalized),
+  )
 
 export const mappedNoise: typeof densityMappedNoise = densityMappedNoise
 
-export const spline = (definition: DensitySplineInput): DensityFunction =>
+export const spline = (definition: DensitySplineInput): DensityFunctionResult<DensityFunction> =>
   densitySpline(definition.coordinate, definition.spline)
 
 export const findTopSurface: typeof densityFindTopSurface = densityFindTopSurface
 
 export const yClampedGradient: typeof densityYClampedGradient = densityYClampedGradient
 
-export function noise(source: DensityNoiseSource): DensityFunction
-export function noise(source: DensityNoiseSource, yScale: number): DensityFunction
+export function noise(source: DensityNoiseSource): DensityFunctionResult<DensityFunction>
+export function noise(source: DensityNoiseSource, yScale: DensityScaleValue): DensityFunctionResult<DensityFunction>
 export function noise(
   source: DensityNoiseSource,
-  xzScale: number,
-  yScale: number,
-): DensityFunction
+  xzScale: DensityScaleValue,
+  yScale: DensityScaleValue,
+): DensityFunctionResult<DensityFunction>
 export function noise(
   source: DensityNoiseSource,
-  second?: number,
-  third?: number,
-): DensityFunction {
+  second?: DensityScaleValue,
+  third?: DensityScaleValue,
+): DensityFunctionResult<DensityFunction> {
   if (typeof second === 'undefined') {
     return densityNoise(source)
   }
@@ -812,10 +958,10 @@ export function noise(
 
 export const rangeChoice = (
   input: DensityFunction,
-  minInclusive: number,
-  maxExclusive: number,
+  minInclusive: DensityValueType,
+  maxExclusive: DensityValueType,
   ...[inRange, outOfRange]: [DensityFunction, DensityFunction]
-): DensityFunction =>
+): DensityFunctionResult<DensityFunction> =>
   densityRangeChoice(
     input,
     { maxExclusive, minInclusive },
@@ -826,9 +972,9 @@ export const rangeChoice = (
 export const shiftedNoise2d = (
   shiftX: DensityFunction,
   shiftZ: DensityFunction,
-  xzScale: number,
+  xzScale: DensityScaleValue,
   noiseData: DensityNoiseSource,
-): DensityFunction =>
+): DensityFunctionResult<DensityFunction> =>
   densityShiftedNoise2D(noiseData, { x: shiftX, z: shiftZ }, { xzScale })
 
 export {

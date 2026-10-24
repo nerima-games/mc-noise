@@ -37,7 +37,6 @@ import {
 } from './perlin-constants.js'
 import { gradient2d, gradient3d } from './perlin-gradients.js'
 import type { RandFn } from './seed.js'
-import { requireDefined } from './defined.js'
 
 export { PERMUTATION_SIZE }
 
@@ -56,22 +55,36 @@ const SHUFFLE_LOWER_BOUND = 0
 /** Converts the loop's 0-based top index into a candidate count for `Math.floor(rand() * count)`. */
 const FISHER_YATES_RANGE_OFFSET = 1
 
-export const buildPermutation = (rand: RandFn): Uint8Array => {
+type PermutationTable = Readonly<{
+  readonly bytes: Uint8Array
+  readonly values: DataView
+}>
+
+const createPermutationStorage = (): PermutationTable => {
   const permutation = new Uint8Array(PERMUTATION_SIZE)
+  const values = new DataView(permutation.buffer, permutation.byteOffset, permutation.byteLength)
   for (let index = 0; index < PERMUTATION_SIZE; index += LOOP_STEP) {
-    permutation[index] = index
+    values.setUint8(index, index)
   }
+  return { bytes: permutation, values }
+}
+
+const buildPermutationTable = (rand: RandFn): PermutationTable => {
+  const { bytes, values } = createPermutationStorage()
   for (let index = PERMUTATION_MASK; index > SHUFFLE_LOWER_BOUND; index -= LOOP_STEP) {
     // `& PERMUTATION_MASK` is redundant for any `rand` honoring its documented [0, 1) contract (RandFn's own doc comment, seed.ts): `swapWith` is already <= index <= PERMUTATION_MASK in that case.
     // Applied anyway so the index is unconditionally in range instead of depending on an unenforced caller contract.
-    // That is what lets the two reads below use `!` instead of a fallback that no real `rand` implementation can ever reach.
+    // Masking keeps both accesses in the initialized record even if a custom PRNG violates its documented range.
     const swapWith = Math.floor(rand() * (index + FISHER_YATES_RANGE_OFFSET)) & PERMUTATION_MASK
-    const held = requireDefined(permutation[index], 'permutation value')
-    permutation[index] = requireDefined(permutation[swapWith], 'permutation value')
-    permutation[swapWith] = held
+    const held = values.getUint8(index)
+    const swap = values.getUint8(swapWith)
+    values.setUint8(index, swap)
+    values.setUint8(swapWith, held)
   }
-  return permutation
+  return { bytes, values }
 }
+
+export const buildPermutation = (rand: RandFn): Uint8Array => buildPermutationTable(rand).bytes
 
 /** Ken Perlin's quintic ease curve: 6t^5 - 15t^4 + 10t^3. C2-continuous. */
 const FADE_QUINTIC_COEFFICIENT = 6
@@ -90,7 +103,8 @@ const lerp = (from: number, to: number, t: number): number => from + t * (to - f
  * returned closure makes each sample O(1).
  */
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
-  const permutation = buildPermutation(rand)
+  const permutation = buildPermutationTable(rand).values
+  const at = (index: number): number => permutation.getUint8(index & PERMUTATION_MASK)
 
   return (x, z) => {
     const floorX = Math.floor(x),
@@ -102,22 +116,22 @@ export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
     const easedX = fade(fracX),
       easedZ = fade(fracZ)
 
-    const rowA = (requireDefined(permutation[cellX], 'permutation value') + cellZ) & PERMUTATION_MASK
-    const rowB = (requireDefined(permutation[(cellX + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK], 'permutation value') + cellZ) & PERMUTATION_MASK
+    const rowA = (at(cellX) + cellZ) & PERMUTATION_MASK
+    const rowB = (at(cellX + LATTICE_NEIGHBOR_OFFSET) + cellZ) & PERMUTATION_MASK
 
     const bottom = lerp(
-      gradient2d(requireDefined(permutation[rowA], 'permutation value'), fracX, fracZ),
-      gradient2d(requireDefined(permutation[rowB], 'permutation value'), fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
+      gradient2d(at(rowA), fracX, fracZ),
+      gradient2d(at(rowB), fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
       easedX,
     )
     const top = lerp(
       gradient2d(
-        requireDefined(permutation[(rowA + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK], 'permutation value'),
+        at(rowA + LATTICE_NEIGHBOR_OFFSET),
         fracX,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
       ),
       gradient2d(
-        requireDefined(permutation[(rowB + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK], 'permutation value'),
+        at(rowB + LATTICE_NEIGHBOR_OFFSET),
         fracX - LATTICE_NEIGHBOR_OFFSET,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
       ),
@@ -130,8 +144,8 @@ export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
 
 /** A 3D Perlin sampler. Same contract: `createPerlinNoise2D`. */
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {
-  const permutation = buildPermutation(rand)
-  const at = (index: number): number => requireDefined(permutation[index & PERMUTATION_MASK], 'permutation value')
+  const permutation = buildPermutationTable(rand).values
+  const at = (index: number): number => permutation.getUint8(index & PERMUTATION_MASK)
 
   return (x, y, z) => {
     const floorX = Math.floor(x),

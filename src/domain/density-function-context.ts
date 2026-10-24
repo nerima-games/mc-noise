@@ -1,39 +1,42 @@
-import type {
-  DensityEvaluationContext,
-  DensityEvaluationContextOptions,
+import {
+  DensityCellSize,
+  type DensityCellSize as DensityCellSizeValue,
+  type DensityEvaluationContext,
+  type DensityEvaluationContextOptions,
+  type DensityFunctionResult,
 } from './density-function-types.js'
-import { requireFiniteNumber } from './number-validation.js'
+import { Result } from 'effect'
+import { requirePositiveInteger } from './number-validation.js'
 
-const DEFAULT_CELL_SIZE = 4
-const MINIMUM_CELL_SIZE = 0
+const DEFAULT_CELL_SIZE_VALUE = 4
+const DEFAULT_CELL_SIZE = DensityCellSize(DEFAULT_CELL_SIZE_VALUE)
 
 type MutableDensityEvaluationContext = {
-  cellHeight: number
-  cellWidth: number
+  cellHeight: DensityCellSizeValue
+  cellWidth: DensityCellSizeValue
   blendDensity?: NonNullable<DensityEvaluationContext['blendDensity']>
   blendAlpha?: NonNullable<DensityEvaluationContext['blendAlpha']>
   blendOffset?: NonNullable<DensityEvaluationContext['blendOffset']>
   beardifier?: NonNullable<DensityEvaluationContext['beardifier']>
 }
 
-const requireCellSize = (name: string, value: number): number => {
-  const finiteValue = requireFiniteNumber(name, value)
-  if (
-    !Number.isInteger(finiteValue) ||
-    finiteValue <= MINIMUM_CELL_SIZE
-  ) {
-    throw new RangeError(`${name} must be a positive integer`)
-  }
-  return finiteValue
-}
+const requireCellSize = (
+  name: string,
+  value: DensityCellSizeValue,
+): Result.Result<DensityCellSizeValue, RangeError> =>
+  Result.map(
+    requirePositiveInteger(value, () => `${name} must be a positive integer`),
+    DensityCellSize,
+  )
 
-const requireOptionalFunction = (name: string, value: unknown): void => {
-  if (
-    typeof value !== 'undefined' &&
-    typeof value !== 'function'
-  ) {
-    throw new TypeError(`${name} must be a function when provided`)
+const requireOptionalFunction = (
+  name: string,
+  value: unknown,
+): Result.Result<true, TypeError> => {
+  if (typeof value === 'undefined' || typeof value === 'function') {
+    return Result.succeed(true)
   }
+  return Result.fail(new TypeError(`${name} must be a function when provided`))
 }
 
 const assignOptionalContextCallbacks = (
@@ -56,33 +59,43 @@ const assignOptionalContextCallbacks = (
 
 export const requireDensityEvaluationContext = (
   context: DensityEvaluationContext,
-): DensityEvaluationContext => {
+): DensityFunctionResult<DensityEvaluationContext> => {
   if (context === null || typeof context !== 'object') {
-    throw new TypeError('evaluation context must be an object')
+    return Result.fail(new TypeError('evaluation context must be an object'))
   }
-  requireCellSize('context.cellWidth', context.cellWidth)
-  requireCellSize('context.cellHeight', context.cellHeight)
-  requireOptionalFunction('context.blendDensity', context.blendDensity)
-  requireOptionalFunction('context.blendAlpha', context.blendAlpha)
-  requireOptionalFunction('context.blendOffset', context.blendOffset)
-  requireOptionalFunction('context.beardifier', context.beardifier)
-  return context
+  return Result.gen(function* requireDensityEvaluationContextResult() {
+    yield* requireCellSize('context.cellWidth', context.cellWidth)
+    yield* requireCellSize('context.cellHeight', context.cellHeight)
+    yield* requireOptionalFunction('context.blendDensity', context.blendDensity)
+    yield* requireOptionalFunction('context.blendAlpha', context.blendAlpha)
+    yield* requireOptionalFunction('context.blendOffset', context.blendOffset)
+    yield* requireOptionalFunction('context.beardifier', context.beardifier)
+    return context
+  })
 }
 
 export const createDensityEvaluationContext = (
   options: DensityEvaluationContextOptions = {},
-): DensityEvaluationContext => {
-  const context: MutableDensityEvaluationContext = {
-    cellHeight: requireCellSize(
-      'cellHeight',
-      options.cellHeight ?? DEFAULT_CELL_SIZE,
-    ),
-    cellWidth: requireCellSize(
-      'cellWidth',
-      options.cellWidth ?? DEFAULT_CELL_SIZE,
-    ),
+): DensityFunctionResult<DensityEvaluationContext> => {
+  if (options === null || typeof options !== 'object') {
+    return Result.fail(new TypeError('evaluation context options must be an object'))
   }
-  assignOptionalContextCallbacks(context, options)
-  requireDensityEvaluationContext(context)
-  return Object.freeze(context)
+  return Result.gen(function* createDensityEvaluationContextResult() {
+    const context: MutableDensityEvaluationContext = {
+      cellHeight: yield* requireCellSize(
+        'cellHeight',
+        options.cellHeight ?? DEFAULT_CELL_SIZE,
+      ),
+      cellWidth: yield* requireCellSize(
+        'cellWidth',
+        options.cellWidth ?? DEFAULT_CELL_SIZE,
+      ),
+    }
+    yield* requireOptionalFunction('context.blendDensity', options.blendDensity)
+    yield* requireOptionalFunction('context.blendAlpha', options.blendAlpha)
+    yield* requireOptionalFunction('context.blendOffset', options.blendOffset)
+    yield* requireOptionalFunction('context.beardifier', options.beardifier)
+    assignOptionalContextCallbacks(context, options)
+    return Object.freeze(context)
+  })
 }

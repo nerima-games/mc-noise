@@ -33,9 +33,20 @@
  * docs/testing.md. This package exposes only the canonical kernel; consumers
  * that need reproducible saved worlds must pin the package version.
  */
-import { DEFAULT_OCTAVE_PARAMS, type OctaveParams, clampSigned, normalizeNoise, octaveNoise2D, signedFbm2D } from './octaves.js'
+import {
+  DEFAULT_OCTAVE_PARAMS,
+  type NormalizedNoise,
+  OctaveAmplitude,
+  OctaveCount,
+  OctaveFrequency,
+  type OctaveParams,
+  octaveNoise2D,
+  signedFbm2D,
+} from './octaves.js'
 import { NOISE_CHANNELS, type NoiseChannel, type NoiseSeed, deriveSeed, mulberry32 } from './seed.js'
 import { type NoiseFn2D, type NoiseFn3D, createPerlinNoise2D, createPerlinNoise3D } from './perlin.js'
+import type { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import type { Result } from 'effect'
 
 /**
  * A fully seeded set of samplers.
@@ -54,18 +65,44 @@ export type NoiseField = {
   readonly raw3d: NoiseFn3D
   readonly noise2d: NoiseFn2D
   readonly noise3d: NoiseFn3D
-  readonly octave2d: (x: number, z: number, params?: OctaveParams) => number
+  readonly octave2d: (x: PositionAxis, z: PositionAxis, params?: OctaveParams) => Result.Result<NormalizedNoise, RangeError>
   readonly channel: (name: NoiseChannel) => NoiseFn2D
 }
+
+const CHANNEL_LACUNARITY = 2
+const CHANNEL_PERSISTENCE = 0.5
+const CONTINENTALNESS_OCTAVE_COUNT = 4
+const EROSION_OCTAVE_COUNT = 3
+const JAGGEDNESS_OCTAVE_COUNT = 1
+const SIGNED_NOISE_MIN = -1
+const SIGNED_NOISE_MAX = 1
+const NORMALIZED_NOISE_OFFSET = 1
+const NORMALIZED_NOISE_DIVISOR = 2
 
 /** Default fBm parameters for the channels owned by this field. */
 export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>> = {
   base2d: DEFAULT_OCTAVE_PARAMS,
   base3d: DEFAULT_OCTAVE_PARAMS,
-  continentalness: { lacunarity: 2, octaves: 4, persistence: 0.5 },
-  erosion: { lacunarity: 2, octaves: 3, persistence: 0.5 },
-  jaggedness: { lacunarity: 2, octaves: 1, persistence: 0.5 },
-  weirdness: { lacunarity: 2, octaves: 3, persistence: 0.5 },
+  continentalness: {
+    lacunarity: OctaveFrequency(CHANNEL_LACUNARITY),
+    octaves: OctaveCount(CONTINENTALNESS_OCTAVE_COUNT),
+    persistence: OctaveAmplitude(CHANNEL_PERSISTENCE),
+  },
+  erosion: {
+    lacunarity: OctaveFrequency(CHANNEL_LACUNARITY),
+    octaves: OctaveCount(EROSION_OCTAVE_COUNT),
+    persistence: OctaveAmplitude(CHANNEL_PERSISTENCE),
+  },
+  jaggedness: {
+    lacunarity: OctaveFrequency(CHANNEL_LACUNARITY),
+    octaves: OctaveCount(JAGGEDNESS_OCTAVE_COUNT),
+    persistence: OctaveAmplitude(CHANNEL_PERSISTENCE),
+  },
+  weirdness: {
+    lacunarity: OctaveFrequency(CHANNEL_LACUNARITY),
+    octaves: OctaveCount(EROSION_OCTAVE_COUNT),
+    persistence: OctaveAmplitude(CHANNEL_PERSISTENCE),
+  },
 }
 
 /**
@@ -79,7 +116,9 @@ export const CHANNEL_PARAMS: Readonly<Record<NoiseChannel, OctaveParams>> = {
 /** Signed-noise fallback for a channel name outside `NOISE_CHANNELS` — the origin of the [-1, 1] range. */
 const UNKNOWN_CHANNEL_VALUE = 0
 
-const normalizeFieldSample = (value: number): number => normalizeNoise(clampSigned(value))
+const normalizeFieldSample = (value: number): number =>
+  (Math.max(SIGNED_NOISE_MIN, Math.min(SIGNED_NOISE_MAX, value)) + NORMALIZED_NOISE_OFFSET) /
+  NORMALIZED_NOISE_DIVISOR
 
 export const createNoiseField = (seed: NoiseSeed): NoiseField => {
   const raw2d = createPerlinNoise2D(mulberry32(deriveSeed(seed, 'base2d')))

@@ -1,6 +1,13 @@
-import { type JavaRandom, createJavaRandom } from './java-random.js'
-import { requireDefined } from './defined.js'
-import { requireSafeInteger } from './number-validation.js'
+import {
+  type JavaRandom,
+  JavaRandomBound,
+  JavaSkipCount,
+  createJavaRandom,
+} from './java-random.js'
+import { BlockAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { BoundedNoise } from './noise-primitives.js'
+import type { DensityFunctionResult } from './density-function-types.js'
+import { Result } from 'effect'
 
 const SIMPLEX_ZERO = 0
 const SIMPLEX_ONE = 1
@@ -13,20 +20,6 @@ const SIMPLEX_SKEW =
   SIMPLEX_HALF * (Math.sqrt(SIMPLEX_THREE) - SIMPLEX_ONE)
 const SIMPLEX_UNSKEW =
   (SIMPLEX_THREE - Math.sqrt(SIMPLEX_THREE)) / SIMPLEX_SIX
-const SIMPLEX_GRADIENTS: readonly (readonly [number, number])[] = [
-  [SIMPLEX_ONE, SIMPLEX_ONE],
-  [SIMPLEX_NEGATIVE_ONE, SIMPLEX_ONE],
-  [SIMPLEX_ONE, SIMPLEX_NEGATIVE_ONE],
-  [SIMPLEX_NEGATIVE_ONE, SIMPLEX_NEGATIVE_ONE],
-  [SIMPLEX_ONE, SIMPLEX_ZERO],
-  [SIMPLEX_NEGATIVE_ONE, SIMPLEX_ZERO],
-  [SIMPLEX_ONE, SIMPLEX_ZERO],
-  [SIMPLEX_NEGATIVE_ONE, SIMPLEX_ZERO],
-  [SIMPLEX_ZERO, SIMPLEX_ONE],
-  [SIMPLEX_ZERO, SIMPLEX_NEGATIVE_ONE],
-  [SIMPLEX_ZERO, SIMPLEX_ONE],
-  [SIMPLEX_ZERO, SIMPLEX_NEGATIVE_ONE],
-]
 const SIMPLEX_PERMUTATION_SIZE = 256
 const SIMPLEX_PERMUTATION_MASK =
   SIMPLEX_PERMUTATION_SIZE - SIMPLEX_ONE
@@ -47,17 +40,33 @@ const END_ISLANDS_RANDOM_X_MULTIPLIER = 3439
 const END_ISLANDS_RANDOM_Z_MULTIPLIER = 147
 const END_ISLANDS_RANDOM_MODULUS = 13
 const END_ISLANDS_RANDOM_OFFSET = 9
-const JAVA_INT_MIN = -2147483648
-const JAVA_INT_MAX = 2147483647
 
-export const END_ISLANDS_MIN_VALUE = -0.84375
-export const END_ISLANDS_MAX_VALUE = 0.5625
+const END_ISLANDS_LOWEST_NOISE_VALUE = -0.84375
+const END_ISLANDS_HIGHEST_NOISE_VALUE = 0.5625
+export const END_ISLANDS_MIN_VALUE: BoundedNoise = BoundedNoise(END_ISLANDS_LOWEST_NOISE_VALUE)
+export const END_ISLANDS_MAX_VALUE: BoundedNoise = BoundedNoise(END_ISLANDS_HIGHEST_NOISE_VALUE)
 
 export type EndIslandsSampler = Readonly<{
-  readonly sample: (x: number, z: number) => number
+  readonly sample: (x: BlockAxis, z: BlockAxis) => DensityFunctionResult<BoundedNoise>
 }>
 
 type Simplex2D = (x: number, y: number) => number
+
+const SIMPLEX_GRADIENT_COUNT = 12
+const SIMPLEX_GRADIENTS = new Int8Array([
+  SIMPLEX_ONE, SIMPLEX_ONE,
+  SIMPLEX_NEGATIVE_ONE, SIMPLEX_ONE,
+  SIMPLEX_ONE, SIMPLEX_NEGATIVE_ONE,
+  SIMPLEX_NEGATIVE_ONE, SIMPLEX_NEGATIVE_ONE,
+  SIMPLEX_ONE, SIMPLEX_ZERO,
+  SIMPLEX_NEGATIVE_ONE, SIMPLEX_ZERO,
+  SIMPLEX_ONE, SIMPLEX_ZERO,
+  SIMPLEX_NEGATIVE_ONE, SIMPLEX_ZERO,
+  SIMPLEX_ZERO, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_NEGATIVE_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_NEGATIVE_ONE,
+])
 
 const toFloat = (value: number): number => Math.fround(value)
 
@@ -98,24 +107,36 @@ const initializePermutation = (): Uint8Array => {
   return permutation
 }
 
-const shufflePermutation = (permutation: Uint8Array, random: JavaRandom): void => {
-  for (let index = SIMPLEX_ZERO; index < permutation.length; index += SIMPLEX_ONE) {
-    const swapOffset = random.nextInt(permutation.length - index)
-    const swapIndex = index + swapOffset
-    const current = requireDefined(permutation[index], 'permutation value')
-    permutation[index] = requireDefined(permutation[swapIndex], 'permutation value')
-    permutation[swapIndex] = current
-  }
-}
+const shufflePermutation = (
+  permutation: Uint8Array,
+  random: JavaRandom,
+): DensityFunctionResult<void> =>
+  Result.gen(function* shufflePermutationResult() {
+    const bytes = new DataView(permutation.buffer)
+    for (let index = SIMPLEX_ZERO; index < permutation.length; index += SIMPLEX_ONE) {
+      const swapOffset = yield* random.nextInt(
+        JavaRandomBound(permutation.length - index),
+      )
+      const swapIndex = index + swapOffset
+      // The loop index is in range, and nextInt returns an offset below the remaining length.
+      const current = bytes.getUint8(index)
+      const swapValue = bytes.getUint8(swapIndex)
+      bytes.setUint8(index, swapValue)
+      bytes.setUint8(swapIndex, current)
+    }
+  })
 
-const createPermutation = (random: JavaRandom): Uint8Array => {
-  random.nextDouble()
-  random.nextDouble()
-  random.nextDouble()
-  const permutation = initializePermutation()
-  shufflePermutation(permutation, random)
-  return permutation
-}
+const createPermutation = (
+  random: JavaRandom,
+): DensityFunctionResult<Uint8Array> =>
+  Result.gen(function* createPermutationResult() {
+    random.nextDouble()
+    random.nextDouble()
+    random.nextDouble()
+    const permutation = initializePermutation()
+    yield* shufflePermutation(permutation, random)
+    return permutation
+  })
 
 const simplexCoordinates = (x: number, y: number): SimplexCoordinates => {
   const skew = (x + y) * SIMPLEX_SKEW
@@ -140,64 +161,65 @@ const firstOffsetFor = (
   return [SIMPLEX_ZERO, SIMPLEX_ONE]
 }
 
-const createSimplex2D = (random: JavaRandom): Simplex2D => {
-  const permutation = createPermutation(random)
-  const permutationAt = (index: number): number =>
-    requireDefined(permutation[index & SIMPLEX_PERMUTATION_MASK], 'permutation value')
-  const gradientIndex = (x: number, y: number): number =>
-    permutationAt((x & SIMPLEX_PERMUTATION_MASK) + permutationAt(y & SIMPLEX_PERMUTATION_MASK)) %
-    SIMPLEX_GRADIENTS.length
+const createSimplex2D = (random: JavaRandom): DensityFunctionResult<Simplex2D> =>
+  Result.map(createPermutation(random), (permutation) => {
+    const permutationBytes = new DataView(permutation.buffer)
+    const permutationAt = (index: number): number =>
+      permutationBytes.getUint8(index & SIMPLEX_PERMUTATION_MASK)
+    const gradientIndex = (x: number, y: number): number =>
+      (permutationAt(x & SIMPLEX_PERMUTATION_MASK) +
+        permutationAt(y & SIMPLEX_PERMUTATION_MASK)) %
+      SIMPLEX_GRADIENT_COUNT
 
-  const contribution = (index: number, x: number, y: number): number => {
-    let attenuation =
-      SIMPLEX_ATTENUATION_START - x * x - y * y
-    if (attenuation < SIMPLEX_ZERO) {
-      return SIMPLEX_ZERO
+    const gradientBytes = new DataView(SIMPLEX_GRADIENTS.buffer)
+    const contribution = (
+      index: number,
+      x: number,
+      y: number,
+    ): number => {
+      let attenuation =
+        SIMPLEX_ATTENUATION_START - x * x - y * y
+      if (attenuation < SIMPLEX_ZERO) {
+        return SIMPLEX_ZERO
+      }
+      attenuation *= attenuation
+      const gradientOffset = Number(index) * SIMPLEX_TWO
+      const gradientX = gradientBytes.getInt8(gradientOffset)
+      const gradientY = gradientBytes.getInt8(gradientOffset + SIMPLEX_ONE)
+      return (
+        attenuation *
+        attenuation *
+        (gradientX * x + gradientY * y)
+      )
     }
-    attenuation *= attenuation
-    const gradient = requireDefined(SIMPLEX_GRADIENTS[index], 'simplex gradient')
-    return (
-      attenuation *
-      attenuation *
-      (gradient[SIMPLEX_ZERO] * x + gradient[SIMPLEX_ONE] * y)
-    )
-  }
 
-  const sampleSimplex = (x: number, y: number): number => {
-    const { cellX, cellY, localX, localY } = simplexCoordinates(x, y)
-    const [firstOffsetX, firstOffsetY] = firstOffsetFor(localX, localY)
-    const secondX = localX - firstOffsetX + SIMPLEX_UNSKEW
-    const secondY = localY - firstOffsetY + SIMPLEX_UNSKEW
-    const thirdX =
-      localX - SIMPLEX_ONE + SIMPLEX_TWO * SIMPLEX_UNSKEW
-    const thirdY =
-      localY - SIMPLEX_ONE + SIMPLEX_TWO * SIMPLEX_UNSKEW
-    return (
-      SIMPLEX_AMPLITUDE *
-      (contribution(gradientIndex(cellX, cellY), localX, localY) +
-        contribution(
-          gradientIndex(cellX + firstOffsetX, cellY + firstOffsetY),
-          secondX,
-          secondY,
-        ) +
-        contribution(
-          gradientIndex(cellX + SIMPLEX_ONE, cellY + SIMPLEX_ONE),
-          thirdX,
-          thirdY,
-        ))
-    )
-  }
+    const sampleSimplex = (x: number, y: number): number => {
+      const { cellX, cellY, localX, localY } = simplexCoordinates(x, y)
+      const [firstOffsetX, firstOffsetY] = firstOffsetFor(localX, localY)
+      const secondX = localX - firstOffsetX + SIMPLEX_UNSKEW
+      const secondY = localY - firstOffsetY + SIMPLEX_UNSKEW
+      const thirdX =
+        localX - SIMPLEX_ONE + SIMPLEX_TWO * SIMPLEX_UNSKEW
+      const thirdY =
+        localY - SIMPLEX_ONE + SIMPLEX_TWO * SIMPLEX_UNSKEW
+      return (
+        SIMPLEX_AMPLITUDE *
+        (contribution(gradientIndex(cellX, cellY), localX, localY) +
+          contribution(
+            gradientIndex(cellX + firstOffsetX, cellY + firstOffsetY),
+            secondX,
+            secondY,
+          ) +
+          contribution(
+            gradientIndex(cellX + SIMPLEX_ONE, cellY + SIMPLEX_ONE),
+            thirdX,
+            thirdY,
+          ))
+      )
+    }
 
-  return sampleSimplex
-}
-
-const requireJavaInt = (name: string, value: number): number => {
-  requireSafeInteger(name, value)
-  if (value < JAVA_INT_MIN || value > JAVA_INT_MAX) {
-    throw new RangeError(`${name} must be a signed 32-bit integer, received ${value}`)
-  }
-  return value
-}
+    return sampleSimplex
+  })
 
 const baseIslandValue = (x: number, z: number): number =>
   clampFloat(
@@ -339,19 +361,45 @@ const sampleIslands = (simplex: Simplex2D, x: number, z: number): number => {
   return value
 }
 
-export const createEndIslandsSampler = (seed: bigint): EndIslandsSampler => {
-  const random = createJavaRandom(seed)
-  random.skip(END_ISLANDS_SKIP_COUNT)
-  const simplex = createSimplex2D(random)
-
-  const sample = (x: number, z: number): number => {
-    requireJavaInt('x', x)
-    requireJavaInt('z', z)
-    return floatDivide(
-      floatSubtract(sampleIslands(simplex, x, z), END_ISLANDS_NORMALIZATION_OFFSET),
-      END_ISLANDS_NORMALIZATION_SCALE,
-    )
+const readBlockAxis = (
+  name: string,
+  value: unknown,
+): DensityFunctionResult<BlockAxis> => {
+  if (typeof value !== 'number') {
+    return Result.fail(new TypeError(`${name} must be a number`))
   }
+  return Result.mapError(
+    BlockAxis.result(value),
+    (error) => new RangeError(error.message),
+  )
+}
 
-  return Object.freeze({ sample })
+export const createEndIslandsSampler = (
+  seed: bigint,
+): DensityFunctionResult<EndIslandsSampler> => {
+  if (typeof seed !== 'bigint') {
+    return Result.fail(new TypeError('seed must be a bigint'))
+  }
+  return Result.gen(function* createEndIslandsSamplerResult() {
+    const random = yield* createJavaRandom(seed)
+    random.skip(JavaSkipCount(END_ISLANDS_SKIP_COUNT))
+    const simplex = yield* createSimplex2D(random)
+
+    const sample = (x: BlockAxis, z: BlockAxis): DensityFunctionResult<BoundedNoise> =>
+      Result.gen(function* sampleEndIslandsResult() {
+        const normalizedX = yield* readBlockAxis('x', x)
+        const normalizedZ = yield* readBlockAxis('z', z)
+        const value = floatDivide(
+          floatSubtract(
+            sampleIslands(simplex, normalizedX, normalizedZ),
+            END_ISLANDS_NORMALIZATION_OFFSET,
+          ),
+          END_ISLANDS_NORMALIZATION_SCALE,
+        )
+        // The clamped island range normalizes to values inside BoundedNoise's bounds.
+        return BoundedNoise(value)
+      })
+
+    return Object.freeze({ sample })
+  })
 }

@@ -26,7 +26,8 @@
  */
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
-import { Effect, FastCheck } from 'effect'
+import { Effect } from 'effect'
+import * as FastCheck from 'fast-check'
 import { PERMUTATION_SIZE, buildPermutation } from '../src/domain/perlin'
 import { NOISE_CHANNELS, NoiseSeed, deriveSeed, mulberry32, toUint32 } from '../src/domain/seed'
 

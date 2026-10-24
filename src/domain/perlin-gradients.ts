@@ -11,7 +11,7 @@ const GRADIENT_DIAGONAL_NEGATIVE_POSITIVE = 5
 const GRADIENT_DIAGONAL_POSITIVE_NEGATIVE = 6
 
 /** Unit-length axis and diagonal gradients, selected uniformly by three hash bits. */
-export const gradient2d = (hash: number, x: number, z: number): number => {
+const gradient2d = (hash: number, x: number, z: number): number => {
   switch (hash & GRADIENT_2D_MASK) {
     case GRADIENT_AXIS_POSITIVE_X:
       return x
@@ -64,7 +64,7 @@ const selectGradient3DV = (h: number, x: number, y: number, z: number): number =
 }
 
 /** 3D gradient dot product over the 12 edge-midpoint vectors of a cube. */
-export const gradient3d = (hash: number, x: number, y: number, z: number): number => {
+const gradient3d = (hash: number, x: number, y: number, z: number): number => {
   const h = hash & GRADIENT_3D_MASK
   const u = selectGradient3DU(h, x, y)
   const v = selectGradient3DV(h, x, y, z)
@@ -77,3 +77,5 @@ export const gradient3d = (hash: number, x: number, y: number, z: number): numbe
   }
   return u - v
 }
+
+export { gradient2d, gradient3d }

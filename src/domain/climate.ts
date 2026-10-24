@@ -1,14 +1,21 @@
 import {
+  BlockAxis,
   type BlockPosition,
   type Position,
+  PositionAxis,
   blockPosition,
-} from '@nerima-games/mc-kernel'
+  position,
+} from '@nerima-games/mc-kernel/domain/coordinates'
+import { Brand, Option, Result } from 'effect'
 import { type ClimateRTree, createClimateRTree } from './climate-rtree.js'
-import type {
-  DensityEvaluationContext,
-  DensityEvaluationSession,
-  DensityFunction,
-  DensityPosition,
+import { DefinedValueName, requireDefined } from './defined.js'
+import {
+  type DensityEvaluationContext,
+  type DensityEvaluationSession,
+  type DensityFunction,
+  DensityFunctionFieldName,
+  type DensityPosition,
+  type DensityValue,
 } from './density-function-types.js'
 import {
   createDensityEvaluationSession,
@@ -23,8 +30,50 @@ import {
   requireSafeInteger,
 } from './number-validation.js'
 import { densityZero } from './density-function.js'
-import { requireDefined } from './defined.js'
 
+const CLIMATE_ZERO_DISTANCE = 0
+const CLIMATE_MINIMUM_SEARCH_STEP = 1
+const CLIMATE_DEFAULT_RADIUS_VALUE = 16
+const CLIMATE_DEFAULT_VERTICAL_RADIUS_VALUE = 8
+
+export type ClimateValue = number & Brand.Brand<'ClimateValue'>
+export const ClimateValue: Brand.Constructor<ClimateValue> = Brand.make<ClimateValue>(
+  (value) => Number.isFinite(value) || 'climate value must be finite',
+)
+
+export type ClimateFieldName = string & Brand.Brand<'ClimateFieldName'>
+export const ClimateFieldName: Brand.Constructor<ClimateFieldName> =
+  Brand.nominal<ClimateFieldName>()
+
+export type QuantizedClimateValue = number & Brand.Brand<'QuantizedClimateValue'>
+export const QuantizedClimateValue: Brand.Constructor<QuantizedClimateValue> = Brand.make<QuantizedClimateValue>(
+  (value) => Number.isSafeInteger(value) || 'quantized climate value must be a safe integer',
+)
+
+export type ClimateDistance = number & Brand.Brand<'ClimateDistance'>
+export const ClimateDistance: Brand.Constructor<ClimateDistance> = Brand.make<ClimateDistance>(
+  (value) => Number.isFinite(value) && value >= CLIMATE_ZERO_DISTANCE || 'climate distance must be finite and non-negative',
+)
+
+export type ClimateFitness = number & Brand.Brand<'ClimateFitness'>
+export const ClimateFitness: Brand.Constructor<ClimateFitness> = Brand.make<ClimateFitness>(
+  (value) => Number.isFinite(value) && value >= CLIMATE_ZERO_DISTANCE || 'climate fitness must be finite and non-negative',
+)
+
+export type ClimateSearchRadius = number & Brand.Brand<'ClimateSearchRadius'>
+export const ClimateSearchRadius: Brand.Constructor<ClimateSearchRadius> = Brand.make<ClimateSearchRadius>(
+  (value) => Number.isSafeInteger(value) && value >= CLIMATE_ZERO_DISTANCE || 'climate search radius must be a non-negative safe integer',
+)
+
+export type ClimateSearchStep = number & Brand.Brand<'ClimateSearchStep'>
+export const ClimateSearchStep: Brand.Constructor<ClimateSearchStep> = Brand.make<ClimateSearchStep>(
+  (value) => Number.isSafeInteger(value) && value > CLIMATE_ZERO_DISTANCE || 'climate search step must be a positive safe integer',
+)
+
+export type ClimateListIndex = number & Brand.Brand<'ClimateListIndex'>
+export const ClimateListIndex: Brand.Constructor<ClimateListIndex> = Brand.make<ClimateListIndex>(
+  (value) => Number.isSafeInteger(value) && value >= CLIMATE_ZERO_DISTANCE || 'climate list index must be a non-negative safe integer',
+)
 export const CLIMATE_PARAMETER_COUNT = 6
 export const CLIMATE_HYPERCUBE_DIMENSION: number = CLIMATE_PARAMETER_COUNT
 export const CLIMATE_QUANTIZATION_FACTOR = 10_000
@@ -33,14 +82,10 @@ const CLIMATE_LIST_ENTRY_LENGTH = 2
 const CLIMATE_FIRST_ENTRY_INDEX = 0
 const CLIMATE_SECOND_ENTRY_INDEX = 1
 const CLIMATE_INDEX_INCREMENT = 1
-const CLIMATE_ZERO_DISTANCE = 0
-const CLIMATE_NO_INDEX = -1
-const CLIMATE_NON_NEGATIVE_BOUNDARY = 0
-const CLIMATE_ZERO_STEP = 0
 const CLIMATE_DEFAULT_ORIGIN_COMPONENT = 0
-const CLIMATE_DEFAULT_RADIUS = 16
-const CLIMATE_DEFAULT_VERTICAL_RADIUS = 8
-const CLIMATE_DEFAULT_STEP = 1
+const CLIMATE_DEFAULT_RADIUS = ClimateSearchRadius(CLIMATE_DEFAULT_RADIUS_VALUE)
+const CLIMATE_DEFAULT_VERTICAL_RADIUS = ClimateSearchRadius(CLIMATE_DEFAULT_VERTICAL_RADIUS_VALUE)
+const CLIMATE_DEFAULT_STEP = ClimateSearchStep(CLIMATE_MINIMUM_SEARCH_STEP)
 const CLIMATE_EMPTY_TARGET_COUNT = 0
 
 export const CLIMATE_CHANNELS = [
@@ -55,8 +100,8 @@ export const CLIMATE_CHANNELS = [
 export type ClimateChannel = typeof CLIMATE_CHANNELS[number]
 
 export type ClimateParameter = Readonly<{
-  readonly min: number
-  readonly max: number
+  readonly min: QuantizedClimateValue
+  readonly max: QuantizedClimateValue
 }>
 
 export type ClimateParameterSpace = Readonly<{
@@ -69,16 +114,16 @@ export type ClimateParameterSpace = Readonly<{
 }>
 
 export type ClimateParameterPoint = ClimateParameterSpace & Readonly<{
-  readonly offset: number
+  readonly offset: QuantizedClimateValue
 }>
 
 export type ClimateTargetPoint = Readonly<{
-  readonly temperature: number
-  readonly humidity: number
-  readonly continentalness: number
-  readonly erosion: number
-  readonly depth: number
-  readonly weirdness: number
+  readonly temperature: QuantizedClimateValue
+  readonly humidity: QuantizedClimateValue
+  readonly continentalness: QuantizedClimateValue
+  readonly erosion: QuantizedClimateValue
+  readonly depth: QuantizedClimateValue
+  readonly weirdness: QuantizedClimateValue
 }>
 
 export type ClimateParameterListEntry<Value> = readonly [
@@ -112,11 +157,11 @@ export type ClimateSamplerOptions = Readonly<{
 }>
 
 export type ClimateSpawnSearchOptions = Readonly<{
-  readonly origin?: Position
-  readonly radius?: number
-  readonly verticalRadius?: number
-  readonly step?: number
   readonly context?: DensityEvaluationContext | DensityEvaluationSession
+  readonly origin?: BlockPosition
+  readonly radius?: ClimateSearchRadius
+  readonly verticalRadius?: ClimateSearchRadius
+  readonly step?: ClimateSearchStep
 }>
 
 type ClimateSixValues<Value> = readonly [
@@ -130,12 +175,13 @@ type ClimateSixValues<Value> = readonly [
 
 type ClimateParameterArguments<Value> = readonly [
   ...ClimateSixValues<Value>,
-  offset: number,
+  offset: ClimateValue,
 ]
 
 type ClimateParameterValues = ClimateSixValues<unknown>
-type ClimateParameterInputValues = ClimateSixValues<number | ClimateParameter>
-type ClimateTargetValues = ClimateSixValues<number>
+type ClimateParameterInputValues = ClimateSixValues<ClimateValue | ClimateParameter>
+type ClimateTargetValues = ClimateSixValues<QuantizedClimateValue>
+type ClimateValueTargetValues = ClimateSixValues<ClimateValue>
 
 type ClimateUnknownObject = Readonly<{
   readonly min?: unknown
@@ -168,55 +214,95 @@ const defaultIfUndefined = <Value>(
   return value
 }
 
-const readNumber = (name: string, value: unknown): number => {
-  if (typeof value !== 'number') {
-    throw new TypeError(`${name} must be a number`)
+const readNumber = (name: string, value: unknown): Result.Result<number, TypeError> => {
+  if (typeof value === 'number') {
+    return Result.succeed(value)
   }
-  return value
+  return Result.fail(new TypeError(`${name} must be a number`))
 }
 
-const readQuantized = (name: string, value: unknown): number =>
-  requireSafeInteger(name, readNumber(name, value))
+const readQuantized = (
+  name: string,
+  value: unknown,
+): Result.Result<QuantizedClimateValue, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const number = yield* readNumber(name, value)
+    const integer = yield* requireSafeInteger(
+      number,
+      () => `${name} must be a safe integer`,
+    )
+    return QuantizedClimateValue(integer)
+  })
 
-const readFinite = (name: string, value: number): number =>
-  requireFiniteNumber(name, value)
+const readFinite = (
+  name: string,
+  value: number,
+): Result.Result<ClimateValue, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const finite = yield* requireFiniteNumber(
+      value,
+      () => `${name} must be finite`,
+    )
+    return ClimateValue(finite)
+  })
 
 const isQuantized = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value)
 
-export const quantizeCoord = (value: number): number =>
-  requireSafeInteger(
-    'coordinate',
-    Math.trunc(readFinite('coordinate', value) * CLIMATE_QUANTIZATION_FACTOR),
+export const quantizeCoord = (
+  value: ClimateValue,
+): Result.Result<QuantizedClimateValue, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const finite = yield* readFinite('coordinate', value)
+    const integer = yield* requireSafeInteger(
+      Math.trunc(finite * CLIMATE_QUANTIZATION_FACTOR),
+      () => 'coordinate must be a safe integer',
+    )
+    return QuantizedClimateValue(integer)
+  })
+
+export const unquantizeCoord = (
+  value: QuantizedClimateValue,
+): Result.Result<ClimateValue, TypeError | RangeError> =>
+  Result.map(
+    readQuantized('coordinate', value),
+    (quantized) => ClimateValue(quantized / CLIMATE_QUANTIZATION_FACTOR),
   )
 
-export const unquantizeCoord = (value: number): number =>
-  readQuantized('quantized coordinate', value) / CLIMATE_QUANTIZATION_FACTOR
-
 const createParameterFromQuantized = (
-  min: number,
-  max: number,
-): ClimateParameter => {
-  const normalizedMin = readQuantized('parameter min', min)
-  const normalizedMax = readQuantized('parameter max', max)
-  if (normalizedMin > normalizedMax) {
-    throw new RangeError('parameter min must be less than or equal to max')
-  }
-  return Object.freeze({ max: normalizedMax, min: normalizedMin })
-}
+  min: unknown,
+  max: unknown,
+): Result.Result<ClimateParameter, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const normalizedMin = yield* readQuantized('parameter min', min)
+    const normalizedMax = yield* readQuantized('parameter max', max)
+    if (normalizedMin > normalizedMax) {
+      return yield* Result.fail(
+        new RangeError('parameter min must be less than or equal to max'),
+      )
+    }
+    return Object.freeze({ max: normalizedMax, min: normalizedMin })
+  })
 
 export const createClimateParameterFromQuantized: typeof createParameterFromQuantized = createParameterFromQuantized
 
-export const climateParameter = (point: number): ClimateParameter => {
-  const quantized = quantizeCoord(point)
-  return createParameterFromQuantized(quantized, quantized)
-}
+export const climateParameter = (
+  pointValue: ClimateValue,
+): Result.Result<ClimateParameter, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const quantized = yield* quantizeCoord(pointValue)
+    return yield* createParameterFromQuantized(quantized, quantized)
+  })
 
 export const climateParameterRange = (
-  min: number,
-  max: number,
-): ClimateParameter =>
-  createParameterFromQuantized(quantizeCoord(min), quantizeCoord(max))
+  min: ClimateValue,
+  max: ClimateValue,
+): Result.Result<ClimateParameter, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const quantizedMin = yield* quantizeCoord(min)
+    const quantizedMax = yield* quantizeCoord(max)
+    return yield* createParameterFromQuantized(quantizedMin, quantizedMax)
+  })
 
 export const isClimateParameter = (
   value: unknown,
@@ -235,37 +321,43 @@ export const isClimateParameter = (
 }
 
 export const requireClimateParameter = (
-  name: string,
+  name: ClimateFieldName,
   value: unknown,
-): ClimateParameter => {
+): Result.Result<ClimateParameter, TypeError | RangeError> => {
   if (!isClimateParameter(value)) {
-    throw new TypeError(`${name} must be a ClimateParameter`)
+    return Result.fail(new TypeError(`${name} must be a ClimateParameter`))
   }
   return createParameterFromQuantized(value.min, value.max)
 }
 
 export function climateParameterSpan(
-  min: number,
-  max: number,
-): ClimateParameter
+  min: ClimateValue,
+  max: ClimateValue,
+): Result.Result<ClimateParameter, TypeError | RangeError>
 export function climateParameterSpan(
   min: ClimateParameter,
   max: ClimateParameter,
-): ClimateParameter
+): Result.Result<ClimateParameter, TypeError | RangeError>
 export function climateParameterSpan(
-  min: number | ClimateParameter,
-  max: number | ClimateParameter,
-): ClimateParameter {
+  min: ClimateValue | ClimateParameter,
+  max: ClimateValue | ClimateParameter,
+): Result.Result<ClimateParameter, TypeError | RangeError> {
   if (typeof min === 'number' && typeof max === 'number') {
     return climateParameterRange(min, max)
   }
   if (typeof min === 'object' && typeof max === 'object') {
-    return createParameterFromQuantized(
-      requireClimateParameter('span min', min).min,
-      requireClimateParameter('span max', max).max,
-    )
+    return Result.gen(function* resultGenerator() {
+      const normalizedMin = yield* requireClimateParameter(ClimateFieldName('span min'), min)
+      const normalizedMax = yield* requireClimateParameter(ClimateFieldName('span max'), max)
+      return yield* createParameterFromQuantized(
+        normalizedMin.min,
+        normalizedMax.max,
+      )
+    })
   }
-  throw new TypeError('span bounds must both be numbers or ClimateParameters')
+  return Result.fail(
+    new TypeError('span bounds must both be numbers or ClimateParameters'),
+  )
 }
 
 export const point: typeof climateParameter = climateParameter
@@ -274,37 +366,53 @@ export const span: typeof climateParameterSpan = climateParameterSpan
 const normalizeParameter = (
   name: string,
   value: unknown,
-): ClimateParameter => {
+): Result.Result<ClimateParameter, TypeError | RangeError> => {
   if (typeof value === 'number') {
-    return climateParameter(value)
+    return Result.flatMap(
+      readFinite(name, value),
+      climateParameter,
+    )
   }
-  return requireClimateParameter(name, value)
+  return requireClimateParameter(ClimateFieldName(name), value)
 }
 
 const createParameterSpace = (
   ...values: ClimateParameterValues
-): ClimateParameterSpace => {
-  const [temperature, humidity, continentalness, erosion, depth, weirdness] =
-    values
-  return Object.freeze({
-    continentalness: normalizeParameter(
+): Result.Result<ClimateParameterSpace, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const [
+      temperatureValue,
+      humidityValue,
+      continentalnessValue,
+      erosionValue,
+      depthValue,
+      weirdnessValue,
+    ] = values
+    const temperature = yield* normalizeParameter('temperature', temperatureValue)
+    const humidity = yield* normalizeParameter('humidity', humidityValue)
+    const continentalness = yield* normalizeParameter(
       'continentalness',
+      continentalnessValue,
+    )
+    const erosion = yield* normalizeParameter('erosion', erosionValue)
+    const depth = yield* normalizeParameter('depth', depthValue)
+    const weirdness = yield* normalizeParameter('weirdness', weirdnessValue)
+    return Object.freeze({
       continentalness,
-    ),
-    depth: normalizeParameter('depth', depth),
-    erosion: normalizeParameter('erosion', erosion),
-    humidity: normalizeParameter('humidity', humidity),
-    temperature: normalizeParameter('temperature', temperature),
-    weirdness: normalizeParameter('weirdness', weirdness),
+      depth,
+      erosion,
+      humidity,
+      temperature,
+      weirdness,
+    })
   })
-}
 
 const readParameterSpace = (
   name: string,
   value: unknown,
-): ClimateParameterSpace => {
+): Result.Result<ClimateParameterSpace, TypeError | RangeError> => {
   if (!isObject(value)) {
-    throw new TypeError(`${name} must be an object`)
+    return Result.fail(new TypeError(`${name} must be an object`))
   }
   const candidate = value
   return createParameterSpace(
@@ -319,15 +427,20 @@ const readParameterSpace = (
 
 export const createClimateParameterSpace = (
   ...values: ClimateParameterInputValues
-): ClimateParameterSpace => createParameterSpace(...values)
+): Result.Result<ClimateParameterSpace, TypeError | RangeError> =>
+  createParameterSpace(...values)
 
 export const createClimateParameterPointFromQuantized = (
   parameters: ClimateParameterSpace,
-  offset: number,
-): ClimateParameterPoint =>
-  Object.freeze({
-    ...readParameterSpace('parameters', parameters),
-    offset: readQuantized('offset', offset),
+  offset: QuantizedClimateValue,
+): Result.Result<ClimateParameterPoint, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const normalizedParameters = yield* readParameterSpace('parameters', parameters)
+    const normalizedOffset = yield* readQuantized('offset', offset)
+    return Object.freeze({
+      ...normalizedParameters,
+      offset: normalizedOffset,
+    })
   })
 
 export const isClimateParameterPoint = (
@@ -349,27 +462,38 @@ export const isClimateParameterPoint = (
 }
 
 export const requireClimateParameterPoint = (
-  name: string,
+  name: ClimateFieldName,
   value: unknown,
-): ClimateParameterPoint => {
+): Result.Result<ClimateParameterPoint, TypeError | RangeError> => {
   if (!isClimateParameterPoint(value)) {
-    throw new TypeError(`${name} must be a ClimateParameterPoint`)
+    return Result.fail(new TypeError(`${name} must be a ClimateParameterPoint`))
   }
-  return createClimateParameterPointFromQuantized(
-    value,
-    value.offset,
+  return Result.flatMap(
+    createParameterSpace(
+      value.temperature,
+      value.humidity,
+      value.continentalness,
+      value.erosion,
+      value.depth,
+      value.weirdness,
+    ),
+    (parameters) =>
+      Result.map(
+        readQuantized('offset', value.offset),
+        (offset) => Object.freeze({ ...parameters, offset }),
+      ),
   )
 }
 
 export function climateParameters(
-  ...values: ClimateParameterArguments<number>
-): ClimateParameterPoint
+  ...values: ClimateParameterArguments<ClimateValue>
+): Result.Result<ClimateParameterPoint, TypeError | RangeError>
 export function climateParameters(
   ...values: ClimateParameterArguments<ClimateParameter>
-): ClimateParameterPoint
+): Result.Result<ClimateParameterPoint, TypeError | RangeError>
 export function climateParameters(
-  ...values: ClimateParameterArguments<number | ClimateParameter>
-): ClimateParameterPoint {
+  ...values: ClimateParameterArguments<ClimateValue | ClimateParameter>
+): Result.Result<ClimateParameterPoint, TypeError | RangeError> {
   const [
     temperature,
     humidity,
@@ -379,15 +503,21 @@ export function climateParameters(
     weirdness,
     offset,
   ] = values
-  const parameters = createParameterSpace(
-    temperature,
-    humidity,
-    continentalness,
-    erosion,
-    depth,
-    weirdness,
-  )
-  return createClimateParameterPointFromQuantized(parameters, quantizeCoord(offset))
+  return Result.gen(function* resultGenerator() {
+    const parameters = yield* createParameterSpace(
+      temperature,
+      humidity,
+      continentalness,
+      erosion,
+      depth,
+      weirdness,
+    )
+    const quantizedOffset = yield* quantizeCoord(offset)
+    return yield* createClimateParameterPointFromQuantized(
+      parameters,
+      quantizedOffset,
+    )
+  })
 }
 
 export const parameters: typeof climateParameters = climateParameters
@@ -395,52 +525,75 @@ export const parameterPoint: typeof climateParameters = climateParameters
 
 export const createClimateTargetPointFromQuantized = (
   ...values: ClimateTargetValues
-): ClimateTargetPoint => {
-  const [temperature, humidity, continentalness, erosion, depth, weirdness] =
-    values
-  return Object.freeze({
-    continentalness: readQuantized('continentalness', continentalness),
-    depth: readQuantized('depth', depth),
-    erosion: readQuantized('erosion', erosion),
-    humidity: readQuantized('humidity', humidity),
-    temperature: readQuantized('temperature', temperature),
-    weirdness: readQuantized('weirdness', weirdness),
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const [temperatureValue, humidityValue, continentalnessValue, erosionValue, depthValue, weirdnessValue] = values
+    const temperature = yield* readQuantized('temperature', temperatureValue)
+    const humidity = yield* readQuantized('humidity', humidityValue)
+    const continentalness = yield* readQuantized('continentalness', continentalnessValue)
+    const erosion = yield* readQuantized('erosion', erosionValue)
+    const depth = yield* readQuantized('depth', depthValue)
+    const weirdness = yield* readQuantized('weirdness', weirdnessValue)
+    return Object.freeze({
+      continentalness,
+      depth,
+      erosion,
+      humidity,
+      temperature,
+      weirdness,
+    })
   })
-}
 
 export const climateTarget = (
-  ...values: ClimateTargetValues
-): ClimateTargetPoint => {
-  const [temperature, humidity, continentalness, erosion, depth, weirdness] =
-    values
-  return createClimateTargetPointFromQuantized(
-    quantizeCoord(temperature),
-    quantizeCoord(humidity),
-    quantizeCoord(continentalness),
-    quantizeCoord(erosion),
-    quantizeCoord(depth),
-    quantizeCoord(weirdness),
-  )
-}
+  ...values: ClimateValueTargetValues
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const [temperature, humidity, continentalness, erosion, depth, weirdness] = values
+    const quantizedTemperature = yield* quantizeCoord(temperature)
+    const quantizedHumidity = yield* quantizeCoord(humidity)
+    const quantizedContinentalness = yield* quantizeCoord(continentalness)
+    const quantizedErosion = yield* quantizeCoord(erosion)
+    const quantizedDepth = yield* quantizeCoord(depth)
+    const quantizedWeirdness = yield* quantizeCoord(weirdness)
+    return yield* createClimateTargetPointFromQuantized(
+      quantizedTemperature,
+      quantizedHumidity,
+      quantizedContinentalness,
+      quantizedErosion,
+      quantizedDepth,
+      quantizedWeirdness,
+    )
+  })
 
 export const target: typeof climateTarget = climateTarget
 
 const readTargetPoint = (
   name: string,
   value: unknown,
-): ClimateTargetPoint => {
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> => {
   if (!isObject(value)) {
-    throw new TypeError(`${name} must be an object`)
+    return Result.fail(new TypeError(`${name} must be an object`))
   }
   const candidate = value
-  return createClimateTargetPointFromQuantized(
-    readQuantized(`${name}.temperature`, candidate.temperature),
-    readQuantized(`${name}.humidity`, candidate.humidity),
-    readQuantized(`${name}.continentalness`, candidate.continentalness),
-    readQuantized(`${name}.erosion`, candidate.erosion),
-    readQuantized(`${name}.depth`, candidate.depth),
-    readQuantized(`${name}.weirdness`, candidate.weirdness),
-  )
+  return Result.gen(function* resultGenerator() {
+    const temperature = yield* readQuantized(`${name}.temperature`, candidate.temperature)
+    const humidity = yield* readQuantized(`${name}.humidity`, candidate.humidity)
+    const continentalness = yield* readQuantized(
+      `${name}.continentalness`,
+      candidate.continentalness,
+    )
+    const erosion = yield* readQuantized(`${name}.erosion`, candidate.erosion)
+    const depth = yield* readQuantized(`${name}.depth`, candidate.depth)
+    const weirdness = yield* readQuantized(`${name}.weirdness`, candidate.weirdness)
+    return Object.freeze({
+      continentalness,
+      depth,
+      erosion,
+      humidity,
+      temperature,
+      weirdness,
+    })
+  })
 }
 
 export const isClimateTargetPoint = (
@@ -477,196 +630,250 @@ const squaredDistance = (parameter: ClimateParameter, targetValue: number): numb
 
 export const climateParameterDistance = (
   parameter: ClimateParameter,
-  targetValue: number,
-): number =>
-  distance(
-    requireClimateParameter('parameter', parameter),
-    readQuantized('target', targetValue),
-  )
+  targetValue: QuantizedClimateValue,
+): Result.Result<ClimateDistance, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const normalizedParameter = yield* requireClimateParameter(
+      ClimateFieldName('parameter'),
+      parameter,
+    )
+    const normalizedTarget = yield* readQuantized('target', targetValue)
+    return ClimateDistance(distance(normalizedParameter, normalizedTarget))
+  })
 
 export const climateParameterSpace = (
   pointValue: ClimateParameterPoint,
-): ClimateParameterSpace => {
-  const normalizedPoint = requireClimateParameterPoint('point', pointValue)
-  return Object.freeze({
-    continentalness: normalizedPoint.continentalness,
-    depth: normalizedPoint.depth,
-    erosion: normalizedPoint.erosion,
-    humidity: normalizedPoint.humidity,
-    temperature: normalizedPoint.temperature,
-    weirdness: normalizedPoint.weirdness,
-  })
-}
+): Result.Result<ClimateParameterSpace, TypeError | RangeError> =>
+  Result.map(
+    requireClimateParameterPoint(ClimateFieldName('point'), pointValue),
+    ({ continentalness, depth, erosion, humidity, temperature, weirdness }) =>
+      Object.freeze({
+        continentalness,
+        depth,
+        erosion,
+        humidity,
+        temperature,
+        weirdness,
+      }),
+  )
 
 const calculateClimateParameterPointFitness = (
   parameterValue: ClimateParameterPoint,
   targetValue: ClimateTargetPoint,
-): number =>
-  squaredDistance(parameterValue.temperature, targetValue.temperature) +
-  squaredDistance(parameterValue.humidity, targetValue.humidity) +
-  squaredDistance(parameterValue.continentalness, targetValue.continentalness) +
-  squaredDistance(parameterValue.erosion, targetValue.erosion) +
-  squaredDistance(parameterValue.depth, targetValue.depth) +
-  squaredDistance(parameterValue.weirdness, targetValue.weirdness) +
-  parameterValue.offset * parameterValue.offset
+): ClimateFitness => {
+  const fitness =
+    squaredDistance(parameterValue.temperature, targetValue.temperature) +
+    squaredDistance(parameterValue.humidity, targetValue.humidity) +
+    squaredDistance(parameterValue.continentalness, targetValue.continentalness) +
+    squaredDistance(parameterValue.erosion, targetValue.erosion) +
+    squaredDistance(parameterValue.depth, targetValue.depth) +
+    squaredDistance(parameterValue.weirdness, targetValue.weirdness) +
+    parameterValue.offset * parameterValue.offset
+  // Validated climate coordinates are safe integers, so this sum is finite and non-negative.
+  return ClimateFitness(fitness)
+}
 
 export const climateParameterPointFitness = (
   pointValue: ClimateParameterPoint,
   targetValue: ClimateTargetPoint,
-): number => {
-  const normalizedPoint = requireClimateParameterPoint('point', pointValue)
-  const normalizedTarget = readTargetPoint('target', targetValue)
-  return calculateClimateParameterPointFitness(
-    normalizedPoint,
-    normalizedTarget,
-  )
-}
+): Result.Result<ClimateFitness, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const normalizedPoint = yield* requireClimateParameterPoint(
+      ClimateFieldName('point'),
+      pointValue,
+    )
+    const normalizedTarget = yield* readTargetPoint('target', targetValue)
+    return calculateClimateParameterPointFitness(normalizedPoint, normalizedTarget)
+  })
 
 const normalizeListEntry = <Value>(
   entry: unknown,
   entryIndex: number,
-): ClimateParameterListEntry<Value> => {
+): Result.Result<ClimateParameterListEntry<Value>, TypeError | RangeError> => {
   if (!Array.isArray(entry) || entry.length !== CLIMATE_LIST_ENTRY_LENGTH) {
-    throw new TypeError(
-      `entries[${entryIndex}] must be a [point, value] tuple`,
+    return Result.fail(
+      new TypeError(`entries[${entryIndex}] must be a [point, value] tuple`),
     )
   }
-  const normalizedPoint = requireClimateParameterPoint(
-      `entries[${entryIndex}][${CLIMATE_FIRST_ENTRY_INDEX}]`,
+  return Result.map(
+    requireClimateParameterPoint(
+      ClimateFieldName(`entries[${entryIndex}][${CLIMATE_FIRST_ENTRY_INDEX}]`),
       entry[CLIMATE_FIRST_ENTRY_INDEX],
-    )
-  const value = entry[CLIMATE_SECOND_ENTRY_INDEX]
-  return Object.freeze([normalizedPoint, value] as const)
+    ),
+    (pointValue) =>
+      Object.freeze([
+        pointValue,
+        entry[CLIMATE_SECOND_ENTRY_INDEX],
+      ] as const),
+  )
 }
 
 export const createClimateParameterList = <Value>(
   entries: readonly ClimateParameterListEntry<Value>[],
-): ClimateParameterList<Value> => {
+): Result.Result<ClimateParameterList<Value>, TypeError | RangeError> => {
   if (!Array.isArray(entries)) {
-    throw new TypeError('entries must be an array')
+    return Result.fail(new TypeError('entries must be an array'))
   }
-  const normalizedEntries = Object.freeze(
-    entries.map((entry, entryIndex) =>
-      normalizeListEntry<Value>(entry, entryIndex),
-    ),
-  )
-  return Object.freeze({
-    entries: normalizedEntries,
-    tree: createClimateRTree(
-      normalizedEntries,
-      calculateClimateParameterPointFitness,
-    ),
+  return Result.gen(function* resultGenerator() {
+    const normalizedEntries: ClimateParameterListEntry<Value>[] = []
+    for (let entryIndex = 0; entryIndex < entries.length; entryIndex += CLIMATE_INDEX_INCREMENT) {
+      normalizedEntries.push(
+        yield* normalizeListEntry<Value>(entries[entryIndex], entryIndex),
+      )
+    }
+    const frozenEntries = Object.freeze(normalizedEntries)
+    const tree = yield* createClimateRTree(
+      frozenEntries,
+      climateParameterPointFitness,
+    )
+    return Object.freeze({
+      entries: frozenEntries,
+      tree,
+    })
   })
 }
 
 export const requireClimateParameterList = <Value>(
   value: unknown,
-): ClimateParameterList<Value> => {
+): Result.Result<ClimateParameterList<Value>, TypeError | RangeError> => {
   if (!isObject(value)) {
-    throw new TypeError('parameter list must be an object')
+    return Result.fail(new TypeError('parameter list must be an object'))
   }
   const { entries } = value
   if (!Array.isArray(entries)) {
-    throw new TypeError('parameter list.entries must be an array')
+    return Result.fail(new TypeError('parameter list.entries must be an array'))
   }
-  return createClimateParameterList(
-    entries.map((entry, entryIndex) => normalizeListEntry<Value>(entry, entryIndex)),
-  )
+  return createClimateParameterList(entries)
 }
 
 export const findClimateValueIndex = <Value>(
   listValue: ClimateParameterList<Value>,
   targetValue: ClimateTargetPoint,
-): number | undefined => {
-  const list = requireClimateParameterList<Value>(listValue)
-  const targetPoint = readTargetPoint('target', targetValue)
-  return list.tree.searchIndex(targetPoint)
-}
+): Result.Result<Option.Option<ClimateListIndex>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const list = yield* requireClimateParameterList<Value>(listValue)
+    const targetPoint = yield* readTargetPoint('target', targetValue)
+    const index = yield* list.tree.searchIndex(targetPoint)
+    return Option.map(index, ClimateListIndex)
+  })
 
 export const findClimateValue = <Value>(
   listValue: ClimateParameterList<Value>,
   targetValue: ClimateTargetPoint,
-): Value | undefined => {
-  const list = requireClimateParameterList<Value>(listValue)
-  return list.tree.search(readTargetPoint('target', targetValue))
-}
+): Result.Result<Option.Option<Value>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const list = yield* requireClimateParameterList<Value>(listValue)
+    const targetPoint = yield* readTargetPoint('target', targetValue)
+    return yield* list.tree.search(targetPoint)
+  })
 
 const findClimateValueIndexBruteForce = <Value>(
   list: ClimateParameterList<Value>,
   targetPoint: ClimateTargetPoint,
-): number | undefined => {
-  let bestIndex = CLIMATE_NO_INDEX
-  let bestFitness = Number.POSITIVE_INFINITY
-  for (
-    let entryIndex = CLIMATE_FIRST_ENTRY_INDEX;
-    entryIndex < list.entries.length;
-    entryIndex += CLIMATE_INDEX_INCREMENT
-  ) {
-    const fitness = calculateClimateParameterPointFitness(
-      requireDefined(list.entries[entryIndex], 'climate entry')[CLIMATE_FIRST_ENTRY_INDEX],
-      targetPoint,
-    )
-    if (bestIndex === CLIMATE_NO_INDEX || fitness < bestFitness) {
-      bestFitness = fitness
-      bestIndex = entryIndex
+): Result.Result<Option.Option<ClimateListIndex>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    let bestIndex: ClimateListIndex | null = null
+    let bestFitness = Number.POSITIVE_INFINITY
+    for (
+      let entryIndex = CLIMATE_FIRST_ENTRY_INDEX;
+      entryIndex < list.entries.length;
+      entryIndex += CLIMATE_INDEX_INCREMENT
+    ) {
+      const entry = yield* requireDefined(
+        list.entries[entryIndex],
+        DefinedValueName('climate entry'),
+      )
+      const fitness = calculateClimateParameterPointFitness(
+        entry[CLIMATE_FIRST_ENTRY_INDEX],
+        targetPoint,
+      )
+      if (bestIndex === null || fitness < bestFitness) {
+        bestFitness = fitness
+        bestIndex = ClimateListIndex(entryIndex)
+      }
     }
-  }
-  if (bestIndex === CLIMATE_NO_INDEX) {
-    return
-  }
-  return bestIndex
-}
+    return Option.fromNullishOr(bestIndex)
+  })
 
 export const findClimateValueBruteForce = <Value>(
   listValue: ClimateParameterList<Value>,
   targetValue: ClimateTargetPoint,
-): Value | undefined => {
-  const list = requireClimateParameterList<Value>(listValue)
-  const index = findClimateValueIndexBruteForce(
-    list,
-    readTargetPoint('target', targetValue),
-  )
-  if (typeof index === 'undefined') {
-    return
-  }
-  return requireDefined(list.entries[index], 'climate entry')[CLIMATE_SECOND_ENTRY_INDEX]
-}
+): Result.Result<Option.Option<Value>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const list = yield* requireClimateParameterList<Value>(listValue)
+    const targetPoint = yield* readTargetPoint('target', targetValue)
+    const indexOption = yield* findClimateValueIndexBruteForce(list, targetPoint)
+    if (Option.isNone(indexOption)) {
+      return Option.none()
+    }
+    const entry = yield* requireDefined(
+      list.entries[indexOption.value],
+      DefinedValueName('climate entry'),
+    )
+    return Option.some(entry[CLIMATE_SECOND_ENTRY_INDEX])
+  })
 
-const readSamplerFields = (value: unknown): ClimateSampler => {
+const readSamplerFields = (
+  value: unknown,
+): Result.Result<ClimateSampler, TypeError | RangeError> => {
   if (!isObject(value)) {
-    throw new TypeError('sampler must be an object')
+    return Result.fail(new TypeError('sampler must be an object'))
   }
   const candidate = value
   const spawnTarget = defaultIfUndefined(candidate.spawnTarget, [])
   if (!Array.isArray(spawnTarget)) {
-    throw new TypeError('sampler.spawnTarget must be an array')
+    return Result.fail(new TypeError('sampler.spawnTarget must be an array'))
   }
-  return Object.freeze({
-    continentalness: requireDensityFunction(
-      'sampler.continentalness',
-      candidate.continentalness,
-    ),
-    depth: requireDensityFunction('sampler.depth', candidate.depth),
-    erosion: requireDensityFunction('sampler.erosion', candidate.erosion),
-    humidity: requireDensityFunction('sampler.humidity', candidate.humidity),
-    spawnTarget: Object.freeze(
-      spawnTarget.map((pointValue, entryIndex) =>
-        requireClimateParameterPoint(
-          `sampler.spawnTarget[${entryIndex}]`,
+  return Result.gen(function* resultGenerator() {
+    const normalizedSpawnTarget: ClimateParameterPoint[] = []
+    for (let entryIndex = 0; entryIndex < spawnTarget.length; entryIndex += CLIMATE_INDEX_INCREMENT) {
+      const pointValue = yield* requireDefined(
+        spawnTarget[entryIndex],
+        DefinedValueName(`sampler.spawnTarget[${entryIndex}]`),
+      )
+      normalizedSpawnTarget.push(
+        yield* requireClimateParameterPoint(
+          ClimateFieldName(`sampler.spawnTarget[${entryIndex}]`),
           pointValue,
         ),
+      )
+    }
+    return Object.freeze({
+      continentalness: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.continentalness'),
+        candidate.continentalness,
       ),
-    ),
-    temperature: requireDensityFunction('sampler.temperature', candidate.temperature),
-    weirdness: requireDensityFunction('sampler.weirdness', candidate.weirdness),
+      depth: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.depth'),
+        candidate.depth,
+      ),
+      erosion: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.erosion'),
+        candidate.erosion,
+      ),
+      humidity: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.humidity'),
+        candidate.humidity,
+      ),
+      spawnTarget: Object.freeze(normalizedSpawnTarget),
+      temperature: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.temperature'),
+        candidate.temperature,
+      ),
+      weirdness: yield* requireDensityFunction(
+        DensityFunctionFieldName('sampler.weirdness'),
+        candidate.weirdness,
+      ),
+    })
   })
 }
 
 export const createClimateSampler = (
   options: ClimateSamplerOptions,
-): ClimateSampler => readSamplerFields(options)
+): Result.Result<ClimateSampler, TypeError | RangeError> =>
+  readSamplerFields(options)
 
-export const empty = (): ClimateSampler =>
+export const empty = (): Result.Result<ClimateSampler, TypeError | RangeError> =>
   createClimateSampler({
     continentalness: densityZero,
     depth: densityZero,
@@ -676,7 +883,9 @@ export const empty = (): ClimateSampler =>
     weirdness: densityZero,
   })
 
-export const requireClimateSampler = (value: unknown): ClimateSampler =>
+export const requireClimateSampler = (
+  value: unknown,
+): Result.Result<ClimateSampler, TypeError | RangeError> =>
   readSamplerFields(value)
 
 export const isClimateSampler = (value: unknown): value is ClimateSampler => {
@@ -705,82 +914,100 @@ const isDensityEvaluationSession = (
 
 const resolveEvaluator = (
   contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-): (density: DensityFunction, position: DensityPosition) => number => {
+): Result.Result<
+    (density: DensityFunction, samplePosition: DensityPosition) => Result.Result<DensityValue, TypeError | RangeError>,
+  TypeError | RangeError
+> => {
   if (typeof contextOrSession === 'undefined') {
-    return evaluateDensityFunction
+    return Result.succeed((density, samplePosition) =>
+      evaluateDensityFunction(density, samplePosition),
+    )
   }
   if (isDensityEvaluationSession(contextOrSession)) {
-    return contextOrSession.evaluate
+    return Result.succeed(contextOrSession.evaluate)
   }
-  return createDensityEvaluationSession(contextOrSession).evaluate
+  return Result.map(
+    createDensityEvaluationSession(contextOrSession),
+    (session) => session.evaluate,
+  )
 }
 
 const sampleWithEvaluator = (
   sampler: ClimateSampler,
-  position: DensityPosition,
-  evaluate: (density: DensityFunction, position: DensityPosition) => number,
-): ClimateTargetPoint =>
-  climateTarget(
-    evaluate(sampler.temperature, position),
-    evaluate(sampler.humidity, position),
-    evaluate(sampler.continentalness, position),
-    evaluate(sampler.erosion, position),
-    evaluate(sampler.depth, position),
-    evaluate(sampler.weirdness, position),
-  )
+  positionValue: DensityPosition,
+  evaluate: (density: DensityFunction, position: DensityPosition) => Result.Result<DensityValue, TypeError | RangeError>,
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const temperature = yield* evaluate(sampler.temperature, positionValue)
+    const humidity = yield* evaluate(sampler.humidity, positionValue)
+    const continentalness = yield* evaluate(sampler.continentalness, positionValue)
+    const erosion = yield* evaluate(sampler.erosion, positionValue)
+    const depth = yield* evaluate(sampler.depth, positionValue)
+    const weirdness = yield* evaluate(sampler.weirdness, positionValue)
+    return yield* climateTarget(
+      ClimateValue(temperature),
+      ClimateValue(humidity),
+      ClimateValue(continentalness),
+      ClimateValue(erosion),
+      ClimateValue(depth),
+      ClimateValue(weirdness),
+    )
+  })
 
 export const sampleClimate = (
   samplerValue: ClimateSampler,
-  position: DensityPosition,
+  positionValue: Position,
   contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-): ClimateTargetPoint => {
-  const sampler = requireClimateSampler(samplerValue)
-  return sampleWithEvaluator(sampler, position, resolveEvaluator(contextOrSession))
-}
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const sampler = yield* requireClimateSampler(samplerValue)
+    const evaluate = yield* resolveEvaluator(contextOrSession)
+    return yield* sampleWithEvaluator(sampler, positionValue, evaluate)
+  })
 
 export const sampleClimateAt = (
   samplerValue: ClimateSampler,
-  ...coordinates: readonly [
-    x: number,
-    y: number,
-    z: number,
-    contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-  ]
-): ClimateTargetPoint => {
-  const [x, y, z, contextOrSession] = coordinates
-  return sampleClimate(
-    samplerValue,
-    blockPosition(
-      requireSafeInteger('x', x),
-      requireSafeInteger('y', y),
-      requireSafeInteger('z', z),
-    ),
-    contextOrSession,
-  )
-}
+  positionValue: Position,
+  contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
+): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+  sampleClimate(samplerValue, positionValue, contextOrSession)
 
-const readSafeInteger = (name: string, value: unknown): number =>
-  requireSafeInteger(name, readNumber(name, value))
+const readSafeInteger = (
+  name: string,
+  value: unknown,
+): Result.Result<number, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const numericValue = yield* readNumber(name, value)
+    return yield* requireSafeInteger(
+      numericValue,
+      () => `${name} must be a safe integer`,
+    )
+  })
 
-const readNonNegativeInteger = (name: string, value: unknown): number => {
-  const normalized = readSafeInteger(name, value)
-  if (normalized < CLIMATE_NON_NEGATIVE_BOUNDARY) {
-    throw new RangeError(`${name} must be non-negative`)
-  }
-  return normalized
-}
+const readNonNegativeInteger = (
+  name: string,
+  value: unknown,
+): Result.Result<ClimateSearchRadius, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const numericValue = yield* readNumber(name, value)
+    const radius = Result.mapError(
+      ClimateSearchRadius.result(numericValue),
+      (error) => new RangeError(error.message),
+    )
+    return yield* radius
+  })
 
 type NormalizedClimateSpawnSearch = Readonly<{
-  readonly origin: Position
-  readonly radius: number
-  readonly verticalRadius: number
-  readonly step: number
+  readonly origin: BlockPosition
+  readonly radius: ClimateSearchRadius
+  readonly verticalRadius: ClimateSearchRadius
+  readonly step: ClimateSearchStep
   readonly context?: DensityEvaluationContext | DensityEvaluationSession
 }>
 
-type ClimateSpawnCandidate = Readonly<{
-  readonly fitness: number
+export type ClimateSpawnCandidate = Readonly<{
   readonly position: BlockPosition
+  readonly fitness: ClimateFitness
 }>
 
 type ClimateSpawnOffset = Readonly<{
@@ -793,18 +1020,18 @@ type ClimateSpawnCandidateOptions = Readonly<{
   readonly evaluate: (
     density: DensityFunction,
     position: DensityPosition,
-  ) => number
+  ) => Result.Result<DensityValue, TypeError | RangeError>
   readonly sampler: ClimateSampler
   readonly search: NormalizedClimateSpawnSearch
   readonly targets: readonly ClimateParameterPoint[]
 }>
 
-const createDefaultOrigin = (): Position =>
-  Object.freeze({
-    x: CLIMATE_DEFAULT_ORIGIN_COMPONENT,
-    y: CLIMATE_DEFAULT_ORIGIN_COMPONENT,
-    z: CLIMATE_DEFAULT_ORIGIN_COMPONENT,
-  })
+const createDefaultOrigin = (): BlockPosition =>
+  blockPosition(
+    BlockAxis(CLIMATE_DEFAULT_ORIGIN_COMPONENT),
+    BlockAxis(CLIMATE_DEFAULT_ORIGIN_COMPONENT),
+    BlockAxis(CLIMATE_DEFAULT_ORIGIN_COMPONENT),
+  )
 
 const createSearchContext = (
   context?: DensityEvaluationContext | DensityEvaluationSession,
@@ -815,187 +1042,233 @@ const createSearchContext = (
   return Object.freeze({ context })
 }
 
-const readOrigin = (value: unknown): Position => {
+const readOrigin = (
+  value: unknown,
+): Result.Result<BlockPosition, TypeError | RangeError> => {
   if (!isObject(value)) {
-    throw new TypeError('origin must be an object')
+    return Result.fail(new TypeError('origin must be an object'))
   }
   const candidate = value
-  return Object.freeze({
-    x: readSafeInteger('origin.x', candidate.x),
-    y: readSafeInteger('origin.y', candidate.y),
-    z: readSafeInteger('origin.z', candidate.z),
+  return Result.gen(function* resultGenerator() {
+    const x = yield* readSafeInteger('origin.x', candidate.x)
+    const y = yield* readSafeInteger('origin.y', candidate.y)
+    const z = yield* readSafeInteger('origin.z', candidate.z)
+    return blockPosition(BlockAxis(x), BlockAxis(y), BlockAxis(z))
   })
 }
 
 const readSearchOptions = (
   value: ClimateSpawnSearchOptions,
-): NormalizedClimateSpawnSearch => {
-  if (value === null || typeof value !== 'object') {
-    throw new TypeError('search options must be an object')
+): Result.Result<NormalizedClimateSpawnSearch, TypeError | RangeError> => {
+  if (!isObject(value)) {
+    return Result.fail(new TypeError('search options must be an object'))
   }
   const options = value
-  const origin = defaultIfUndefined(options.origin, createDefaultOrigin())
-  const radius = readNonNegativeInteger(
-    'radius',
-    defaultIfUndefined(options.radius, CLIMATE_DEFAULT_RADIUS),
-  )
-  const verticalRadius = readNonNegativeInteger(
-    'verticalRadius',
-    defaultIfUndefined(options.verticalRadius, CLIMATE_DEFAULT_VERTICAL_RADIUS),
-  )
-  const step = readNonNegativeInteger(
-    'step',
-    defaultIfUndefined(options.step, CLIMATE_DEFAULT_STEP),
-  )
-  if (step === CLIMATE_ZERO_STEP) {
-    throw new RangeError('step must be positive')
-  }
-  return Object.freeze({
-    ...createSearchContext(options.context),
-    origin: readOrigin(origin),
-    radius,
-    step,
-    verticalRadius,
+  return Result.gen(function* resultGenerator() {
+    const origin = yield* readOrigin(
+      defaultIfUndefined(options.origin, createDefaultOrigin()),
+    )
+    const radius = yield* readNonNegativeInteger(
+      'radius',
+      defaultIfUndefined(options.radius, CLIMATE_DEFAULT_RADIUS),
+    )
+    const verticalRadius = yield* readNonNegativeInteger(
+      'verticalRadius',
+      defaultIfUndefined(options.verticalRadius, CLIMATE_DEFAULT_VERTICAL_RADIUS),
+    )
+    const stepNumber = yield* readSafeInteger(
+      'step',
+      defaultIfUndefined(options.step, CLIMATE_DEFAULT_STEP),
+    )
+    const step = Result.mapError(
+      ClimateSearchStep.result(stepNumber),
+      (error) => new RangeError(error.message),
+    )
+    return Object.freeze({
+      ...createSearchContext(options.context),
+      origin,
+      radius,
+      step: yield* step,
+      verticalRadius,
+    })
   })
 }
 
 const normalizeClimateTargets = (
   sampler: ClimateSampler,
   targets?: readonly ClimateParameterPoint[],
-): readonly ClimateParameterPoint[] => {
+): Result.Result<readonly ClimateParameterPoint[], TypeError | RangeError> => {
   if (typeof targets === 'undefined') {
-    return sampler.spawnTarget
+    return Result.succeed(sampler.spawnTarget)
   }
-  return targets.map((targetValue, index) =>
-    requireClimateParameterPoint(`targets[${index}]`, targetValue),
-  )
+  return Result.gen(function* resultGenerator() {
+    if (!Array.isArray(targets)) {
+      return yield* Result.fail(new TypeError('targets must be an array'))
+    }
+    const normalizedTargets: ClimateParameterPoint[] = []
+    for (let index = 0; index < targets.length; index += CLIMATE_INDEX_INCREMENT) {
+      const targetValue = yield* requireDefined(
+        targets[index],
+        DefinedValueName(`targets[${index}]`),
+      )
+      normalizedTargets.push(
+        yield* requireClimateParameterPoint(
+          ClimateFieldName(`targets[${index}]`),
+          targetValue,
+        ),
+      )
+    }
+    return Object.freeze(normalizedTargets)
+  })
 }
 
 const calculateBestTargetFitness = (
   targets: readonly ClimateParameterPoint[],
   sampled: ClimateTargetPoint,
-): number => {
+): Result.Result<ClimateFitness, TypeError | RangeError> => {
+  // The public boundary returns Option.none before this helper for an empty target list.
   let bestFitness = Number.POSITIVE_INFINITY
   for (const targetValue of targets) {
-    bestFitness = Math.min(
-      bestFitness,
-      climateParameterPointFitness(targetValue, sampled),
-    )
+    const fitness = calculateClimateParameterPointFitness(targetValue, sampled)
+    bestFitness = Math.min(bestFitness, fitness)
   }
-  return bestFitness
+  return Result.succeed(ClimateFitness(bestFitness))
 }
+
+const toDensityPosition = (
+  value: BlockPosition,
+): Result.Result<Position, RangeError> =>
+  Result.succeed(position(
+    PositionAxis(value.x),
+    PositionAxis(value.y),
+    PositionAxis(value.z),
+  ))
 
 const createClimateSpawnCandidate = (
   options: ClimateSpawnCandidateOptions,
   offset: ClimateSpawnOffset,
-): ClimateSpawnCandidate => {
-  const position = blockPosition(
-    options.search.origin.x + offset.x,
-    options.search.origin.y + offset.y,
-    options.search.origin.z + offset.z,
-  )
-  const sampled = sampleWithEvaluator(
-    options.sampler,
-    position,
-    options.evaluate,
-  )
-  return Object.freeze({
-    fitness: calculateBestTargetFitness(options.targets, sampled),
-    position,
+): Result.Result<ClimateSpawnCandidate, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const x = Result.mapError(
+      BlockAxis.result(options.search.origin.x + offset.x),
+      (error) => new RangeError(error.message),
+    )
+    const y = Result.mapError(
+      BlockAxis.result(options.search.origin.y + offset.y),
+      (error) => new RangeError(error.message),
+    )
+    const z = Result.mapError(
+      BlockAxis.result(options.search.origin.z + offset.z),
+      (error) => new RangeError(error.message),
+    )
+    const positionValue = blockPosition(yield* x, yield* y, yield* z)
+    const densityPosition = yield* toDensityPosition(positionValue)
+    const sampled = yield* sampleWithEvaluator(
+      options.sampler,
+      densityPosition,
+      options.evaluate,
+    )
+    return Object.freeze({
+      fitness: yield* calculateBestTargetFitness(options.targets, sampled),
+      position: positionValue,
+    })
   })
-}
 
 const findBestClimateSpawnPosition = (
   candidateOptions: ClimateSpawnCandidateOptions,
-): BlockPosition | undefined => {
-  let bestCandidate: ClimateSpawnCandidate | null = null
-  for (
-    let x = -candidateOptions.search.radius;
-    x <= candidateOptions.search.radius;
-    x += candidateOptions.search.step
-  ) {
+): Result.Result<Option.Option<BlockPosition>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    let bestCandidate: ClimateSpawnCandidate | null = null
     for (
-      let y = -candidateOptions.search.verticalRadius;
-      y <= candidateOptions.search.verticalRadius;
-      y += candidateOptions.search.step
+      let x = -candidateOptions.search.radius;
+      x <= candidateOptions.search.radius;
+      x += candidateOptions.search.step
     ) {
       for (
-        let z = -candidateOptions.search.radius;
-        z <= candidateOptions.search.radius;
-        z += candidateOptions.search.step
+        let y = -candidateOptions.search.verticalRadius;
+        y <= candidateOptions.search.verticalRadius;
+        y += candidateOptions.search.step
       ) {
-        const candidate = createClimateSpawnCandidate(candidateOptions, {
-          x,
-          y,
-          z,
-        })
-        if (
-          bestCandidate === null ||
-          candidate.fitness < bestCandidate.fitness
+        for (
+          let z = -candidateOptions.search.radius;
+          z <= candidateOptions.search.radius;
+          z += candidateOptions.search.step
         ) {
-          bestCandidate = candidate
+          const candidate = yield* createClimateSpawnCandidate(candidateOptions, {
+            x,
+            y,
+            z,
+          })
+          if (
+            bestCandidate === null ||
+            candidate.fitness < bestCandidate.fitness
+          ) {
+            bestCandidate = candidate
+          }
         }
       }
     }
-  }
-  return bestCandidate?.position
-}
+    // Validated non-negative radii and positive step make every inclusive loop non-empty.
+    return Option.map(
+      Option.fromNullishOr(bestCandidate),
+      (candidate) => candidate.position,
+    )
+  })
 
 export const findClimateSpawnPosition = (
   samplerValue: ClimateSampler,
   targets?: readonly ClimateParameterPoint[],
   options: ClimateSpawnSearchOptions = {},
-): BlockPosition | undefined => {
-  const sampler = requireClimateSampler(samplerValue)
-  const search = readSearchOptions(options)
-  const targetValues = normalizeClimateTargets(sampler, targets)
-  if (targetValues.length === CLIMATE_EMPTY_TARGET_COUNT) {
-    return
-  }
-  return findBestClimateSpawnPosition(
-    Object.freeze({
-      evaluate: resolveEvaluator(search.context),
-      sampler,
-      search,
-      targets: targetValues,
-    }),
-  )
-}
+): Result.Result<Option.Option<BlockPosition>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const sampler = yield* requireClimateSampler(samplerValue)
+    const search = yield* readSearchOptions(options)
+    const targetValues = yield* normalizeClimateTargets(sampler, targets)
+    if (targetValues.length === CLIMATE_EMPTY_TARGET_COUNT) {
+      return Option.none()
+    }
+    const evaluate = yield* resolveEvaluator(search.context)
+    return yield* findBestClimateSpawnPosition(
+      Object.freeze({
+        evaluate,
+        sampler,
+        search,
+        targets: targetValues,
+      }),
+    )
+  })
 
 export const findSpawnPosition = (
   targets: readonly ClimateParameterPoint[],
   samplerValue: ClimateSampler,
   options?: ClimateSpawnSearchOptions,
-): BlockPosition | undefined => findClimateSpawnPosition(samplerValue, targets, options)
+): Result.Result<Option.Option<BlockPosition>, TypeError | RangeError> =>
+  findClimateSpawnPosition(samplerValue, targets, options)
 
 export type ClimateSamplerRuntime = ClimateSampler & Readonly<{
   readonly sample: (
-    x: number,
-    y: number,
-    z: number,
+    position: Position,
     contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-  ) => ClimateTargetPoint
+  ) => Result.Result<ClimateTargetPoint, TypeError | RangeError>
   readonly findSpawnPosition: (
     options?: ClimateSpawnSearchOptions,
-  ) => BlockPosition | undefined
+  ) => Result.Result<Option.Option<BlockPosition>, TypeError | RangeError>
 }>
 
 export const createClimateSamplerRuntime = (
   samplerValue: ClimateSampler,
-): ClimateSamplerRuntime => {
-  const sampler = requireClimateSampler(samplerValue)
-  return Object.freeze({
-    ...sampler,
-    findSpawnPosition: (
-      options?: ClimateSpawnSearchOptions,
-    ): BlockPosition | undefined =>
-      findClimateSpawnPosition(sampler, sampler.spawnTarget, options),
-    sample: (
-      x: number,
-      y: number,
-      z: number,
-      contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-    ): ClimateTargetPoint =>
-      sampleClimateAt(sampler, x, y, z, contextOrSession),
-  })
-}
+): Result.Result<ClimateSamplerRuntime, TypeError | RangeError> =>
+  Result.map(requireClimateSampler(samplerValue), (sampler) =>
+    Object.freeze({
+      ...sampler,
+      findSpawnPosition: (
+        options?: ClimateSpawnSearchOptions,
+      ): Result.Result<Option.Option<BlockPosition>, TypeError | RangeError> =>
+        findClimateSpawnPosition(sampler, sampler.spawnTarget, options),
+      sample: (
+        positionValue: Position,
+        contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
+      ): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
+        sampleClimateAt(sampler, positionValue, contextOrSession),
+    }),
+  )

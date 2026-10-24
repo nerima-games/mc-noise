@@ -49,13 +49,12 @@ const asUint32 = (value: number): number => value >>> UINT32_COERCION_SHIFT
  * is meaning-preserving. Non-integers and non-finite values are rejected,
  * because `1.5` and `1.0` would silently collapse to the same seed.
  */
-export const NoiseSeed: Brand.Brand.Constructor<NoiseSeed> = Brand.refined<NoiseSeed>(
-  (value) => Number.isSafeInteger(value),
-  (value) => Brand.error(`NoiseSeed must be a safe integer, received ${value}`),
+export const NoiseSeed: Brand.Constructor<NoiseSeed> = Brand.make<NoiseSeed>(
+  (value) => Number.isSafeInteger(value) || `NoiseSeed must be a safe integer, received ${value}`,
 )
 
 /** Normalise an already-validated seed into the uint32 range. */
-export const toUint32 = (seed: NoiseSeed): number => asUint32(seed)
+export const toUint32 = (seed: NoiseSeed): NoiseSeed => NoiseSeed(asUint32(seed))
 
 /**
  * A pure source of uniform values in [0, 1). Deliberately a plain closure and
@@ -116,7 +115,7 @@ const MULBERRY32_MIX_MASK = 61
 const MULBERRY32_SHIFT_C = 14
 
 export const mulberry32 = (seed: NoiseSeed): RandFn => {
-  let state = toUint32(seed)
+  let state: number = toUint32(seed)
   return () => {
     state = asUint32(state + MULBERRY32_STATE_INCREMENT)
     let mixed = state

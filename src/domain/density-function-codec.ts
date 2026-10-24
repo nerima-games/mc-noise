@@ -1,21 +1,28 @@
-import type {
-  DensityBinaryOperation,
-  DensityCoordinateAxis,
-  DensityFunction,
-  DensityNoiseSource,
-  DensityOldBlendedNoiseOctave,
-  DensityOldBlendedNoiseSource,
-  DensityRarityValueMapper,
-  DensityUnaryOperation,
-} from './density-function-types.js'
+import * as Schema from 'effect/Schema'
+import { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { type ControlPoint, type Spline, SplineInput, SplineValue, createSpline } from './spline.js'
 import {
-  Record,
-  String,
-  Unknown,
-  decodeUnknownSync,
-  parseJson,
-} from 'effect/Schema'
-import { type Spline, createSpline } from './spline.js'
+  type DensityBinaryOperation,
+  DensityBound,
+  type DensityBound as DensityBoundValue,
+  DensityCellSize,
+  type DensityCellSize as DensityCellSizeValue,
+  type DensityCoordinateAxis,
+  type DensityFunction,
+  DensityFunctionFieldName,
+  type DensityNoiseSource,
+  DensityOctaveIndex,
+  type DensityOctaveIndex as DensityOctaveIndexValue,
+  type DensityOldBlendedNoiseOctave,
+  type DensityOldBlendedNoiseSource,
+  type DensityRarityValueMapper,
+  DensityScale,
+  type DensityScale as DensityScaleValue,
+  type DensityUnaryOperation,
+  DensityValue,
+  type DensityValue as DensityValueType,
+} from './density-function-types.js'
+import { Option, Result } from 'effect'
 import {
   createDensityNoiseSource,
   createDensityOldBlendedNoiseSource,
@@ -47,8 +54,13 @@ import {
   densityWeirdScaledSampler,
   densityYClampedGradient,
 } from './density-function.js'
+import {
+  requireFiniteNumber,
+  requirePositiveInteger,
+  requireSafeInteger,
+} from './number-validation.js'
+import type { SchemaError } from 'effect/Schema'
 import { requireDensityFunction } from './density-function-validation.js'
-import { requireFiniteNumber } from './number-validation.js'
 
 export type DensityFunctionCodecOptions = Readonly<{
   readonly encodeNoiseSource?: (source: DensityNoiseSource) => string
@@ -57,50 +69,30 @@ export type DensityFunctionCodecOptions = Readonly<{
   readonly decodeOldBlendedNoiseSource?: (id: string) => DensityOldBlendedNoiseSource
 }>
 
-type EncodedSpline = ReadonlyArray<readonly [number, number]>
-
-const EMPTY_STRING_LENGTH = 0
-const OLD_BLENDED_NOISE_OCTAVE_COUNT = 16
-const OLD_BLENDED_NOISE_OCTAVE_STEP = 1
-const SPLINE_POINT_LENGTH = 2
-const SPLINE_INPUT_INDEX = 0
-const SPLINE_VALUE_INDEX = 1
-const DENSITY_COORDINATE_AXES = ['x', 'y', 'z'] as const
-const DENSITY_BINARY_OPERATIONS = ['add', 'mul', 'min', 'max'] as const
-const DENSITY_UNARY_OPERATIONS = [
-  'abs',
-  'square',
-  'cube',
-  'half-negative',
-  'quarter-negative',
-  'squeeze',
-  'invert',
-] as const
-const DENSITY_LINEAR_OPERATIONS = ['add', 'mul'] as const
-const DENSITY_RARITY_VALUE_MAPPERS = ['type-1', 'type-2'] as const
+type EncodedSpline = ReadonlyArray<readonly [SplineInput, SplineValue]>
 
 export type DensityFunctionEncoded =
-  | Readonly<{ readonly kind: 'constant'; readonly value: number }>
+  | Readonly<{ readonly kind: 'constant'; readonly value: DensityValueType }>
   | Readonly<{
       readonly kind: 'coordinate'
       readonly axis: DensityCoordinateAxis
-      readonly scale: number
-      readonly offset: number
+      readonly scale: DensityScaleValue
+      readonly offset: PositionAxis
     }>
   | Readonly<{
       readonly kind: 'noise'
       readonly source: string
-      readonly xzScale: number
-      readonly yScale: number
+      readonly xzScale: DensityScaleValue
+      readonly yScale: DensityScaleValue
     }>
   | Readonly<{
       readonly kind: 'old-blended-noise'
       readonly source: string
-      readonly xzScale: number
-      readonly yScale: number
-      readonly xzFactor: number
-      readonly yFactor: number
-      readonly smearScaleMultiplier: number
+      readonly xzScale: DensityScaleValue
+      readonly yScale: DensityScaleValue
+      readonly xzFactor: DensityScaleValue
+      readonly yFactor: DensityScaleValue
+      readonly smearScaleMultiplier: DensityScaleValue
     }>
   | Readonly<{ readonly kind: 'beardifier' }>
   | Readonly<{ readonly kind: 'shift'; readonly source: string }>
@@ -112,14 +104,14 @@ export type DensityFunctionEncoded =
       readonly shiftX: DensityFunctionEncoded
       readonly shiftY: DensityFunctionEncoded
       readonly shiftZ: DensityFunctionEncoded
-      readonly xzScale: number
-      readonly yScale: number
+      readonly xzScale: DensityScaleValue
+      readonly yScale: DensityScaleValue
     }>
   | Readonly<{
       readonly kind: 'linear-operation'
       readonly operation: 'add' | 'mul'
       readonly input: DensityFunctionEncoded
-      readonly argument: number
+      readonly argument: DensityValueType
     }>
   | Readonly<{
       readonly kind: 'weird-scaled-sampler'
@@ -142,14 +134,14 @@ export type DensityFunctionEncoded =
   | Readonly<{
       readonly kind: 'clamp'
       readonly input: DensityFunctionEncoded
-      readonly min: number
-      readonly max: number
+      readonly min: DensityValueType
+      readonly max: DensityValueType
     }>
   | Readonly<{
       readonly kind: 'range-choice'
       readonly input: DensityFunctionEncoded
-      readonly minInclusive: number
-      readonly maxExclusive: number
+      readonly minInclusive: DensityValueType
+      readonly maxExclusive: DensityValueType
       readonly inRange: DensityFunctionEncoded
       readonly outOfRange: DensityFunctionEncoded
     }>
@@ -157,643 +149,785 @@ export type DensityFunctionEncoded =
       readonly kind: 'find-top-surface'
       readonly density: DensityFunctionEncoded
       readonly upperBound: DensityFunctionEncoded
-      readonly lowerBound: number
-      readonly cellHeight: number
+      readonly lowerBound: BlockAxis
+      readonly cellHeight: DensityCellSizeValue
     }>
   | Readonly<{
       readonly kind: 'y-clamped-gradient'
-      readonly fromY: number
-      readonly toY: number
-      readonly fromValue: number
-      readonly toValue: number
+      readonly fromY: BlockAxis
+      readonly toY: BlockAxis
+      readonly fromValue: DensityValueType
+      readonly toValue: DensityValueType
     }>
   | Readonly<{
       readonly kind: 'spline'
       readonly input: DensityFunctionEncoded
       readonly spline: EncodedSpline
     }>
-  | Readonly<{
-      readonly kind: 'interpolated'
-      readonly input: DensityFunctionEncoded
-    }>
+  | Readonly<{ readonly kind: 'interpolated'; readonly input: DensityFunctionEncoded }>
   | Readonly<{ readonly kind: 'flat-cache'; readonly input: DensityFunctionEncoded }>
   | Readonly<{ readonly kind: 'cache-2d'; readonly input: DensityFunctionEncoded }>
   | Readonly<{ readonly kind: 'cache-once'; readonly input: DensityFunctionEncoded }>
-  | Readonly<{
-      readonly kind: 'cache-all-in-cell'
-      readonly input: DensityFunctionEncoded
-    }>
-  | Readonly<{
-      readonly kind: 'blend-density'
-      readonly input: DensityFunctionEncoded
-    }>
+  | Readonly<{ readonly kind: 'cache-all-in-cell'; readonly input: DensityFunctionEncoded }>
+  | Readonly<{ readonly kind: 'blend-density'; readonly input: DensityFunctionEncoded }>
   | Readonly<{ readonly kind: 'blend-alpha' }>
   | Readonly<{ readonly kind: 'blend-offset' }>
 
-type EncodedRecord = Readonly<Record<string, unknown>>
+export type DensityFunctionCodecError = SchemaError | TypeError | RangeError
+export type DensityFunctionCodecResult<Value> = Result.Result<Value, DensityFunctionCodecError>
+
+type EncodedRecord = Readonly<{
+  readonly kind?: unknown
+  readonly value?: unknown
+  readonly axis?: unknown
+  readonly offset?: unknown
+  readonly scale?: unknown
+  readonly source?: unknown
+  readonly sample?: unknown
+  readonly maxValue?: unknown
+  readonly minValue?: unknown
+  readonly mainNoise?: unknown
+  readonly minLimitNoise?: unknown
+  readonly maxLimitNoise?: unknown
+  readonly xzScale?: unknown
+  readonly yScale?: unknown
+  readonly xzFactor?: unknown
+  readonly yFactor?: unknown
+  readonly smearScaleMultiplier?: unknown
+  readonly shiftX?: unknown
+  readonly shiftY?: unknown
+  readonly shiftZ?: unknown
+  readonly operation?: unknown
+  readonly input?: unknown
+  readonly argument?: unknown
+  readonly rarityValueMapper?: unknown
+  readonly seed?: unknown
+  readonly left?: unknown
+  readonly right?: unknown
+  readonly min?: unknown
+  readonly max?: unknown
+  readonly minInclusive?: unknown
+  readonly maxExclusive?: unknown
+  readonly inRange?: unknown
+  readonly outOfRange?: unknown
+  readonly density?: unknown
+  readonly upperBound?: unknown
+  readonly lowerBound?: unknown
+  readonly cellHeight?: unknown
+  readonly fromY?: unknown
+  readonly toY?: unknown
+  readonly fromValue?: unknown
+  readonly toValue?: unknown
+  readonly spline?: unknown
+}>
+type EncodeNode = (
+  density: DensityFunction,
+  options: DensityFunctionCodecOptions,
+) => DensityFunctionCodecResult<DensityFunctionEncoded>
+type DecodeNode = (
+  value: unknown,
+  options: DensityFunctionCodecOptions,
+) => DensityFunctionCodecResult<DensityFunction>
+
+const EMPTY_STRING_LENGTH = 0
+const OLD_BLENDED_NOISE_OCTAVE_COUNT = 16
+const OLD_BLENDED_NOISE_OCTAVE_STEP = 1
+const SPLINE_POINT_LENGTH = 2
+const SPLINE_INPUT_POSITION_INDEX = 0
+const SPLINE_VALUE_POSITION_INDEX = 1
+const SPLINE_INDEX_INCREMENT = 1
+const DENSITY_COORDINATE_AXES = ['x', 'y', 'z'] as const
+const DENSITY_BINARY_OPERATIONS = ['add', 'mul', 'min', 'max'] as const
+const DENSITY_UNARY_OPERATIONS = [
+  'abs',
+  'square',
+  'cube',
+  'half-negative',
+  'quarter-negative',
+  'squeeze',
+  'invert',
+] as const
+const DENSITY_LINEAR_OPERATIONS = ['add', 'mul'] as const
+const DENSITY_RARITY_VALUE_MAPPERS = ['type-1', 'type-2'] as const
+const DensityFunctionJsonSchema = Schema.fromJsonString(Schema.Unknown)
 
 const normalizeOptions = (
   options: DensityFunctionCodecOptions,
-): DensityFunctionCodecOptions => {
-  if (options === null || typeof options !== 'object') {
-    throw new TypeError('codec options must be an object')
+): Result.Result<DensityFunctionCodecOptions, TypeError> => {
+  if (options !== null && typeof options === 'object') {
+    return Result.succeed(options)
   }
-  return options
+  return Result.fail(new TypeError('codec options must be an object'))
 }
 
-const readRecord = (name: string, value: unknown): EncodedRecord => {
-  try {
-    return decodeUnknownSync(
-      // Schema.Record is a constructor-style API despite returning a schema value.
-      // oxlint-disable-next-line new-cap
-      Record({ key: String, value: Unknown }),
-    )(value)
-  } catch {
-    throw new TypeError(`${name} must be an object`)
+const isEncodedRecord = (value: unknown): value is EncodedRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const readRecord = (name: string, value: unknown): Result.Result<EncodedRecord, TypeError> => {
+  if (isEncodedRecord(value)) {
+    return Result.succeed(value)
   }
+  return Result.fail(new TypeError(`${name} must be an object`))
 }
 
-const readString = (name: string, value: unknown): string => {
-  if (typeof value !== 'string') {
-    throw new TypeError(`${name} must be a string`)
+const readString = (name: string, value: unknown): Result.Result<string, TypeError> => {
+  if (typeof value === 'string') {
+    return Result.succeed(value)
   }
-  return value
+  return Result.fail(new TypeError(`${name} must be a string`))
 }
 
 const readEnum = <Value extends string>(
   name: string,
   value: unknown,
   allowed: readonly Value[],
-): Value => {
-  const candidate = readString(name, value)
-  const matching = allowed.find((item) => item === candidate)
-  if (typeof matching === 'undefined') {
-    throw new RangeError(`${name} must be one of ${allowed.join(', ')}, received ${candidate}`)
-  }
-  return matching
-}
+): Result.Result<Value, TypeError | RangeError> =>
+  Result.flatMap(readString(name, value), (candidate) => {
+    const matching = allowed.find((item) => item === candidate)
+    if (typeof matching !== 'undefined') {
+      return Result.succeed(matching)
+    }
+    return Result.fail(
+      new RangeError(`${name} must be one of ${allowed.join(', ')}, received ${candidate}`),
+    )
+  })
 
-const readIdentifier = (name: string, value: unknown): string => {
-  const identifier = readString(name, value)
-  if (identifier.length === EMPTY_STRING_LENGTH) {
-    throw new RangeError(`${name} must not be empty`)
-  }
-  return identifier
-}
+const readIdentifier = (name: string, value: unknown): Result.Result<string, TypeError | RangeError> =>
+  Result.flatMap(readString(name, value), (identifier) => {
+    if (identifier.length === EMPTY_STRING_LENGTH) {
+      return Result.fail(new RangeError(`${name} must not be empty`))
+    }
+    return Result.succeed(identifier)
+  })
 
-const readFiniteValue = (name: string, value: unknown): number => {
+const readFiniteValue = (
+  name: string,
+  value: unknown,
+): Result.Result<number, TypeError | RangeError> => {
   if (typeof value !== 'number') {
-    throw new TypeError(`${name} must be a number`)
+    return Result.fail(new TypeError(`${name} must be a number`))
   }
-  return requireFiniteNumber(name, value)
+  return requireFiniteNumber(value, () => `${name} must be finite`)
 }
 
-const readFiniteField = (record: EncodedRecord, name: string): number =>
-  readFiniteValue(name, record[name])
+const readDensityValue = (
+  name: string,
+  value: unknown,
+): Result.Result<DensityValueType, TypeError | RangeError> =>
+  Result.map(readFiniteValue(name, value), DensityValue)
+
+const readDensityScale = (
+  name: string,
+  value: unknown,
+): Result.Result<DensityScaleValue, TypeError | RangeError> =>
+  Result.map(readFiniteValue(name, value), DensityScale)
+
+const readPositionAxis = (
+  name: string,
+  value: unknown,
+): Result.Result<PositionAxis, TypeError | RangeError> =>
+  Result.map(readFiniteValue(name, value), PositionAxis)
+
+const readBlockAxis = (
+  name: string,
+  value: unknown,
+): Result.Result<BlockAxis, TypeError | RangeError> => {
+  if (typeof value !== 'number') {
+    return Result.fail(new TypeError(`${name} must be a number`))
+  }
+  return Result.map(
+    requireSafeInteger(value, () => `${name} must be a safe integer`),
+    BlockAxis,
+  )
+}
+
+const readDensityCellSize = (
+  name: string,
+  value: unknown,
+): Result.Result<DensityCellSizeValue, TypeError | RangeError> => {
+  if (typeof value !== 'number') {
+    return Result.fail(new TypeError(`${name} must be a number`))
+  }
+  return Result.map(
+    requirePositiveInteger(value, () => `${name} must be a positive integer`),
+    DensityCellSize,
+  )
+}
+
+const readDensityBound = (
+  name: string,
+  value: unknown,
+): Result.Result<DensityBoundValue, TypeError | RangeError> => {
+  if (typeof value !== 'number') {
+    return Result.fail(new TypeError(`${name} must be a number`))
+  }
+  if (Number.isNaN(value)) {
+    return Result.fail(new RangeError(`${name} must not be NaN`))
+  }
+  return Result.succeed(DensityBound(value))
+}
 
 const encodeSource = (
   source: DensityNoiseSource,
   options: DensityFunctionCodecOptions,
-): string => {
+): DensityFunctionCodecResult<string> => {
   if (typeof options.encodeNoiseSource !== 'function') {
-    throw new TypeError('encodeNoiseSource is required for noise functions')
+    return Result.fail(new TypeError('encodeNoiseSource is required for noise functions'))
   }
-  const identifier = options.encodeNoiseSource(source)
+  const identifier: unknown = options.encodeNoiseSource(source)
   if (typeof identifier !== 'string' || identifier.length === EMPTY_STRING_LENGTH) {
-    throw new TypeError('encodeNoiseSource must return a non-empty string')
+    return Result.fail(new TypeError('encodeNoiseSource must return a non-empty string'))
   }
-  return identifier
+  return Result.succeed(identifier)
 }
-
-const decodeSource = (
-  record: EncodedRecord,
-  options: DensityFunctionCodecOptions,
-): DensityNoiseSource => {
-  const identifier = readIdentifier('source', record['source'])
-  if (typeof options.decodeNoiseSource !== 'function') {
-    throw new TypeError('decodeNoiseSource is required for noise functions')
-  }
-  const value = options.decodeNoiseSource(identifier)
-  if (value === null || typeof value !== 'object') {
-    throw new TypeError('decodeNoiseSource must return a noise source')
-  }
-  // The decoder helper is declared below with the complete boundary contract.
-  // oxlint-disable-next-line no-use-before-define
-  if (!isDensityNoiseSourceValue(value)) {
-    throw new TypeError('decoded noise source must provide a sample function')
-  }
-  return createDensityNoiseSource(
-    value.sample,
-    {
-      maxValue: readFiniteValue('decoded noise source maxValue', value.maxValue),
-      minValue: readFiniteValue('decoded noise source minValue', value.minValue),
-    },
-  )
-}
-
-type DensityNoiseSourceValue = Readonly<{
-  readonly sample: DensityNoiseSource['sample']
-  readonly minValue: number
-  readonly maxValue: number
-}>
-
-const isDensityNoiseSourceValue = (value: unknown): value is DensityNoiseSourceValue =>
-  value !== null &&
-  typeof value === 'object' &&
-  'sample' in value &&
-  typeof value.sample === 'function' &&
-  'minValue' in value &&
-  typeof value.minValue === 'number' &&
-  'maxValue' in value &&
-  typeof value.maxValue === 'number'
 
 const encodeOldBlendedNoiseSource = (
   source: DensityOldBlendedNoiseSource,
   options: DensityFunctionCodecOptions,
-): string => {
+): DensityFunctionCodecResult<string> => {
   if (typeof options.encodeOldBlendedNoiseSource !== 'function') {
-    throw new TypeError(
-      'encodeOldBlendedNoiseSource is required for old blended noise functions',
+    return Result.fail(
+      new TypeError('encodeOldBlendedNoiseSource is required for old blended noise functions'),
     )
   }
-  const identifier = options.encodeOldBlendedNoiseSource(source)
+  const identifier: unknown = options.encodeOldBlendedNoiseSource(source)
   if (typeof identifier !== 'string' || identifier.length === EMPTY_STRING_LENGTH) {
-    throw new TypeError('encodeOldBlendedNoiseSource must return a non-empty string')
-  }
-  return identifier
-}
-
-const isDecodedOldBlendedNoiseOctave = (
-  value: unknown,
-): value is DensityOldBlendedNoiseOctave =>
-  value !== null &&
-  typeof value === 'object' &&
-  'sample' in value &&
-  typeof value.sample === 'function'
-
-const validateDecodedOldBlendedNoiseOctave = (
-  field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
-  value: unknown,
-): DensityOldBlendedNoiseOctave | undefined => {
-  if (typeof value === 'undefined') {
-    return
-  }
-  if (!isDecodedOldBlendedNoiseOctave(value)) {
-    throw new TypeError(`decoded old blended noise source ${field} must return an octave`)
-  }
-  return value
-}
-
-const requireOldBlendedNoiseFunction = (
-  field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
-  value: unknown,
-): DensityOldBlendedNoiseSource['mainNoise'] => {
-  if (typeof value !== 'function') {
-    throw new TypeError(`decoded old blended noise source must provide a ${field} function`)
-  }
-  const octaves = new Array<DensityOldBlendedNoiseOctave | undefined>(OLD_BLENDED_NOISE_OCTAVE_COUNT)
-  for (let octave = 0; octave < OLD_BLENDED_NOISE_OCTAVE_COUNT; octave += OLD_BLENDED_NOISE_OCTAVE_STEP) {
-    const result = validateDecodedOldBlendedNoiseOctave(field, value(octave))
-    if (typeof result !== 'undefined') {
-      octaves[octave] = result
-    }
-  }
-  return (octave) => octaves[octave]
-}
-
-const decodeOldBlendedNoiseValue = (value: unknown): DensityOldBlendedNoiseSource => {
-  if (value === null || typeof value !== 'object') {
-    throw new TypeError(
-      'decodeOldBlendedNoiseSource must return an old blended noise source',
+    return Result.fail(
+      new TypeError('encodeOldBlendedNoiseSource must return a non-empty string'),
     )
   }
-  const candidate = readRecord('decoded old blended noise source', value)
-  return createDensityOldBlendedNoiseSource(
-    {
-      mainNoise: requireOldBlendedNoiseFunction('mainNoise', candidate['mainNoise']),
-      maxLimitNoise: requireOldBlendedNoiseFunction('maxLimitNoise', candidate['maxLimitNoise']),
-      minLimitNoise: requireOldBlendedNoiseFunction('minLimitNoise', candidate['minLimitNoise']),
-    },
-    {
-      maxValue: readFiniteValue(
-        'decoded old blended noise source maxValue',
-        candidate['maxValue'],
-      ),
-      minValue: readFiniteValue(
-        'decoded old blended noise source minValue',
-        candidate['minValue'],
-      ),
-    },
-  )
-}
-
-const decodeOldBlendedNoiseSource = (
-  record: EncodedRecord,
-  options: DensityFunctionCodecOptions,
-): DensityOldBlendedNoiseSource => {
-  const identifier = readIdentifier('source', record['source'])
-  if (typeof options.decodeOldBlendedNoiseSource !== 'function') {
-    throw new TypeError(
-      'decodeOldBlendedNoiseSource is required for old blended noise functions',
-    )
-  }
-  return decodeOldBlendedNoiseValue(options.decodeOldBlendedNoiseSource(identifier))
+  return Result.succeed(identifier)
 }
 
 const encodeSpline = (spline: Spline): EncodedSpline =>
   spline.map(([input, value]) => [input, value] as const)
 
-const decodeSpline = (value: unknown): Spline => {
-  if (!Array.isArray(value)) {
-    throw new TypeError('spline must be an array')
-  }
-  return createSpline(
-    value.map((point, index) => {
-      if (!Array.isArray(point) || point.length !== SPLINE_POINT_LENGTH) {
-        throw new TypeError(`spline[${index}] must be a pair`)
-      }
-      return [
-        readFiniteValue(`spline[${index}][0]`, point[SPLINE_INPUT_INDEX]),
-        readFiniteValue(`spline[${index}][1]`, point[SPLINE_VALUE_INDEX]),
-      ] as const
-    }),
-  )
-}
-
-const readSeed = (value: unknown): bigint => {
-  const seed = readString('seed', value)
-  if (!/^-?[0-9]+$/.test(seed)) {
-    throw new RangeError('seed must be a decimal integer string')
-  }
-  return BigInt(seed)
-}
-
-type EncodeNode = (
+const encodeDirectNode = (
   density: DensityFunction,
   options: DensityFunctionCodecOptions,
-) => DensityFunctionEncoded
-
-const encodeNodeThird = (
-  density: DensityFunction,
-  options: DensityFunctionCodecOptions,
-  encode: EncodeNode,
-): DensityFunctionEncoded => {
-  switch (density.kind) {
-    case 'interpolated':
-      return { input: encode(density.input, options), kind: 'interpolated' }
-    case 'flat-cache':
-      return { input: encode(density.input, options), kind: 'flat-cache' }
-    case 'cache-2d':
-      return { input: encode(density.input, options), kind: 'cache-2d' }
-    case 'cache-once':
-      return { input: encode(density.input, options), kind: 'cache-once' }
-    case 'cache-all-in-cell':
-      return {
-        input: encode(density.input, options),
-        kind: 'cache-all-in-cell',
-      }
-    case 'blend-density':
-      return { input: encode(density.input, options), kind: 'blend-density' }
-    case 'blend-alpha':
-      return { kind: 'blend-alpha' }
-    case 'blend-offset':
-      return { kind: 'blend-offset' }
-    default:
-      throw new RangeError('unsupported density function kind')
-  }
-}
-
-const encodeNodeSecond = (
-  density: DensityFunction,
-  options: DensityFunctionCodecOptions,
-  encode: EncodeNode,
-): DensityFunctionEncoded => {
-  switch (density.kind) {
-    case 'weird-scaled-sampler':
-      return {
-        input: encode(density.input, options),
-        kind: 'weird-scaled-sampler',
-        rarityValueMapper: density.rarityValueMapper,
-        source: encodeSource(density.source, options),
-      }
-    case 'end-islands':
-      return { kind: 'end-islands', seed: density.seed.toString() }
-    case 'binary':
-      return {
-        kind: 'binary',
-        left: encode(density.left, options),
-        operation: density.operation,
-        right: encode(density.right, options),
-      }
-    case 'unary':
-      return {
-        input: encode(density.input, options),
-        kind: 'unary',
-        operation: density.operation,
-      }
-    case 'clamp':
-      return {
-        input: encode(density.input, options),
-        kind: 'clamp',
-        max: density.max,
-        min: density.min,
-      }
-    case 'range-choice':
-      return {
-        inRange: encode(density.inRange, options),
-        input: encode(density.input, options),
-        kind: 'range-choice',
-        maxExclusive: density.maxExclusive,
-        minInclusive: density.minInclusive,
-        outOfRange: encode(density.outOfRange, options),
-      }
-    case 'find-top-surface':
-      return {
-        cellHeight: density.cellHeight,
-        density: encode(density.density, options),
-        kind: 'find-top-surface',
-        lowerBound: density.lowerBound,
-        upperBound: encode(density.upperBound, options),
-      }
-    case 'y-clamped-gradient':
-      return {
-        fromValue: density.fromValue,
-        fromY: density.fromY,
-        kind: 'y-clamped-gradient',
-        toValue: density.toValue,
-        toY: density.toY,
-      }
-    case 'spline':
-      return {
-        input: encode(density.input, options),
-        kind: 'spline',
-        spline: encodeSpline(density.spline),
-      }
-    default:
-      return encodeNodeThird(density, options, encode)
-  }
-}
-
-const encodeNodeFirst = (
-  density: DensityFunction,
-  options: DensityFunctionCodecOptions,
-  encode: EncodeNode,
-): DensityFunctionEncoded => {
-  const normalized = requireDensityFunction('density', density)
-  switch (normalized.kind) {
-    case 'constant':
-      return { kind: 'constant', value: normalized.value }
-    case 'coordinate':
-      return {
-        axis: normalized.axis,
-        kind: 'coordinate',
-        offset: normalized.offset,
-        scale: normalized.scale,
-      }
-    case 'noise':
-      return {
-        kind: 'noise',
-        source: encodeSource(normalized.source, options),
-        xzScale: normalized.xzScale,
-        yScale: normalized.yScale,
-      }
-    case 'old-blended-noise':
-      return {
-        kind: 'old-blended-noise',
-        smearScaleMultiplier: normalized.smearScaleMultiplier,
-        source: encodeOldBlendedNoiseSource(normalized.source, options),
-        xzFactor: normalized.xzFactor,
-        xzScale: normalized.xzScale,
-        yFactor: normalized.yFactor,
-        yScale: normalized.yScale,
-      }
-    case 'beardifier':
-      return { kind: 'beardifier' }
-    case 'shift':
-      return { kind: 'shift', source: encodeSource(normalized.source, options) }
-    case 'shift-a':
-      return { kind: 'shift-a', source: encodeSource(normalized.source, options) }
-    case 'shift-b':
-      return { kind: 'shift-b', source: encodeSource(normalized.source, options) }
-    case 'shifted-noise':
-      return {
-        kind: 'shifted-noise',
-        shiftX: encode(normalized.shiftX, options),
-        shiftY: encode(normalized.shiftY, options),
-        shiftZ: encode(normalized.shiftZ, options),
-        source: encodeSource(normalized.source, options),
-        xzScale: normalized.xzScale,
-        yScale: normalized.yScale,
-      }
-    case 'linear-operation':
-      return {
-        argument: normalized.argument,
-        input: encode(normalized.input, options),
-        kind: 'linear-operation',
-        operation: normalized.operation,
-      }
-    default:
-      return encodeNodeSecond(normalized, options, encode)
-  }
-}
+): DensityFunctionCodecResult<Option.Option<DensityFunctionEncoded>> =>
+  Result.gen(function* encodeDirectDensityNodeResult() {
+    switch (density.kind) {
+      case 'constant':
+        return Option.some({ kind: 'constant', value: density.value })
+      case 'coordinate':
+        return Option.some({
+          axis: density.axis,
+          kind: 'coordinate',
+          offset: density.offset,
+          scale: density.scale,
+        })
+      case 'noise':
+        return Option.some({
+          kind: 'noise',
+          source: yield* encodeSource(density.source, options),
+          xzScale: density.xzScale,
+          yScale: density.yScale,
+        })
+      case 'old-blended-noise':
+        return Option.some({
+          kind: 'old-blended-noise',
+          smearScaleMultiplier: density.smearScaleMultiplier,
+          source: yield* encodeOldBlendedNoiseSource(density.source, options),
+          xzFactor: density.xzFactor,
+          xzScale: density.xzScale,
+          yFactor: density.yFactor,
+          yScale: density.yScale,
+        })
+      case 'beardifier':
+        return Option.some({ kind: 'beardifier' })
+      case 'shift':
+        return Option.some({
+          kind: 'shift',
+          source: yield* encodeSource(density.source, options),
+        })
+      case 'shift-a':
+        return Option.some({
+          kind: 'shift-a',
+          source: yield* encodeSource(density.source, options),
+        })
+      case 'shift-b':
+        return Option.some({
+          kind: 'shift-b',
+          source: yield* encodeSource(density.source, options),
+        })
+      case 'end-islands':
+        return Option.some({ kind: 'end-islands', seed: density.seed.toString() })
+      case 'y-clamped-gradient':
+        return Option.some({
+          fromValue: density.fromValue,
+          fromY: density.fromY,
+          kind: 'y-clamped-gradient',
+          toValue: density.toValue,
+          toY: density.toY,
+        })
+      case 'blend-alpha':
+        return Option.some({ kind: 'blend-alpha' })
+      case 'blend-offset':
+        return Option.some({ kind: 'blend-offset' })
+      default:
+        return Option.none()
+    }
+  })
 
 const encodeNode: EncodeNode = (density, options) =>
-  encodeNodeFirst(density, options, encodeNode)
+  Result.gen(function* encodeDensityNodeResult() {
+    const normalized = yield* requireDensityFunction(DensityFunctionFieldName('density'), density)
+    const directNode = yield* encodeDirectNode(normalized, options)
+    if (Option.isSome(directNode)) {
+      return directNode.value
+    }
+    switch (normalized.kind) {
+      case 'shifted-noise':
+        return {
+          kind: 'shifted-noise',
+          shiftX: yield* encodeNode(normalized.shiftX, options),
+          shiftY: yield* encodeNode(normalized.shiftY, options),
+          shiftZ: yield* encodeNode(normalized.shiftZ, options),
+          source: yield* encodeSource(normalized.source, options),
+          xzScale: normalized.xzScale,
+          yScale: normalized.yScale,
+        }
+      case 'linear-operation':
+        return {
+          argument: normalized.argument,
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'linear-operation',
+          operation: normalized.operation,
+        }
+      case 'weird-scaled-sampler':
+        return {
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'weird-scaled-sampler',
+          rarityValueMapper: normalized.rarityValueMapper,
+          source: yield* encodeSource(normalized.source, options),
+        }
+      case 'binary':
+        return {
+          kind: 'binary',
+          left: yield* encodeNode(normalized.left, options),
+          operation: normalized.operation,
+          right: yield* encodeNode(normalized.right, options),
+        }
+      case 'unary':
+        return {
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'unary',
+          operation: normalized.operation,
+        }
+      case 'clamp':
+        return {
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'clamp',
+          max: normalized.max,
+          min: normalized.min,
+        }
+      case 'range-choice':
+        return {
+          inRange: yield* encodeNode(normalized.inRange, options),
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'range-choice',
+          maxExclusive: normalized.maxExclusive,
+          minInclusive: normalized.minInclusive,
+          outOfRange: yield* encodeNode(normalized.outOfRange, options),
+        }
+      case 'find-top-surface':
+        return {
+          cellHeight: normalized.cellHeight,
+          density: yield* encodeNode(normalized.density, options),
+          kind: 'find-top-surface',
+          lowerBound: normalized.lowerBound,
+          upperBound: yield* encodeNode(normalized.upperBound, options),
+        }
+      case 'spline':
+        return {
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'spline',
+          spline: encodeSpline(normalized.spline),
+        }
+      case 'interpolated':
+        return { input: yield* encodeNode(normalized.input, options), kind: 'interpolated' }
+      case 'flat-cache':
+        return { input: yield* encodeNode(normalized.input, options), kind: 'flat-cache' }
+      case 'cache-2d':
+        return { input: yield* encodeNode(normalized.input, options), kind: 'cache-2d' }
+      case 'cache-once':
+        return { input: yield* encodeNode(normalized.input, options), kind: 'cache-once' }
+      case 'cache-all-in-cell':
+        return {
+          input: yield* encodeNode(normalized.input, options),
+          kind: 'cache-all-in-cell',
+        }
+      case 'blend-density':
+        return { input: yield* encodeNode(normalized.input, options), kind: 'blend-density' }
+      default:
+        return yield* Result.fail(new RangeError('unsupported density function kind'))
+    }
+  })
 
-type DecodeNode = (
+const readSplineInput = (name: string, value: unknown): Result.Result<SplineInput, TypeError | RangeError> =>
+  Result.map(readFiniteValue(name, value), SplineInput)
+
+const readSplineValue = (name: string, value: unknown): Result.Result<SplineValue, TypeError | RangeError> =>
+  Result.map(readFiniteValue(name, value), SplineValue)
+
+const decodeSpline = (value: unknown): DensityFunctionCodecResult<Spline> => {
+  if (!Array.isArray(value)) {
+    return Result.fail(new TypeError('spline must be an array'))
+  }
+  return Result.gen(function* decodeSplineResult() {
+    const points: ControlPoint[] = []
+    for (
+      let index = 0;
+      index < value.length;
+      index += SPLINE_INDEX_INCREMENT
+    ) {
+      const candidate = value[index]
+      if (!Array.isArray(candidate) || candidate.length !== SPLINE_POINT_LENGTH) {
+        return yield* Result.fail(new TypeError(`spline[${index}] must be a pair`))
+      }
+      const input = yield* readSplineInput(
+        `spline[${index}][${SPLINE_INPUT_POSITION_INDEX}]`,
+        candidate[SPLINE_INPUT_POSITION_INDEX],
+      )
+      const splineValue = yield* readSplineValue(
+        `spline[${index}][${SPLINE_VALUE_POSITION_INDEX}]`,
+        candidate[SPLINE_VALUE_POSITION_INDEX],
+      )
+      points.push([input, splineValue])
+    }
+    return yield* createSpline(points)
+  })
+}
+
+const readSeed = (value: unknown): DensityFunctionCodecResult<bigint> =>
+  Result.flatMap(readString('seed', value), (seed) => {
+    if (/^-?[0-9]+$/.test(seed)) {
+      return Result.succeed(BigInt(seed))
+    }
+    return Result.fail(new RangeError('seed must be a decimal integer string'))
+  })
+
+const isDensityNoiseSample = (
   value: unknown,
-  options: DensityFunctionCodecOptions,
-) => DensityFunction
+): value is DensityNoiseSource['sample'] => typeof value === 'function'
 
-const decodeNodeThird = (
+const decodeSource = (
   record: EncodedRecord,
-  kind: string,
   options: DensityFunctionCodecOptions,
-  decode: DecodeNode,
-): DensityFunction => {
-  switch (kind) {
-    case 'interpolated':
-      return densityInterpolated(decode(record['input'], options))
-    case 'flat-cache':
-      return densityFlatCache(decode(record['input'], options))
-    case 'cache-2d':
-      return densityCache2D(decode(record['input'], options))
-    case 'cache-once':
-      return densityCacheOnce(decode(record['input'], options))
-    case 'cache-all-in-cell':
-      return densityCacheAllInCell(decode(record['input'], options))
-    case 'blend-density':
-      return densityBlendDensity(decode(record['input'], options))
-    case 'blend-alpha':
-      return densityBlendAlpha()
-    case 'blend-offset':
-      return densityBlendOffset()
-    default:
-      throw new RangeError(`unsupported density function kind, received ${kind}`)
-  }
-}
-
-const decodeNodeSecond = (
-  record: EncodedRecord,
-  kind: string,
-  options: DensityFunctionCodecOptions,
-  decode: DecodeNode,
-): DensityFunction => {
-  switch (kind) {
-    case 'weird-scaled-sampler':
-      return densityWeirdScaledSampler(
-        decode(record['input'], options),
-        decodeSource(record, options),
-        readEnum(
-          'rarityValueMapper',
-          record['rarityValueMapper'],
-          DENSITY_RARITY_VALUE_MAPPERS,
+): DensityFunctionCodecResult<DensityNoiseSource> =>
+  Result.gen(function* decodeNoiseSourceResult() {
+    const identifier = yield* readIdentifier('source', record.source)
+    if (typeof options.decodeNoiseSource !== 'function') {
+      return yield* Result.fail(new TypeError('decodeNoiseSource is required for noise functions'))
+    }
+    const candidate: unknown = options.decodeNoiseSource(identifier)
+    if (!isEncodedRecord(candidate)) {
+      return yield* Result.fail(new TypeError('decodeNoiseSource must return a noise source'))
+    }
+    const { sample } = candidate
+    if (!isDensityNoiseSample(sample)) {
+      return yield* Result.fail(
+        new TypeError('decoded noise source must provide a sample function'),
+      )
+    }
+    return yield* createDensityNoiseSource(
+      sample,
+      {
+        maxValue: yield* readDensityBound(
+          'decoded noise source maxValue',
+          candidate.maxValue,
         ),
-      )
-    case 'end-islands':
-      return densityEndIslands(readSeed(record['seed']))
-    case 'binary':
-      return densityBinary(
-        readEnum('operation', record['operation'], DENSITY_BINARY_OPERATIONS),
-        decode(record['left'], options),
-        decode(record['right'], options),
-      )
-    case 'unary':
-      return densityUnary(
-        readEnum('operation', record['operation'], DENSITY_UNARY_OPERATIONS),
-        decode(record['input'], options),
-      )
-    case 'clamp':
-      return densityClamp(
-        decode(record['input'], options),
-        readFiniteField(record, 'min'),
-        readFiniteField(record, 'max'),
-      )
-    case 'range-choice':
-      return densityRangeChoice(
-        decode(record['input'], options),
-        {
-          maxExclusive: readFiniteField(record, 'maxExclusive'),
-          minInclusive: readFiniteField(record, 'minInclusive'),
-        },
-        decode(record['inRange'], options),
-        decode(record['outOfRange'], options),
-      )
-    case 'find-top-surface':
-      return densityFindTopSurface(
-        decode(record['density'], options),
-        decode(record['upperBound'], options),
-        readFiniteField(record, 'lowerBound'),
-        readFiniteField(record, 'cellHeight'),
-      )
-    case 'y-clamped-gradient':
-      return densityYClampedGradient(
-        readFiniteField(record, 'fromY'),
-        readFiniteField(record, 'toY'),
-        readFiniteField(record, 'fromValue'),
-        readFiniteField(record, 'toValue'),
-      )
-    case 'spline':
-      return densitySpline(
-        decode(record['input'], options),
-        decodeSpline(record['spline']),
-      )
-    default:
-      return decodeNodeThird(record, kind, options, decode)
+        minValue: yield* readDensityBound(
+          'decoded noise source minValue',
+          candidate.minValue,
+        ),
+      },
+    )
+  })
+
+const isOldBlendedNoiseOctave = (
+  value: unknown,
+): value is DensityOldBlendedNoiseOctave =>
+  isEncodedRecord(value) && typeof value.sample === 'function'
+
+const isOldBlendedNoiseOctaveSource = (
+  value: unknown,
+): value is DensityOldBlendedNoiseSource['mainNoise'] => typeof value === 'function'
+
+const requireOldBlendedNoiseFunction = (
+  field: 'mainNoise' | 'minLimitNoise' | 'maxLimitNoise',
+  value: unknown,
+): DensityFunctionCodecResult<DensityOldBlendedNoiseSource['mainNoise']> => {
+  if (!isOldBlendedNoiseOctaveSource(value)) {
+    return Result.fail(
+      new TypeError(`decoded old blended noise source must provide a ${field} function`),
+    )
   }
+  return Result.gen(function* decodeOldBlendedNoiseOctavesResult() {
+    const octaves: (DensityOldBlendedNoiseOctave | undefined)[] = []
+    for (
+      let index = 0;
+      index < OLD_BLENDED_NOISE_OCTAVE_COUNT;
+      index += OLD_BLENDED_NOISE_OCTAVE_STEP
+    ) {
+      const octave: unknown = value(DensityOctaveIndex(index))
+      if (typeof octave === 'undefined') {
+        delete octaves[index]
+      } else if (isOldBlendedNoiseOctave(octave)) {
+        octaves[index] = octave
+      } else {
+        return yield* Result.fail(
+          new TypeError(`decoded old blended noise source ${field} must return an octave`),
+        )
+      }
+    }
+    return (index: DensityOctaveIndexValue) => octaves[index]
+  })
 }
 
-const decodeNodeFirst = (
+const decodeOldBlendedNoiseValue = (
+  value: unknown,
+): DensityFunctionCodecResult<DensityOldBlendedNoiseSource> =>
+  Result.gen(function* decodeOldBlendedNoiseValueResult() {
+    if (!isEncodedRecord(value)) {
+      return yield* Result.fail(
+        new TypeError('decodeOldBlendedNoiseSource must return an old blended noise source'),
+      )
+    }
+    const candidate = value
+    return yield* createDensityOldBlendedNoiseSource(
+      {
+        mainNoise: yield* requireOldBlendedNoiseFunction('mainNoise', candidate.mainNoise),
+        maxLimitNoise: yield* requireOldBlendedNoiseFunction(
+          'maxLimitNoise',
+          candidate.maxLimitNoise,
+        ),
+        minLimitNoise: yield* requireOldBlendedNoiseFunction(
+          'minLimitNoise',
+          candidate.minLimitNoise,
+        ),
+      },
+      {
+        maxValue: yield* readDensityBound(
+          'decoded old blended noise source maxValue',
+          candidate.maxValue,
+        ),
+        minValue: yield* readDensityBound(
+          'decoded old blended noise source minValue',
+          candidate.minValue,
+        ),
+      },
+    )
+  })
+
+const decodeOldBlendedNoiseSource = (
   record: EncodedRecord,
-  kind: string,
   options: DensityFunctionCodecOptions,
-  decode: DecodeNode,
-): DensityFunction => {
-  switch (kind) {
-    case 'constant':
-      return densityConstant(readFiniteField(record, 'value'))
-    case 'coordinate':
-      return densityCoordinate(
-        readEnum('axis', record['axis'], DENSITY_COORDINATE_AXES),
-        {
-          offset: readFiniteField(record, 'offset'),
-          scale: readFiniteField(record, 'scale'),
-        },
+): DensityFunctionCodecResult<DensityOldBlendedNoiseSource> =>
+  Result.gen(function* decodeOldBlendedNoiseSourceResult() {
+    const identifier = yield* readIdentifier('source', record.source)
+    if (typeof options.decodeOldBlendedNoiseSource !== 'function') {
+      return yield* Result.fail(
+        new TypeError('decodeOldBlendedNoiseSource is required for old blended noise functions'),
       )
-    case 'noise':
-      return densityNoise(decodeSource(record, options), {
-        xzScale: readFiniteField(record, 'xzScale'),
-        yScale: readFiniteField(record, 'yScale'),
-      })
-    case 'old-blended-noise':
-      return densityOldBlendedNoise(decodeOldBlendedNoiseSource(record, options), {
-        smearScaleMultiplier: readFiniteField(record, 'smearScaleMultiplier'),
-        xzFactor: readFiniteField(record, 'xzFactor'),
-        xzScale: readFiniteField(record, 'xzScale'),
-        yFactor: readFiniteField(record, 'yFactor'),
-        yScale: readFiniteField(record, 'yScale'),
-      })
-    case 'beardifier':
-      return densityBeardifier()
-    case 'shift':
-      return densityShift(decodeSource(record, options))
-    case 'shift-a':
-      return densityShiftA(decodeSource(record, options))
-    case 'shift-b':
-      return densityShiftB(decodeSource(record, options))
-    case 'shifted-noise':
-      return densityShiftedNoise(
-        decodeSource(record, options),
-        {
-          x: decode(record['shiftX'], options),
-          y: decode(record['shiftY'], options),
-          z: decode(record['shiftZ'], options),
-        },
-        {
-          xzScale: readFiniteField(record, 'xzScale'),
-          yScale: readFiniteField(record, 'yScale'),
-        },
-      )
-    case 'linear-operation':
-      return densityLinearOperation(
-        readEnum('operation', record['operation'], DENSITY_LINEAR_OPERATIONS),
-        decode(record['input'], options),
-        readFiniteField(record, 'argument'),
-      )
-    default:
-      return decodeNodeSecond(record, kind, options, decode)
-  }
-}
+    }
+    return yield* decodeOldBlendedNoiseValue(options.decodeOldBlendedNoiseSource(identifier))
+  })
 
-const decodeNode: DecodeNode = (value, options) => {
-  const record = readRecord('density function', value)
-  return decodeNodeFirst(record, readString('kind', record['kind']), options, decodeNode)
-}
+const decodeDirectNode = (
+  kind: string,
+  record: EncodedRecord,
+  options: DensityFunctionCodecOptions,
+): DensityFunctionCodecResult<Option.Option<DensityFunction>> =>
+  Result.gen(function* decodeDirectDensityNodeResult() {
+    switch (kind) {
+      case 'constant':
+        return Option.some(yield* densityConstant(yield* readDensityValue('value', record.value)))
+      case 'coordinate':
+        return Option.some(yield* densityCoordinate(
+          yield* readEnum('axis', record.axis, DENSITY_COORDINATE_AXES),
+          {
+            offset: yield* readPositionAxis('offset', record.offset),
+            scale: yield* readDensityScale('scale', record.scale),
+          },
+        ))
+      case 'noise':
+        return Option.some(yield* densityNoise(yield* decodeSource(record, options), {
+          xzScale: yield* readDensityScale('xzScale', record.xzScale),
+          yScale: yield* readDensityScale('yScale', record.yScale),
+        }))
+      case 'old-blended-noise':
+        return Option.some(yield* densityOldBlendedNoise(
+          yield* decodeOldBlendedNoiseSource(record, options),
+          {
+            smearScaleMultiplier: yield* readDensityScale(
+              'smearScaleMultiplier',
+              record.smearScaleMultiplier,
+            ),
+            xzFactor: yield* readDensityScale('xzFactor', record.xzFactor),
+            xzScale: yield* readDensityScale('xzScale', record.xzScale),
+            yFactor: yield* readDensityScale('yFactor', record.yFactor),
+            yScale: yield* readDensityScale('yScale', record.yScale),
+          },
+        ))
+      case 'beardifier':
+        return Option.some(densityBeardifier())
+      case 'shift':
+        return Option.some(yield* densityShift(yield* decodeSource(record, options)))
+      case 'shift-a':
+        return Option.some(yield* densityShiftA(yield* decodeSource(record, options)))
+      case 'shift-b':
+        return Option.some(yield* densityShiftB(yield* decodeSource(record, options)))
+      case 'end-islands':
+        return Option.some(yield* densityEndIslands(yield* readSeed(record.seed)))
+      case 'y-clamped-gradient':
+        return Option.some(yield* densityYClampedGradient(
+          yield* readBlockAxis('fromY', record.fromY),
+          yield* readBlockAxis('toY', record.toY),
+          yield* readDensityValue('fromValue', record.fromValue),
+          yield* readDensityValue('toValue', record.toValue),
+        ))
+      case 'blend-alpha':
+        return Option.some(densityBlendAlpha())
+      case 'blend-offset':
+        return Option.some(densityBlendOffset())
+      default:
+        return Option.none()
+    }
+  })
+
+const decodeNode: DecodeNode = (value, options) =>
+  Result.gen(function* decodeDensityNodeResult() {
+    const record = yield* readRecord('density function', value)
+    const kind = yield* readString('kind', record.kind)
+    const directNode = yield* decodeDirectNode(kind, record, options)
+    if (Option.isSome(directNode)) {
+      return directNode.value
+    }
+    switch (kind) {
+      case 'shifted-noise':
+        return yield* densityShiftedNoise(
+          yield* decodeSource(record, options),
+          {
+            x: yield* decodeNode(record.shiftX, options),
+            y: yield* decodeNode(record.shiftY, options),
+            z: yield* decodeNode(record.shiftZ, options),
+          },
+          {
+            xzScale: yield* readDensityScale('xzScale', record.xzScale),
+            yScale: yield* readDensityScale('yScale', record.yScale),
+          },
+        )
+      case 'linear-operation':
+        return yield* densityLinearOperation(
+          yield* readEnum('operation', record.operation, DENSITY_LINEAR_OPERATIONS),
+          yield* decodeNode(record.input, options),
+          yield* readDensityValue('argument', record.argument),
+        )
+      case 'weird-scaled-sampler':
+        return yield* densityWeirdScaledSampler(
+          yield* decodeNode(record.input, options),
+          yield* decodeSource(record, options),
+          yield* readEnum(
+            'rarityValueMapper',
+            record.rarityValueMapper,
+            DENSITY_RARITY_VALUE_MAPPERS,
+          ),
+        )
+      case 'binary':
+        return yield* densityBinary(
+          yield* readEnum('operation', record.operation, DENSITY_BINARY_OPERATIONS),
+          yield* decodeNode(record.left, options),
+          yield* decodeNode(record.right, options),
+        )
+      case 'unary':
+        return yield* densityUnary(
+          yield* readEnum('operation', record.operation, DENSITY_UNARY_OPERATIONS),
+          yield* decodeNode(record.input, options),
+        )
+      case 'clamp':
+        return yield* densityClamp(
+          yield* decodeNode(record.input, options),
+          yield* readDensityValue('min', record.min),
+          yield* readDensityValue('max', record.max),
+        )
+      case 'range-choice':
+        return yield* densityRangeChoice(
+          yield* decodeNode(record.input, options),
+          {
+            maxExclusive: yield* readDensityValue('maxExclusive', record.maxExclusive),
+            minInclusive: yield* readDensityValue('minInclusive', record.minInclusive),
+          },
+          yield* decodeNode(record.inRange, options),
+          yield* decodeNode(record.outOfRange, options),
+        )
+      case 'find-top-surface':
+        return yield* densityFindTopSurface(
+          yield* decodeNode(record.density, options),
+          yield* decodeNode(record.upperBound, options),
+          yield* readBlockAxis('lowerBound', record.lowerBound),
+          yield* readDensityCellSize('cellHeight', record.cellHeight),
+        )
+      case 'spline':
+        return yield* densitySpline(
+          yield* decodeNode(record.input, options),
+          yield* decodeSpline(record.spline),
+        )
+      case 'interpolated':
+        return densityInterpolated(yield* decodeNode(record.input, options))
+      case 'flat-cache':
+        return densityFlatCache(yield* decodeNode(record.input, options))
+      case 'cache-2d':
+        return densityCache2D(yield* decodeNode(record.input, options))
+      case 'cache-once':
+        return densityCacheOnce(yield* decodeNode(record.input, options))
+      case 'cache-all-in-cell':
+        return densityCacheAllInCell(yield* decodeNode(record.input, options))
+      case 'blend-density':
+        return densityBlendDensity(yield* decodeNode(record.input, options))
+      default:
+        return yield* Result.fail(
+          new RangeError(`unsupported density function kind, received ${kind}`),
+        )
+    }
+  })
 
 export const encodeDensityFunction = (
   density: DensityFunction,
   options: DensityFunctionCodecOptions = {},
-): DensityFunctionEncoded => encodeNode(density, normalizeOptions(options))
+): DensityFunctionCodecResult<DensityFunctionEncoded> =>
+  Result.flatMap(normalizeOptions(options), (normalizedOptions) =>
+    encodeNode(density, normalizedOptions),
+  )
 
 export const decodeDensityFunction = (
   value: unknown,
   options: DensityFunctionCodecOptions = {},
-): DensityFunction => decodeNode(value, normalizeOptions(options))
+): DensityFunctionCodecResult<DensityFunction> =>
+  Result.flatMap(normalizeOptions(options), (normalizedOptions) =>
+    decodeNode(value, normalizedOptions),
+  )
 
 export const stringifyDensityFunction = (
   density: DensityFunction,
   options: DensityFunctionCodecOptions = {},
-): string => JSON.stringify(encodeDensityFunction(density, options))
+): DensityFunctionCodecResult<string> =>
+  Result.flatMap(encodeDensityFunction(density, options), (encoded) =>
+    Result.fromNullishOr(JSON.stringify(encoded), TypeError),
+  )
 
 export const parseDensityFunction = (
   serialized: string,
   options: DensityFunctionCodecOptions = {},
-): DensityFunction => {
+): DensityFunctionCodecResult<DensityFunction> => {
   if (typeof serialized !== 'string') {
-    throw new TypeError('serialized density function must be a string')
+    return Result.fail(new TypeError('serialized density function must be a string'))
   }
-  return decodeDensityFunction(
-    decodeUnknownSync(parseJson())(serialized),
-    options,
+  return Result.flatMap(normalizeOptions(options), (normalizedOptions) =>
+    Result.flatMap(
+      Schema.decodeUnknownResult(DensityFunctionJsonSchema)(serialized),
+      (value) => decodeNode(value, normalizedOptions),
+    ),
   )
 }

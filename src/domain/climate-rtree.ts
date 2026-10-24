@@ -1,9 +1,17 @@
-import type {
-  ClimateParameterListEntry,
-  ClimateParameterPoint,
-  ClimateTargetPoint,
+import {
+  ClimateFieldName,
+  ClimateFitness,
+  type ClimateFitness as ClimateFitnessValue,
+  ClimateListIndex,
+  type ClimateListIndex as ClimateListIndexValue,
+  type ClimateParameterListEntry,
+  type ClimateParameterPoint,
+  type ClimateTargetPoint,
+  isClimateTargetPoint,
+  requireClimateParameterPoint,
 } from './climate.js'
-import { requireDefined } from './defined.js'
+import { DefinedValueName, requireDefined } from './defined.js'
+import { Option, Result } from 'effect'
 
 const CLIMATE_DIMENSIONS = [
   'temperature',
@@ -19,13 +27,14 @@ const INDEX_INCREMENT = 1
 const MIDPOINT_DIVISOR = 2
 const SECOND_ENTRY_INDEX = 1
 const SINGLE_ENTRY_COUNT = 1
+const CLIMATE_LIST_ENTRY_LENGTH = 2
 const TARGET_OFFSET = 0
 const ZERO_DISTANCE = 0
 
 type ClimateDimension = typeof CLIMATE_DIMENSIONS[number]
 
 type IndexedEntry<Value> = Readonly<{
-  readonly index: number
+  readonly index: ClimateListIndexValue
   readonly point: ClimateParameterPoint
   readonly value: Value
 }>
@@ -61,21 +70,25 @@ type Node<Value> = Leaf<Value> | Branch<Value>
 
 type SearchMatch<Value> = Readonly<{
   readonly entry: IndexedEntry<Value>
-  readonly fitness: number
+  readonly fitness: ClimateFitnessValue
 }>
 
 type SearchState<Value> = {
   best: SearchMatch<Value> | null
 }
 
-type ClimateRTreeFitness = (
+export type ClimateRTreeFitness = (
   point: ClimateParameterPoint,
   target: ClimateTargetPoint,
-) => number
+) => Result.Result<ClimateFitnessValue, TypeError | RangeError>
 
 export type ClimateRTree<Value> = Readonly<{
-  readonly search: (target: ClimateTargetPoint) => Value | undefined
-  readonly searchIndex: (target: ClimateTargetPoint) => number | undefined
+  readonly search: (
+    target: ClimateTargetPoint,
+  ) => Result.Result<Option.Option<Value>, TypeError | RangeError>
+  readonly searchIndex: (
+    target: ClimateTargetPoint,
+  ) => Result.Result<Option.Option<ClimateListIndexValue>, TypeError | RangeError>
 }>
 
 const pointCoordinate = (
@@ -105,20 +118,23 @@ const createMutableBounds = <Value>(
 const mergeBounds = <Value>(
   bounds: MutableBounds,
   entry: IndexedEntry<Value>,
-): void => {
-  for (
-    let index = FIRST_ENTRY_INDEX;
-    index < CLIMATE_DIMENSIONS.length;
-    index += INDEX_INCREMENT
-  ) {
-    const dimension = requireDefined(CLIMATE_DIMENSIONS[index], 'climate dimension')
-    const coordinate = pointCoordinate(entry.point, dimension)
-    bounds.lower[index] = Math.min(requireDefined(bounds.lower[index], 'lower bound'), coordinate.lower)
-    bounds.upper[index] = Math.max(requireDefined(bounds.upper[index], 'upper bound'), coordinate.upper)
-  }
-  bounds.offsetLower = Math.min(bounds.offsetLower, entry.point.offset)
-  bounds.offsetUpper = Math.max(bounds.offsetUpper, entry.point.offset)
-}
+): Result.Result<void, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    for (
+      let index = FIRST_ENTRY_INDEX;
+      index < CLIMATE_DIMENSIONS.length;
+      index += INDEX_INCREMENT
+    ) {
+      const dimension = yield* requireDefined(CLIMATE_DIMENSIONS[index], DefinedValueName('climate dimension'))
+      const coordinate = pointCoordinate(entry.point, dimension)
+      const lower = yield* requireDefined(bounds.lower[index], DefinedValueName('lower bound'))
+      const upper = yield* requireDefined(bounds.upper[index], DefinedValueName('upper bound'))
+      bounds.lower[index] = Math.min(lower, coordinate.lower)
+      bounds.upper[index] = Math.max(upper, coordinate.upper)
+    }
+    bounds.offsetLower = Math.min(bounds.offsetLower, entry.point.offset)
+    bounds.offsetUpper = Math.max(bounds.offsetUpper, entry.point.offset)
+  })
 
 const freezeBounds = (bounds: MutableBounds): Bounds =>
   Object.freeze({
@@ -130,68 +146,104 @@ const freezeBounds = (bounds: MutableBounds): Bounds =>
 
 const createBounds = <Value>(
   entries: readonly IndexedEntry<Value>[],
-): Bounds => {
-  const bounds = createMutableBounds(requireDefined(entries[FIRST_ENTRY_INDEX], 'climate entry'))
-  for (const entry of entries.slice(SECOND_ENTRY_INDEX)) {
-    mergeBounds(bounds, entry)
-  }
-  return freezeBounds(bounds)
-}
+): Result.Result<Bounds, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const first = yield* requireDefined(entries[FIRST_ENTRY_INDEX], DefinedValueName('climate entry'))
+    const bounds = createMutableBounds(first)
+    for (const entry of entries.slice(SECOND_ENTRY_INDEX)) {
+      yield* mergeBounds(bounds, entry)
+    }
+    return freezeBounds(bounds)
+  })
 
 const midpoint = (
   entry: IndexedEntry<unknown>,
   axis: number,
-): number => {
-  const dimension = requireDefined(CLIMATE_DIMENSIONS[axis], 'climate dimension')
-  const coordinate = pointCoordinate(entry.point, dimension)
-  return (coordinate.lower + coordinate.upper) / MIDPOINT_DIVISOR
-}
+): Result.Result<number, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const dimension = yield* requireDefined(CLIMATE_DIMENSIONS[axis], DefinedValueName('climate dimension'))
+    const coordinate = pointCoordinate(entry.point, dimension)
+    return (coordinate.lower + coordinate.upper) / MIDPOINT_DIVISOR
+  })
 
-const splitAxis = (bounds: Bounds): number => {
-  let axis = FIRST_ENTRY_INDEX
-  let largestSpan =
-    requireDefined(bounds.upper[FIRST_ENTRY_INDEX], 'upper bound') - requireDefined(bounds.lower[FIRST_ENTRY_INDEX], 'lower bound')
-  for (
-    let index = SECOND_ENTRY_INDEX;
-    index < CLIMATE_DIMENSIONS.length;
-    index += INDEX_INCREMENT
-  ) {
-    const span = requireDefined(bounds.upper[index], 'upper bound') - requireDefined(bounds.lower[index], 'lower bound')
-    if (span > largestSpan) {
-      axis = index
-      largestSpan = span
+const axisSpan = (
+  bounds: Bounds,
+  axis: number,
+): Result.Result<number, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const upper = yield* requireDefined(bounds.upper[axis], DefinedValueName('upper bound'))
+    const lower = yield* requireDefined(bounds.lower[axis], DefinedValueName('lower bound'))
+    return upper - lower
+  })
+
+const splitAxis = (bounds: Bounds): Result.Result<number, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    let axis = FIRST_ENTRY_INDEX
+    let largestSpan = yield* axisSpan(bounds, axis)
+    for (
+      let index = SECOND_ENTRY_INDEX;
+      index < CLIMATE_DIMENSIONS.length;
+      index += INDEX_INCREMENT
+    ) {
+      const span = yield* axisSpan(bounds, index)
+      if (span > largestSpan) {
+        axis = index
+        largestSpan = span
+      }
     }
-  }
-  return axis
-}
+    return axis
+  })
+
+const partitionEntries = <Value>(
+  entries: readonly IndexedEntry<Value>[],
+  axis: number,
+): Result.Result<Readonly<{ left: readonly IndexedEntry<Value>[]; right: readonly IndexedEntry<Value>[] }>, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const keyedEntries: Array<Readonly<{ entry: IndexedEntry<Value>; midpoint: number }>> = []
+    for (const entry of entries) {
+      keyedEntries.push({
+        entry,
+        midpoint: yield* midpoint(entry, axis),
+      })
+    }
+    keyedEntries.sort((left, right) => {
+      const midpointDifference = left.midpoint - right.midpoint
+      if (midpointDifference !== ZERO_DISTANCE) {
+        return midpointDifference
+      }
+      return left.entry.index - right.entry.index
+    })
+    const ordered = keyedEntries.map(({ entry }) => entry)
+    const splitIndex = Math.floor(ordered.length / MIDPOINT_DIVISOR)
+    return Object.freeze({
+      left: ordered.slice(FIRST_ENTRY_INDEX, splitIndex),
+      right: ordered.slice(splitIndex),
+    })
+  })
 
 const buildTree = <Value>(
   entries: readonly IndexedEntry<Value>[],
-): Node<Value> => {
-  const bounds = createBounds(entries)
-  if (entries.length === SINGLE_ENTRY_COUNT) {
+): Result.Result<Node<Value>, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const bounds = yield* createBounds(entries)
+    if (entries.length === SINGLE_ENTRY_COUNT) {
+      return Object.freeze({
+        bounds,
+        entry: yield* requireDefined(entries[FIRST_ENTRY_INDEX], DefinedValueName('climate entry')),
+        kind: 'leaf' as const,
+      })
+    }
+    const axis = yield* splitAxis(bounds)
+    const partition = yield* partitionEntries(entries, axis)
+    const left = yield* buildTree(partition.left)
+    const right = yield* buildTree(partition.right)
     return Object.freeze({
       bounds,
-      entry: requireDefined(entries[FIRST_ENTRY_INDEX], 'climate entry'),
-      kind: 'leaf' as const,
+      kind: 'branch' as const,
+      left,
+      right,
     })
-  }
-  const axis = splitAxis(bounds)
-  const ordered = [...entries].sort((left, right) => {
-    const midpointDifference = midpoint(left, axis) - midpoint(right, axis)
-    if (midpointDifference !== ZERO_DISTANCE) {
-      return midpointDifference
-    }
-    return left.index - right.index
   })
-  const splitIndex = Math.floor(ordered.length / MIDPOINT_DIVISOR)
-  return Object.freeze({
-    bounds,
-    kind: 'branch' as const,
-    left: buildTree(ordered.slice(FIRST_ENTRY_INDEX, splitIndex)),
-    right: buildTree(ordered.slice(splitIndex)),
-  })
-}
 
 const distanceToInterval = (
   lower: number,
@@ -210,30 +262,27 @@ const distanceToInterval = (
 const lowerBound = (
   bounds: Bounds,
   target: ClimateTargetPoint,
-): number => {
-  let result = distanceToInterval(
-    requireDefined(bounds.lower[FIRST_ENTRY_INDEX], 'lower bound'),
-    requireDefined(bounds.upper[FIRST_ENTRY_INDEX], 'upper bound'),
-    target.temperature,
-  )
-  for (
-    let index = SECOND_ENTRY_INDEX;
-    index < CLIMATE_DIMENSIONS.length;
-    index += INDEX_INCREMENT
-  ) {
-    const dimension = requireDefined(CLIMATE_DIMENSIONS[index], 'climate dimension')
-    result += distanceToInterval(
-      requireDefined(bounds.lower[index], 'lower bound'),
-      requireDefined(bounds.upper[index], 'upper bound'),
-      target[dimension],
+): Result.Result<number, RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const firstLower = yield* requireDefined(bounds.lower[FIRST_ENTRY_INDEX], DefinedValueName('lower bound'))
+    const firstUpper = yield* requireDefined(bounds.upper[FIRST_ENTRY_INDEX], DefinedValueName('upper bound'))
+    let result = distanceToInterval(firstLower, firstUpper, target.temperature)
+    for (
+      let index = SECOND_ENTRY_INDEX;
+      index < CLIMATE_DIMENSIONS.length;
+      index += INDEX_INCREMENT
+    ) {
+      const dimension = yield* requireDefined(CLIMATE_DIMENSIONS[index], DefinedValueName('climate dimension'))
+      const lower = yield* requireDefined(bounds.lower[index], DefinedValueName('lower bound'))
+      const upper = yield* requireDefined(bounds.upper[index], DefinedValueName('upper bound'))
+      result += distanceToInterval(lower, upper, target[dimension])
+    }
+    return result + distanceToInterval(
+      bounds.offsetLower,
+      bounds.offsetUpper,
+      TARGET_OFFSET,
     )
-  }
-  return result + distanceToInterval(
-    bounds.offsetLower,
-    bounds.offsetUpper,
-    TARGET_OFFSET,
-  )
-}
+  })
 
 const isBetterMatch = <Value>(
   candidate: SearchMatch<Value>,
@@ -249,95 +298,124 @@ const isBetterMatch = <Value>(
     candidate.entry.index < current.entry.index
 }
 
+const readFitness = (
+  value: unknown,
+): Result.Result<ClimateFitnessValue, TypeError | RangeError> => {
+  if (!Result.isResult(value)) {
+    return Result.fail(new TypeError('RTree fitness must return a Result'))
+  }
+  if (Result.isFailure(value)) {
+    if (value.failure instanceof TypeError || value.failure instanceof RangeError) {
+      return Result.fail(value.failure)
+    }
+    return Result.fail(new TypeError('RTree fitness returned an invalid error'))
+  }
+  if (typeof value.success !== 'number') {
+    return Result.fail(new TypeError('RTree fitness must return a number'))
+  }
+  return Result.mapError(
+    ClimateFitness.result(value.success),
+    (error) => new RangeError(error.message),
+  )
+}
+
+const readTarget = (
+  value: unknown,
+): Result.Result<ClimateTargetPoint, TypeError> => {
+  if (!isClimateTargetPoint(value)) {
+    return Result.fail(new TypeError('RTree target must be a ClimateTargetPoint'))
+  }
+  return Result.succeed(value)
+}
+
 const visitLeaf = <Value>(
   node: Leaf<Value>,
   target: ClimateTargetPoint,
   fitness: ClimateRTreeFitness,
   state: SearchState<Value>,
-): void => {
-  const candidate: SearchMatch<Value> = {
-    entry: node.entry,
-    fitness: fitness(node.entry.point, target),
-  }
-  if (isBetterMatch(candidate, state.best)) {
-    state.best = candidate
-  }
-}
+): Result.Result<void, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const value = yield* readFitness(fitness(node.entry.point, target))
+    const candidate: SearchMatch<Value> = {
+      entry: node.entry,
+      fitness: value,
+    }
+    if (isBetterMatch(candidate, state.best)) {
+      state.best = candidate
+    }
+  })
 
 const visitChildren = <Value>(
   node: Branch<Value>,
   target: ClimateTargetPoint,
-  visit: (child: Node<Value>) => void,
-): void => {
-  const leftDistance = lowerBound(node.left.bounds, target)
-  const rightDistance = lowerBound(node.right.bounds, target)
-  if (leftDistance <= rightDistance) {
-    visit(node.left)
-    visit(node.right)
-    return
-  }
-  visit(node.right)
-  visit(node.left)
-}
+  visit: (child: Node<Value>) => Result.Result<void, TypeError | RangeError>,
+): Result.Result<void, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const leftDistance = yield* lowerBound(node.left.bounds, target)
+    const rightDistance = yield* lowerBound(node.right.bounds, target)
+    if (leftDistance <= rightDistance) {
+      yield* visit(node.left)
+      yield* visit(node.right)
+      return
+    }
+    yield* visit(node.right)
+    yield* visit(node.left)
+  })
 
 const visitNode = <Value>(
   node: Node<Value>,
   target: ClimateTargetPoint,
   fitness: ClimateRTreeFitness,
   state: SearchState<Value>,
-): void => {
-  if (
-    state.best !== null &&
-    lowerBound(node.bounds, target) > state.best.fitness
-  ) {
-    return
-  }
-  if (node.kind === 'leaf') {
-    visitLeaf(node, target, fitness, state)
-    return
-  }
-  visitChildren(node, target, (child) =>
-    visitNode(child, target, fitness, state),
-  )
-}
+): Result.Result<void, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const nodeDistance = yield* lowerBound(node.bounds, target)
+    if (state.best !== null && nodeDistance > state.best.fitness) {
+      return
+    }
+    if (node.kind === 'leaf') {
+      yield* visitLeaf(node, target, fitness, state)
+      return
+    }
+    yield* visitChildren(node, target, (child) =>
+      visitNode(child, target, fitness, state),
+    )
+  })
 
 const createSearch = <Value>(
   root: Node<Value> | null,
   fitness: ClimateRTreeFitness,
-): ((target: ClimateTargetPoint) => SearchMatch<Value> | null) => (
+): ((
+  target: ClimateTargetPoint,
+) => Result.Result<Option.Option<SearchMatch<Value>>, TypeError | RangeError>) => (
   target,
-) => {
-  if (root === null) {
-    return null
-  }
-  const state: SearchState<Value> = { best: null }
-  visitNode(root, target, fitness, state)
-  return state.best
-}
+) =>
+  Result.gen(function* resultGenerator() {
+    const normalizedTarget = yield* readTarget(target)
+    if (root === null) {
+      return Option.none()
+    }
+    const state: SearchState<Value> = { best: null }
+    yield* visitNode(root, normalizedTarget, fitness, state)
+    // A non-null tree contains a leaf, so every successful visit sets a match.
+    return Option.fromNullishOr(state.best)
+  })
 
 const matchIndex = <Value>(
-  match: SearchMatch<Value> | null,
-): number | undefined => {
-  if (match === null) {
-    return
-  }
-  return match.entry.index
-}
+  match: Option.Option<SearchMatch<Value>>,
+): Option.Option<ClimateListIndexValue> =>
+  Option.map(match, ({ entry }) => entry.index)
 
 const matchValue = <Value>(
-  match: SearchMatch<Value> | null,
-): Value | undefined => {
-  if (match === null) {
-    return
-  }
-  return match.entry.value
-}
+  match: Option.Option<SearchMatch<Value>>,
+): Option.Option<Value> =>
+  Option.map(match, ({ entry }) => entry.value)
 
 const createRoot = <Value>(
   entries: readonly IndexedEntry<Value>[],
-): Node<Value> | null => {
+): Result.Result<Node<Value> | null, RangeError> => {
   if (entries.length === EMPTY_ENTRY_COUNT) {
-    return null
+    return Result.succeed(null)
   }
   return buildTree(entries)
 }
@@ -345,39 +423,56 @@ const createRoot = <Value>(
 const validateRTreeInputs = <Value>(
   entries: readonly ClimateParameterListEntry<Value>[],
   fitness: ClimateRTreeFitness,
-): void => {
+): Result.Result<boolean, TypeError> => {
   if (!Array.isArray(entries)) {
-    throw new TypeError('RTree entries must be an array')
+    return Result.fail(new TypeError('RTree entries must be an array'))
   }
   if (typeof fitness !== 'function') {
-    throw new TypeError('RTree fitness must be a function')
+    return Result.fail(new TypeError('RTree fitness must be a function'))
   }
+  return Result.succeed(true)
 }
 
 const createIndexedEntries = <Value>(
   entries: readonly ClimateParameterListEntry<Value>[],
-): readonly IndexedEntry<Value>[] =>
-  Object.freeze(
-    entries.map((entry, index) =>
-      Object.freeze({
-        index,
-        point: entry[FIRST_ENTRY_INDEX],
-        value: entry[SECOND_ENTRY_INDEX],
-      }),
-    ),
-  )
+): Result.Result<readonly IndexedEntry<Value>[], TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    const indexedEntries: IndexedEntry<Value>[] = []
+    for (let index = FIRST_ENTRY_INDEX; index < entries.length; index += INDEX_INCREMENT) {
+      const entry = yield* requireDefined(entries[index], DefinedValueName('climate entry'))
+      if (!Array.isArray(entry) || entry.length !== CLIMATE_LIST_ENTRY_LENGTH) {
+        return yield* Result.fail(
+          new TypeError(`entries[${index}] must be a [point, value] tuple`),
+        )
+      }
+      const point = yield* requireClimateParameterPoint(
+        ClimateFieldName(`entries[${index}][${FIRST_ENTRY_INDEX}]`),
+        entry[FIRST_ENTRY_INDEX],
+      )
+      indexedEntries.push(
+        Object.freeze({
+          index: ClimateListIndex(index),
+          point,
+          value: entry[SECOND_ENTRY_INDEX],
+        }),
+      )
+    }
+    return Object.freeze(indexedEntries)
+  })
 
 export const createClimateRTree = <Value>(
   entries: readonly ClimateParameterListEntry<Value>[],
   fitness: ClimateRTreeFitness,
-): ClimateRTree<Value> => {
-  validateRTreeInputs(entries, fitness)
-  const root = createRoot(createIndexedEntries(entries))
-  const search = createSearch(root, fitness)
-  return Object.freeze({
-    search: (target: ClimateTargetPoint): Value | undefined =>
-      matchValue(search(target)),
-    searchIndex: (target: ClimateTargetPoint): number | undefined =>
-      matchIndex(search(target)),
+): Result.Result<ClimateRTree<Value>, TypeError | RangeError> =>
+  Result.gen(function* resultGenerator() {
+    yield* validateRTreeInputs(entries, fitness)
+    const indexedEntries = yield* createIndexedEntries(entries)
+    const root = yield* createRoot(indexedEntries)
+    const search = createSearch(root, fitness)
+    return Object.freeze({
+      search: (target: ClimateTargetPoint): Result.Result<Option.Option<Value>, TypeError | RangeError> =>
+        Result.map(search(target), matchValue),
+      searchIndex: (target: ClimateTargetPoint): Result.Result<Option.Option<ClimateListIndexValue>, TypeError | RangeError> =>
+        Result.map(search(target), matchIndex),
+    })
   })
-}

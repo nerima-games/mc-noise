@@ -1,14 +1,28 @@
+import { Brand, Option } from 'effect'
 import {
   MINECRAFT_BIOME_SURFACES,
   type MinecraftBiome,
 } from './minecraft-biome.js'
-import type { BlockId } from '@nerima-games/mc-kernel'
+import type { BlockAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import type { BlockId } from '@nerima-games/mc-kernel/domain/block-registry'
+
+const MIN_SURFACE_FILLER_DEPTH = 0
+const SHORE_SURFACE_FILLER_DEPTH = 2
+const TERRAIN_SURFACE_FILLER_DEPTH = 4
+
+export type MinecraftSurfaceFillerDepth = number & Brand.Brand<'MinecraftSurfaceFillerDepth'>
+export const MinecraftSurfaceFillerDepth: Brand.Constructor<MinecraftSurfaceFillerDepth> =
+  Brand.make<MinecraftSurfaceFillerDepth>(
+    (value) =>
+      (Number.isSafeInteger(value) && value > MIN_SURFACE_FILLER_DEPTH) ||
+      'surface filler depth must be a positive integer',
+  )
 
 export type MinecraftResolvedSurfaceMaterial = Readonly<{
-  filler: BlockId
-  fillerDepth: number
+  filler: Option.Option<BlockId>
+  fillerDepth: MinecraftSurfaceFillerDepth
   submerged: boolean
-  top: BlockId
+  top: Option.Option<BlockId>
 }>
 
 export type MinecraftSurfaceMaterialOptions = Readonly<{
@@ -23,8 +37,8 @@ const DEFAULT_SURFACE_OPTIONS: MinecraftSurfaceMaterialOptions = {
 
 export const resolveMinecraftSurfaceMaterial = (
   biome: MinecraftBiome,
-  surfaceY: number,
-  waterLevel: number,
+  surfaceY: BlockAxis,
+  waterLevel: BlockAxis,
   options: MinecraftSurfaceMaterialOptions = DEFAULT_SURFACE_OPTIONS,
 ): MinecraftResolvedSurfaceMaterial => {
   const { filler, top: dryTop, underwaterTop } = MINECRAFT_BIOME_SURFACES[biome]
@@ -33,7 +47,7 @@ export const resolveMinecraftSurfaceMaterial = (
   if (options.hasLakeBasin) {
     return {
       filler: MINECRAFT_BIOME_SURFACES.BEACH.filler,
-      fillerDepth: 2,
+      fillerDepth: MinecraftSurfaceFillerDepth(SHORE_SURFACE_FILLER_DEPTH),
       submerged,
       top: MINECRAFT_BIOME_SURFACES.BEACH.top,
     }
@@ -42,7 +56,7 @@ export const resolveMinecraftSurfaceMaterial = (
   if (options.isShore) {
     return {
       filler,
-      fillerDepth: 2,
+      fillerDepth: MinecraftSurfaceFillerDepth(SHORE_SURFACE_FILLER_DEPTH),
       submerged,
       top: MINECRAFT_BIOME_SURFACES.BEACH.top,
     }
@@ -51,7 +65,7 @@ export const resolveMinecraftSurfaceMaterial = (
   if (submerged) {
     return {
       filler,
-      fillerDepth: 4,
+      fillerDepth: MinecraftSurfaceFillerDepth(TERRAIN_SURFACE_FILLER_DEPTH),
       submerged,
       top: underwaterTop,
     }
@@ -59,7 +73,7 @@ export const resolveMinecraftSurfaceMaterial = (
 
   return {
     filler,
-    fillerDepth: 4,
+    fillerDepth: MinecraftSurfaceFillerDepth(TERRAIN_SURFACE_FILLER_DEPTH),
     submerged,
     top: dryTop,
   }
