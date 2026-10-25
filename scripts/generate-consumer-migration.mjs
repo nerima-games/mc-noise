@@ -8,51 +8,7 @@ const require = createRequire(resolve(root, 'package.json'))
 const typescript = require('typescript')
 const typescriptAst =
   typeof typescript.createProgram === 'function' ? undefined : require('typescript/unstable/ast')
-const argumentsByName = parseArguments(process.argv.slice(2))
-const basePath = resolve(argumentsByName.baseDts)
-const headPath = resolve(argumentsByName.headDts)
-readFileSync(basePath)
-readFileSync(headPath)
-
-const baseExports = readExports(basePath)
-const headExports = readExports(headPath)
-const changed = []
-const added = []
-const removed = []
-
-for (const [name, baseSignatures] of baseExports) {
-  const headSignatures = headExports.get(name)
-  if (headSignatures === undefined) {
-    removed.push({ name, baseSignatures })
-  } else if (JSON.stringify(baseSignatures) !== JSON.stringify(headSignatures)) {
-    changed.push({ name, baseSignatures, headSignatures })
-  }
-}
-
-for (const [name, headSignatures] of headExports) {
-  if (!baseExports.has(name)) added.push({ name, headSignatures })
-}
-
-const groupedChanges = groupBy(changed, ({ name, baseSignatures, headSignatures }) =>
-  classify(name, baseSignatures, headSignatures),
-)
-const generated = renderTables({
-  baseRef: argumentsByName.baseRef,
-  headRef: argumentsByName.headRef,
-  changed: groupedChanges,
-  added,
-  removed,
-})
-writeGeneratedSection(generated)
-
-console.log(
-  `Generated consumer migration signatures: ${changed.length} changed, ${added.length} added, ${removed.length} removed.`,
-)
-for (const category of ['seed', 'coordinates', 'result', 'other']) {
-  console.log(`  ${category}: ${groupedChanges.get(category)?.length ?? 0} changed`)
-}
-
-function parseArguments(args) {
+const parseArguments = (args) => {
   const values = new Map()
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index]
@@ -62,13 +18,17 @@ function parseArguments(args) {
         'Usage: node scripts/generate-consumer-migration.mjs --base-ref <ref> --head-ref <ref> --base-dts <path> --head-dts <path>',
       )
     }
-    if (values.has(name)) throw new Error(`Duplicate argument: ${name}`)
+    if (values.has(name)) {
+      throw new Error(`Duplicate argument: ${name}`)
+    }
     values.set(name, value)
   }
 
   const required = ['--base-ref', '--head-ref', '--base-dts', '--head-dts']
   const missing = required.filter((name) => !values.has(name))
-  if (missing.length > 0) throw new Error(`Missing arguments: ${missing.join(', ')}`)
+  if (missing.length > 0) {
+    throw new Error(`Missing arguments: ${missing.join(', ')}`)
+  }
 
   return {
     baseRef: values.get('--base-ref'),
@@ -78,14 +38,14 @@ function parseArguments(args) {
   }
 }
 
-function readExports(entryPath) {
+const readExports = (entryPath) => {
   if (typeof typescript.createProgram === 'function') {
     return readExportsWithCompilerApi(entryPath)
   }
   return readExportsWithSyncApi(entryPath)
 }
 
-function readExportsWithCompilerApi(entryPath) {
+const readExportsWithCompilerApi = (entryPath) => {
   const program = typescript.createProgram([entryPath], {
     target: typescript.ScriptTarget.Latest,
     module: typescript.ModuleKind.NodeNext,
@@ -94,10 +54,14 @@ function readExportsWithCompilerApi(entryPath) {
     noEmit: true,
   })
   const source = program.getSourceFile(entryPath)
-  if (source === undefined) throw new Error(`Could not parse declaration entrypoint: ${entryPath}`)
+  if (source === undefined) {
+    throw new Error(`Could not parse declaration entrypoint: ${entryPath}`)
+  }
   const checker = program.getTypeChecker()
   const moduleSymbol = checker.getSymbolAtLocation(source)
-  if (moduleSymbol === undefined) throw new Error(`Could not resolve module exports: ${entryPath}`)
+  if (moduleSymbol === undefined) {
+    throw new Error(`Could not resolve module exports: ${entryPath}`)
+  }
   const printer = typescript.createPrinter({ newLine: typescript.NewLineKind.LineFeed })
   return new Map(
     checker
@@ -117,7 +81,7 @@ function readExportsWithCompilerApi(entryPath) {
   )
 }
 
-function readExportsWithSyncApi(entryPath) {
+const readExportsWithSyncApi = (entryPath) => {
   const { API, SymbolFlags } = require('typescript/unstable/sync')
   const api = new API({ cwd: root })
   try {
@@ -128,9 +92,11 @@ function readExportsWithSyncApi(entryPath) {
       if (project === undefined || source === undefined) {
         throw new Error(`Could not parse declaration entrypoint: ${entryPath}`)
       }
-      const checker = project.checker
+      const { checker } = project
       const moduleSymbol = checker.getSymbolAtLocation(source)
-      if (moduleSymbol === undefined) throw new Error(`Could not resolve module exports: ${entryPath}`)
+      if (moduleSymbol === undefined) {
+        throw new Error(`Could not resolve module exports: ${entryPath}`)
+      }
       return new Map(
         checker
           .getExportsOfModule(moduleSymbol)
@@ -160,22 +126,18 @@ function readExportsWithSyncApi(entryPath) {
   }
 }
 
-function isVariableDeclaration(node) {
+const isVariableDeclaration = (node) => {
   if (typeof typescript.isVariableDeclaration === 'function') {
     return typescript.isVariableDeclaration(node)
   }
   return typescriptAst.formatSyntaxKind(node.kind) === 'VariableDeclaration'
 }
 
-function normalizeSignature(signature) {
-  return signature.replace(/\s+/gu, ' ').trim()
-}
+const normalizeSignature = (signature) => signature.replace(/\s+/gu, ' ').trim()
 
-function uniqueSorted(values) {
-  return [...new Set(values)].sort()
-}
+const uniqueSorted = (values) => [...new Set(values)].sort()
 
-function groupBy(values, keyOf) {
+const groupBy = (values, keyOf) => {
   const groups = new Map()
   for (const value of values) {
     const key = keyOf(value)
@@ -186,7 +148,7 @@ function groupBy(values, keyOf) {
   return groups
 }
 
-function classify(name, baseSignatures, headSignatures) {
+const classify = (name, baseSignatures, headSignatures) => {
   const baseText = baseSignatures.join(' ')
   const headText = headSignatures.join(' ')
   const baseSeedParameters = (baseText.match(/\bseed\s*:\s*[^,;)}]+/gu) ?? []).join('|')
@@ -214,7 +176,7 @@ function classify(name, baseSignatures, headSignatures) {
   return 'other'
 }
 
-function renderTables({ baseRef, headRef, changed, added, removed }) {
+const renderTables = ({ baseRef, headRef, changedByCategory, addedExports, removedExports }) => {
   const categories = [
     ['seed', 'Seed brand changes'],
     ['coordinates', 'Coordinate brand changes'],
@@ -222,20 +184,22 @@ function renderTables({ baseRef, headRef, changed, added, removed }) {
     ['other', 'Other signature changes'],
   ]
   const sections = categories.map(([category, title]) => {
-    const rows = changed.get(category) ?? []
+    const rows = changedByCategory.get(category) ?? []
     return renderChangeTable(title, rows)
   })
-  sections.push(renderAddedTable(added))
-  if (removed.length > 0) sections.push(renderRemovedTable(removed))
+  sections.push(renderAddedTable(addedExports))
+  if (removedExports.length > 0) {
+    sections.push(renderRemovedTable(removedExports))
+  }
 
   return [
-    `Compared declarations from \`${escapeHtml(baseRef)}\` and \`${escapeHtml(headRef)}\`. The AST comparison found ${changed.get('seed')?.length ?? 0} seed brand changes, ${changed.get('coordinates')?.length ?? 0} coordinate brand changes, ${changed.get('result')?.length ?? 0} Result changes, ${changed.get('other')?.length ?? 0} other signature changes, ${added.length} added exports, and ${removed.length} removed exports.`,
+    `Compared declarations from \`${escapeHtml(baseRef)}\` and \`${escapeHtml(headRef)}\`. The AST comparison found ${changedByCategory.get('seed')?.length ?? 0} seed brand changes, ${changedByCategory.get('coordinates')?.length ?? 0} coordinate brand changes, ${changedByCategory.get('result')?.length ?? 0} Result changes, ${changedByCategory.get('other')?.length ?? 0} other signature changes, ${addedExports.length} added exports, and ${removedExports.length} removed exports.`,
     '',
     ...sections,
   ].join('\n')
 }
 
-function renderChangeTable(title, rows) {
+const renderChangeTable = (title, rows) => {
   const tableRows = rows
     .sort((left, right) => left.name.localeCompare(right.name))
     .map(({ name, baseSignatures, headSignatures }) =>
@@ -253,7 +217,7 @@ function renderChangeTable(title, rows) {
   ].join('\n')
 }
 
-function renderAddedTable(rows) {
+const renderAddedTable = (rows) => {
   const tableRows = rows
     .sort((left, right) => left.name.localeCompare(right.name))
     .map(({ name, headSignatures }) =>
@@ -271,7 +235,7 @@ function renderAddedTable(rows) {
   ].join('\n')
 }
 
-function renderRemovedTable(rows) {
+const renderRemovedTable = (rows) => {
   const tableRows = rows
     .sort((left, right) => left.name.localeCompare(right.name))
     .map(({ name, baseSignatures }) =>
@@ -289,31 +253,79 @@ function renderRemovedTable(rows) {
   ].join('\n')
 }
 
-function signatureCell(signatures) {
-  return signatures
+const signatureCell = (signatures) =>
+  signatures
     .map((signature) => `<code>${escapeHtml(signature).replaceAll('|', '&#124;')}</code>`)
     .join('<br>')
-}
 
-function escapeHtml(value) {
-  return value
+const escapeHtml = (value) =>
+  value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('`', '&#96;')
-}
 
-function writeGeneratedSection(generated) {
+const writeGeneratedSection = (generatedSection) => {
   const documentPath = resolve(root, 'docs/consumer-migration.md')
   const document = readFileSync(documentPath, 'utf8')
   const begin = '<!-- BEGIN GENERATED SIGNATURE TABLES -->'
   const end = '<!-- END GENERATED SIGNATURE TABLES -->'
   const beginIndex = document.indexOf(begin)
   const endIndex = document.indexOf(end)
-  if (beginIndex < 0 || endIndex <= beginIndex || document.indexOf(begin, beginIndex + begin.length) >= 0) {
+  if (
+    beginIndex < 0 ||
+    endIndex <= beginIndex ||
+    document.indexOf(begin, beginIndex + begin.length) >= 0
+  ) {
     throw new Error(`Expected one ordered marker pair in ${documentPath}`)
   }
   const before = document.slice(0, beginIndex + begin.length)
   const after = document.slice(endIndex)
-  writeFileSync(documentPath, `${before}\n\n${generated}\n\n${after}`)
+  writeFileSync(documentPath, `${before}\n\n${generatedSection}\n\n${after}`)
+}
+
+const argumentsByName = parseArguments(process.argv.slice(2))
+const basePath = resolve(argumentsByName.baseDts)
+const headPath = resolve(argumentsByName.headDts)
+readFileSync(basePath)
+readFileSync(headPath)
+
+const baseExports = readExports(basePath)
+const headExports = readExports(headPath)
+const changedExports = []
+const addedExports = []
+const removedExports = []
+
+for (const [name, baseSignatures] of baseExports) {
+  const headSignatures = headExports.get(name)
+  if (headSignatures === undefined) {
+    removedExports.push({ name, baseSignatures })
+  } else if (JSON.stringify(baseSignatures) !== JSON.stringify(headSignatures)) {
+    changedExports.push({ name, baseSignatures, headSignatures })
+  }
+}
+
+for (const [name, headSignatures] of headExports) {
+  if (!baseExports.has(name)) {
+    addedExports.push({ name, headSignatures })
+  }
+}
+
+const groupedChanges = groupBy(changedExports, ({ name, baseSignatures, headSignatures }) =>
+  classify(name, baseSignatures, headSignatures),
+)
+const generatedSection = renderTables({
+  baseRef: argumentsByName.baseRef,
+  headRef: argumentsByName.headRef,
+  changedByCategory: groupedChanges,
+  addedExports,
+  removedExports,
+})
+writeGeneratedSection(generatedSection)
+
+console.log(
+  `Generated consumer migration signatures: ${changedExports.length} changed, ${addedExports.length} added, ${removedExports.length} removed.`,
+)
+for (const category of ['seed', 'coordinates', 'result', 'other']) {
+  console.log(`  ${category}: ${groupedChanges.get(category)?.length ?? 0} changed`)
 }
