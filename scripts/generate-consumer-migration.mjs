@@ -212,7 +212,9 @@ const isVariableDeclaration = (node) => {
 
 const readPublicFields = (checker, symbol, project, symbolFlags, printNode, provider) => {
   const typeSymbolFlags = symbolFlags.TypeAlias | symbolFlags.Interface | symbolFlags.Class
-  if ((symbol.flags & typeSymbolFlags) === 0) return []
+  if ((symbol.flags & typeSymbolFlags) === 0) {
+    return []
+  }
 
   const declaredType = checker.getDeclaredTypeOfSymbol(symbol)
   const variants = isUnionType(declaredType)
@@ -229,7 +231,9 @@ const readPublicFields = (checker, symbol, project, symbolFlags, printNode, prov
       const declaration = (property.declarations ?? [])
         .map((candidate) => resolveDeclaration(candidate, project))
         .find((candidate) => candidate !== undefined && !isTypeScriptLibraryFile(candidate.getSourceFile().fileName))
-      if (declaration === undefined) return []
+      if (declaration === undefined) {
+        return []
+      }
 
       return [{
         provider,
@@ -276,14 +280,18 @@ const readReferencedDependencyFields = (
   const publicDependencyTypes = new Map()
   for (const entrypoint of publicEntrypoints) {
     const moduleSymbol = checker.getSymbolAtLocation(entrypoint)
-    if (moduleSymbol === undefined) continue
-    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
-      const target = exported.flags & symbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
-      if ((target.flags & typeSymbolFlags) === 0) continue
-      const name = typeof target.getName === 'function' ? target.getName() : target.name
-      if (!publicDependencyTypes.has(target)) {
-        const fields = readPublicFields(checker, target, project, symbolFlags, printNode, dependencyName)
-        if (fields.length > 0) publicDependencyTypes.set(target, { name, fields })
+    if (moduleSymbol !== undefined) {
+      for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+        const target = exported.flags & symbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
+        if ((target.flags & typeSymbolFlags) !== 0) {
+          const name = typeof target.getName === 'function' ? target.getName() : target.name
+          if (!publicDependencyTypes.has(target)) {
+            const fields = readPublicFields(checker, target, project, symbolFlags, printNode, dependencyName)
+            if (fields.length > 0) {
+              publicDependencyTypes.set(target, { name, fields })
+            }
+          }
+        }
       }
     }
   }
@@ -291,7 +299,9 @@ const readReferencedDependencyFields = (
   const reachableSymbols = collectReferencedSymbols(publicDeclarations, checker, project)
   const fieldsByName = new Map()
   for (const [symbol, entry] of publicDependencyTypes) {
-    if (reachableSymbols.has(symbol)) fieldsByName.set(entry.name, entry.fields)
+    if (reachableSymbols.has(symbol)) {
+      fieldsByName.set(entry.name, entry.fields)
+    }
   }
   return fieldsByName
 }
@@ -300,7 +310,9 @@ const collectReferencedSymbols = (declarations, checker, project) => {
   const symbols = new Set()
   const visited = new Set()
   const visit = (node) => {
-    if (node === undefined || node === null || visited.has(node)) return
+    if (node === undefined || node === null || visited.has(node)) {
+      return
+    }
     visited.add(node)
     if (isIdentifier(node)) {
       const symbol = checker.getSymbolAtLocation(node)
@@ -315,7 +327,9 @@ const collectReferencedSymbols = (declarations, checker, project) => {
       typescript.forEachChild(node, visitChild)
     }
   }
-  for (const candidate of declarations) visit(resolveDeclaration(candidate, project))
+  for (const candidate of declarations) {
+    visit(resolveDeclaration(candidate, project))
+  }
   return symbols
 }
 
@@ -330,23 +344,31 @@ const collectTypeEntrypoints = (exports) => {
   const entrypoints = []
   const visit = (condition) => {
     if (typeof condition === 'string') {
-      if (condition.endsWith('.d.ts')) entrypoints.push(condition)
+      if (condition.endsWith('.d.ts')) {
+        entrypoints.push(condition)
+      }
       return
     }
-    if (condition === null || typeof condition !== 'object') return
+    if (condition === null || typeof condition !== 'object') {
+      return
+    }
     if (typeof condition.types === 'string') {
       visit(condition.types)
       return
     }
-    for (const value of Object.values(condition)) visit(value)
+    for (const value of Object.values(condition)) {
+      visit(value)
+    }
   }
-  for (const value of Object.values(exports ?? {})) visit(value)
+  for (const value of Object.values(exports ?? {})) {
+    visit(value)
+  }
   return uniqueSorted(entrypoints)
 }
 
-const getDeclarationPackageRoot = (filePath, packageName) => {
+const getDeclarationPackageRoot = (filePath, targetPackageName) => {
   const normalized = normalizeFilePath(filePath)
-  const packagePath = `/node_modules/${packageName}/`
+  const packagePath = `/node_modules/${targetPackageName}/`
   const packageIndex = normalized.lastIndexOf(packagePath)
   return packageIndex < 0 ? undefined : normalized.slice(0, packageIndex + packagePath.length - 1)
 }
@@ -372,7 +394,9 @@ const resolveDeclaration = (declaration, project) =>
 const isTypeScriptLibraryFile = (filePath) => /(?:^|\/)lib(?:\.[^/]+)?\.d\.ts$/u.test(filePath)
 
 const getVariantName = (checker, properties, project, variantCount, index) => {
-  if (variantCount < 2) return ''
+  if (variantCount < 2) {
+    return ''
+  }
   const discriminant = properties.find((property) => ['kind', 'type', 'tag'].includes(property.name))
   if (discriminant !== undefined) {
     const declaration = (discriminant.declarations ?? [])
@@ -390,8 +414,8 @@ const getVariantName = (checker, properties, project, variantCount, index) => {
 }
 
 const findBrandType = (signatures) => {
-  const match = signatures.join(' ').match(/\bBrand(?:\.Brand)?\.Constructor<([A-Za-z_$][\w$]*)>/u)
-  return match?.[1]
+  const match = signatures.join(' ').match(/\bBrand(?:\.Brand)?\.Constructor<(?<brandType>[A-Za-z_$][\w$]*)>/u)
+  return match?.groups?.brandType
 }
 
 const collectAvailableBrandFactories = (program, checker, project, symbolFlags, printNode) => {
@@ -409,36 +433,37 @@ const collectAvailableBrandFactories = (program, checker, project, symbolFlags, 
 
   for (const source of sourceFiles) {
     const provider = getDeclarationPackage(source.fileName)
-    if (provider !== packageName && provider !== '@nerima-games/mc-kernel') continue
-    const moduleSymbol = checker.getSymbolAtLocation(source)
-    if (moduleSymbol === undefined) continue
-
-    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
-      const target = exported.flags & symbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
-      const declarations = typeof target.getDeclarations === 'function'
-        ? (target.getDeclarations() ?? [])
-        : (target.declarations ?? [])
-      const rendered = declarations
-        .map((candidate) => resolveDeclaration(candidate, project))
-        .filter((declaration) => declaration !== undefined)
-        .map((declaration) => {
-          const node = isVariableDeclaration(declaration)
-            ? declaration.parent.parent
-            : declaration
-          return printNode(node)
-        })
-      const brandType = findBrandType(rendered)
-      if (brandType === undefined) continue
-
-      const declaration = declarations
-        .map((candidate) => resolveDeclaration(candidate, project))
-        .find((candidate) => candidate !== undefined)
-      const declarationPackage = declaration === undefined
-        ? provider
-        : getDeclarationPackage(declaration.getSourceFile().fileName)
-      const name = typeof exported.getName === 'function' ? exported.getName() : exported.name
-      const factory = { name, brandType, provider: declarationPackage }
-      factories.set(`${factory.name}\0${factory.brandType}\0${factory.provider}`, factory)
+    if (provider === packageName || provider === '@nerima-games/mc-kernel') {
+      const moduleSymbol = checker.getSymbolAtLocation(source)
+      if (moduleSymbol !== undefined) {
+        for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+          const target = exported.flags & symbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported
+          const declarations = typeof target.getDeclarations === 'function'
+            ? (target.getDeclarations() ?? [])
+            : (target.declarations ?? [])
+          const rendered = declarations
+            .map((candidate) => resolveDeclaration(candidate, project))
+            .filter((declaration) => declaration !== undefined)
+            .map((declaration) => {
+              const node = isVariableDeclaration(declaration)
+                ? declaration.parent.parent
+                : declaration
+              return printNode(node)
+            })
+          const brandType = findBrandType(rendered)
+          if (brandType !== undefined) {
+            const declaration = declarations
+              .map((candidate) => resolveDeclaration(candidate, project))
+              .find((candidate) => candidate !== undefined)
+            const declarationPackage = declaration === undefined
+              ? provider
+              : getDeclarationPackage(declaration.getSourceFile().fileName)
+            const name = typeof exported.getName === 'function' ? exported.getName() : exported.name
+            const factory = { name, brandType, provider: declarationPackage }
+            factories.set(`${factory.name}\0${factory.brandType}\0${factory.provider}`, factory)
+          }
+        }
+      }
     }
   }
 
@@ -448,7 +473,9 @@ const collectAvailableBrandFactories = (program, checker, project, symbolFlags, 
 const getDeclarationPackage = (filePath) => {
   const normalized = filePath.replaceAll('\\', '/')
   const nodeModulesIndex = normalized.lastIndexOf('/node_modules/')
-  if (nodeModulesIndex < 0) return packageName
+  if (nodeModulesIndex < 0) {
+    return packageName
+  }
   const packagePath = normalized.slice(nodeModulesIndex + '/node_modules/'.length)
   const [first, second] = packagePath.split('/')
   return first.startsWith('@') ? `${first}/${second}` : first
@@ -702,7 +729,9 @@ const renderBrandFactoriesTable = (rows) => {
 }
 
 const fieldCell = (field) => {
-  if (field === undefined) return 'Not present'
+  if (field === undefined) {
+    return 'Not present'
+  }
   const optionality = field.optional ? 'optional' : 'required'
   return `${signatureCell([field.signature])} (${optionality})`
 }
