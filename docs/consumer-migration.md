@@ -4,7 +4,7 @@ Use this guide when upgrading from mc-noise `0.4.x` to `0.5.0`.
 
 mc-noise 0.5 moves to Effect 4 and mc-kernel 0.9. Several public inputs now use
 domain brands, and APIs that can reject runtime input return typed `Result`
-values. Update callers at those boundaries before upgrading.
+values. Plan caller updates before upgrading, then change the dependency and its affected call sites in the same update.
 
 ## Seed inputs
 
@@ -32,9 +32,10 @@ const deriveChannelSeedFromUntrustedSeed = (rawSeed: number) => {
 
 `NoiseSeed.result` accepts only safe integers. Calling `NoiseSeed(value)`
 directly throws for invalid input, so use it only when the value is already
-validated. Seed normalization to a uint32 bit pattern remains in the PRNG and
-derived-seed paths, so equivalent bit patterns continue to produce the same
-field. In generated signatures, `NoiseSeedValue` is an alias of `NoiseSeed`.
+validated. The brand preserves the existing seed mapping: PRNGs and derived
+channel seeds use the low 32 bits, so inputs that differ by a multiple of
+`2^32` produce the same field. In generated signatures, `NoiseSeedValue` is an
+alias of `NoiseSeed`.
 
 ## mc-kernel 0.9 coordinate brands
 
@@ -146,7 +147,9 @@ The failure type identifies the validation error, commonly `TypeError` or
 represents absence. An operation that can also fail validation may return a
 nested `Result.Result<Option.Option<Value>, E>`, where `E` is its error type.
 For example, `findSpawnPosition` returns
-`Result.Result<Option.Option<BlockPosition>, TypeError | RangeError>`.
+`Result.Result<Option.Option<BlockPosition>, TypeError | RangeError>`. Handle
+the outer result first: a failure indicates invalid input, `None` means no
+spawn position was found, and `Some(position)` contains the `BlockPosition`.
 
 ## Declaration signature changes
 
@@ -157,9 +160,6 @@ referenced public types from mc-kernel. The field rows include provider, type,
 field type, optionality, and presence. New branded value constructors are
 mapped to the matching `<Brand>.result(value)` call, including constructors
 provided by mc-kernel.
-
-Changed declarations are grouped by seed brands, coordinate brands, `Result`
-changes, and other changes.
 
 <!-- BEGIN GENERATED SIGNATURE TABLES -->
 
