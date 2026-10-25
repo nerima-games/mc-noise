@@ -40,6 +40,8 @@ const END_ISLANDS_RANDOM_X_MULTIPLIER = 3439
 const END_ISLANDS_RANDOM_Z_MULTIPLIER = 147
 const END_ISLANDS_RANDOM_MODULUS = 13
 const END_ISLANDS_RANDOM_OFFSET = 9
+const JAVA_INT_MIN = -2_147_483_648
+const JAVA_INT_MAX = 2_147_483_647
 
 const END_ISLANDS_LOWEST_NOISE_VALUE = -0.84375
 const END_ISLANDS_HIGHEST_NOISE_VALUE = 0.5625
@@ -369,10 +371,19 @@ const readBlockAxis = (
   if (typeof value !== 'number') {
     return Result.fail(new TypeError(`${name} must be a number`))
   }
-  return Result.mapError(
+  const coordinate = Result.mapError(
     BlockAxis.result(value),
     (error) => new RangeError(error.message),
   )
+  if (Result.isFailure(coordinate)) {
+    return coordinate
+  }
+  if (coordinate.success < JAVA_INT_MIN || coordinate.success > JAVA_INT_MAX) {
+    return Result.fail(
+      new RangeError(`${name} must be a signed 32-bit integer, received ${value}`),
+    )
+  }
+  return coordinate
 }
 
 export const createEndIslandsSampler = (

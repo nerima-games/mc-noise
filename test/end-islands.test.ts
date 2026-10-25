@@ -78,4 +78,21 @@ describe('End island density sampler', () => {
     expect(Result.isFailure(sampler.sample(BlockAxis(0), Number.POSITIVE_INFINITY as never))).toBe(true)
     expect(Result.isFailure(sampler.sample(Number.MAX_SAFE_INTEGER + 1 as never, BlockAxis(0)))).toBe(true)
   })
+
+  it('rejects block coordinates outside the signed 32-bit range', () => {
+    const sampler = unwrap(createEndIslandsSampler(0n))
+    const tooLarge = sampler.sample(2_147_483_648 as never, BlockAxis(0))
+    const tooSmall = sampler.sample(BlockAxis(0), -2_147_483_649 as never)
+
+    expect(Result.isFailure(tooLarge)).toBe(true)
+    if (Result.isFailure(tooLarge)) {
+      expect(tooLarge.failure).toBeInstanceOf(RangeError)
+      expect(tooLarge.failure.message).toContain('x must be a signed 32-bit integer')
+    }
+    expect(Result.isFailure(tooSmall)).toBe(true)
+    if (Result.isFailure(tooSmall)) {
+      expect(tooSmall.failure).toBeInstanceOf(RangeError)
+      expect(tooSmall.failure.message).toContain('z must be a signed 32-bit integer')
+    }
+  })
 })
