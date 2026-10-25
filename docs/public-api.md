@@ -207,7 +207,7 @@ export const fbm2D = (
   x: number,
   z: number,
   options: ValueNoiseFbmOptions,
-): Result.Result<number, RangeError>
+): Result.Result<ValueNoiseFbmSample, RangeError>
 ```
 
 `ValueNoiseFbmSample` is finite but is not restricted to `[0, 1]`, because
