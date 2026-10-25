@@ -88,8 +88,9 @@ returns `Option.Option<BlockId>`.
 
 Density-function constructors, spline construction and evaluation, codec
 operations, climate queries, sampling adapters, and blender construction return
-`Result` when their inputs can fail validation. `createBlender(options)` and
-`requireBlender(value)` both return
+`Result` when their inputs can fail validation. `createBlender(options)` creates
+a `Blender` from options, while `requireBlender(value)` validates an unknown
+value as a `Blender`. Both return
 `Result.Result<Blender, TypeError | RangeError>`; inspect or propagate the
 result before using the blender. Callbacks supplied to `createBlender` must
 also return `Result`. Pass either result into downstream fallible operations
