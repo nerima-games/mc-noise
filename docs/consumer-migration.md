@@ -985,10 +985,15 @@ runs it as part of CI.
 During generation, when the base `.d.ts` comes from a Git checkout, the
 script verifies that checkout's `HEAD` matches the base Git ref. It also
 verifies that the tracked declaration build inputs have the same paths and
-contents as that ref. The base `.d.ts` is hashed and recorded, but generation
-does not verify that it was built from those inputs.
-`--check` validates the pinned model metadata and candidate API, but does not
-rebuild or reread the base `.d.ts`.
+contents as that ref. The snapshot records the refs, build-input fingerprints,
+and `.d.ts` hashes after these checks pass. The base `.d.ts` hash is recorded,
+but generation does not verify that it was built from those inputs.
+
+`--check` verifies the pinned base declaration checksum, emits declarations
+from the current source and compares their digest with the candidate API digest
+in the snapshot, then compares the generated tables with the marked section in
+this guide. It does not resolve Git refs, recompute build-input fingerprints,
+or read the base `.d.ts`.
 
 See [public-api.md](./public-api.md) for the full API contract and
 [responsibility.md](./responsibility.md) for dependency boundaries.
