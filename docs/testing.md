@@ -1,14 +1,16 @@
 # 検証と完成条件
 
-- 根拠: `package.json`、`vitest.config.ts`、現行テストと公開 API
+- 根拠: `package.json`、`vitest.config.ts`、`.ast-grep/`、現行テストと公開 API
 
 ## 1. コマンド
 
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト・ツール）の両方 |
-| `pnpm lint` | oxlint。このリポジトリ唯一の lint / format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ。このフラグが無かった頃は実質その3つしかゲートになっていなかった） |
-| `pnpm test` | Vitest。純粋なテストと `test/effect-test.ts` の同期 Effect テストを実行 |
+| `pnpm lint` | oxlint と AST-grep を実行する。oxlint は `--deny-warnings` 付きで、`warn` のルールも失敗になる（`.oxlintrc.json` は 5 カテゴリすべてと個別 58 ルールが `warn`、`error` は `no-eval` / `no-implied-eval` / `no-restricted-imports` の3つだけ）。続けて AST-grep の fixture test と scan を実行する。Prettier、Biome、`.editorconfig` は置かない |
+| `ast-grep test --config .ast-grep/sgconfig.yml` | `.ast-grep/tests/` のルール fixture と snapshot を検査 |
+| `ast-grep scan` | `.ast-grep/rules/` の構造ルールを、各ルールの `files` に一致するソースへ適用 |
+| `pnpm test` | Vitest。純粋なテストと、`test/effect-test.ts` の `effectTest` helper を使う Effect テストを実行 |
 | `pnpm test:coverage` | カバレッジ計測。4 指標 100% のしきい値ゲート付き（§3 参照） |
 | `pnpm verify` | `typecheck` / `lint` / `test` を直列実行。カバレッジと配布物境界検査は別ステップ |
 | `pnpm build` | `dist/` に JavaScript・宣言ファイル・source map を生成 |
@@ -150,9 +152,21 @@ API の破壊的変更は `test/public-api.test.ts` のゴールデン値と人�
 | `test/density-function-codec.test.ts` / `test/density-function-transform.test.ts` | DensityFunction の codec 往復と子ノード変換、`find_top_surface` の再構成 |
 | `test/density-function-context.test.ts` / `test/density-function-runtime.test.ts` | context-aware cache / blend と runtime の fill / map / 集約 |
 | `test/density-function-node.test.ts` / `test/density-function-validation.test.ts` | 実行時 node wrapper とノード種別・入力検証 |
+| `test/blender.test.ts` | identity の既定動作、`Result` callback、options と callback 出力の検証 |
+| `test/climate.test.ts` | 6 次元 quantization、parameter point、距離・fitness、R-tree 検索、sampler と spawn search |
+| `test/minecraft-biome-classifier.test.ts` | peaks-and-valleys 変換、気候からの biome 分類、biome と beach の refinement |
+| `test/minecraft-biome.test.ts` | 気温・湿度による biome 分類と biome / block / surface / tree の定義表 |
+| `test/minecraft-lakes.test.ts` | lake basin、surface 高さ、水位の優先順位、凍結、shore 判定 |
+| `test/minecraft-surface.test.ts` | dry / underwater / shore / lake / snowy 条件ごとの surface material と filler depth |
+| `test/minecraft-terrain-column.test.ts` | 気候・biome・lake・surface・water level を含む決定論的な地形 column |
+| `test/minecraft-terrain.test.ts` | continentalness から surface height への変換、気候サンプル、biome 境界と値域検証 |
+| `test/noise-router.test.ts` | 15 channel の契約、評価、map、runtime method、malformed router の検証 |
+| `test/old-blended-noise.test.ts` | 公式 octave stack、clamp、source / option / sample 検証、overflow |
 | `test/transforms.test.ts` | `Shift` / `ShiftA` / `ShiftB` の座標変換 |
 | `test/spline.test.ts` | spline の制御点、補間、境界値 |
+| `test/type-boundaries.test.ts` | absent value、乱数境界、decode 後の old-blended-noise callback 検証 |
 | `test/value-noise.test.ts` | hash、lattice、value noise の決定論・補間・数値パラメータ検証 |
+| `test/effect-test.ts` | Effect テストを `@effect/vitest` の `it.effect` に委譲する helper |
 
 ## 7. ベンチマーク（`pnpm bench`）
 
@@ -163,7 +177,6 @@ API の破壊的変更は `test/public-api.test.ts` のゴールデン値と人�
 
 ### 何を測っているか
 
-`scripts/bench-noise.ts` は**ウォームアップののち複数回計測し中央値を採る**。
 `scripts/bench-density-function.ts` は固定座標で DensityFunction、NoiseRouter、Climate、
 Blender の代表 workload を測り、noise/field とは独立した回帰観測を持つ。
 
