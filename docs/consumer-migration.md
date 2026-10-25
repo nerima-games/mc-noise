@@ -163,7 +163,7 @@ provided by mc-kernel.
 
 <!-- BEGIN GENERATED SIGNATURE TABLES -->
 
-Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to the mc-noise 0.5.0 candidate revision `c121ff83db06a71c29e4cad6fa8c4f09cf8bc64c`.
+Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to the mc-noise 0.5.0 candidate revision `84b22224df8de403772e41c6e05cad275a933327`.
 
 <details>
 <summary>Seed brand changes (12)</summary>
