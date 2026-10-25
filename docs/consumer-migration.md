@@ -87,10 +87,36 @@ returns `Option.Option<BlockId>`.
 ## Typed failures
 
 Density-function constructors, spline construction and evaluation, codec
-operations, climate queries, and sampling adapters return `Result` when their
-inputs can fail validation. Compose those calls with `Result.flatMap` or inspect
-the result explicitly. For example, density encoding and parsing are no longer
-exception boundaries:
+operations, climate queries, sampling adapters, and blender construction return
+`Result` when their inputs can fail validation. `createBlender(options)` and
+`requireBlender(value)` both return
+`Result.Result<Blender, TypeError | RangeError>`; inspect or propagate the
+result before using the blender. Callbacks supplied to `createBlender` must
+also return `Result`. Compose either constructor with downstream fallible
+operations using `Result.flatMap`:
+
+```ts
+import { Result } from 'effect'
+import {
+  createBlender,
+  createDensityEvaluationContextFromBlender,
+  requireBlender,
+} from '@nerima-games/mc-noise'
+
+const defaultContext = Result.flatMap(
+  createBlender(),
+  createDensityEvaluationContextFromBlender,
+)
+
+const contextFromUnknown = (value: unknown) =>
+  Result.flatMap(
+    requireBlender(value),
+    createDensityEvaluationContextFromBlender,
+  )
+```
+
+Other fallible APIs use the same `Result` boundary. For example, density
+encoding and parsing no longer throw for invalid input:
 
 ```ts
 import { Result } from 'effect'
@@ -112,9 +138,12 @@ const roundTripDensity = (
 ```
 
 The failure type identifies the validation error, commonly `TypeError` or
-`RangeError`. Absence is represented with `Option`; invalid input and failed
-construction are represented with `Result`. Do not rely on exceptions for these
-operations.
+`RangeError`; density-function codec operations can also return `SchemaError`
+(see [public-api.md](./public-api.md) for the complete union). `Option`
+represents absence. An operation that can also fail validation may return a
+nested `Result.Result<Option.Option<Value>, E>`, where `E` is its error type.
+Handle invalid input and failed construction through `Result`, rather than
+expecting them to throw.
 
 See [public-api.md](./public-api.md) for the full API contract and
 [responsibility.md](./responsibility.md) for dependency boundaries.
