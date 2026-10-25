@@ -982,10 +982,13 @@ into a temporary directory and compare them with the pinned candidate API model
 and the generated section. This check does not modify the guide; `pnpm verify`
 runs it as part of CI.
 
-During generation, the base `.d.ts` and its declaration build inputs are checked
-against the base Git ref before its API model is pinned. `--check` validates the
-pinned model metadata and candidate API, but does not rebuild or reread the base
-`.d.ts`.
+During generation, when the base `.d.ts` comes from a Git checkout, the
+script verifies that checkout's `HEAD` matches the base Git ref. It also
+verifies that the tracked declaration build inputs have the same paths and
+contents as that ref. The base `.d.ts` is hashed and recorded, but generation
+does not verify that it was built from those inputs.
+`--check` validates the pinned model metadata and candidate API, but does not
+rebuild or reread the base `.d.ts`.
 
 See [public-api.md](./public-api.md) for the full API contract and
 [responsibility.md](./responsibility.md) for dependency boundaries.
