@@ -92,8 +92,8 @@ operations, climate queries, sampling adapters, and blender construction return
 `requireBlender(value)` both return
 `Result.Result<Blender, TypeError | RangeError>`; inspect or propagate the
 result before using the blender. Callbacks supplied to `createBlender` must
-also return `Result`. Compose either constructor with downstream fallible
-operations using `Result.flatMap`:
+also return `Result`. Pass either result into downstream fallible operations
+with `Result.flatMap`:
 
 ```ts
 import { Result } from 'effect'
