@@ -1,6 +1,9 @@
 import { createRequire } from 'node:module'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -11,7 +14,22 @@ const typescriptAst =
   typeof typescript.createProgram === 'function' ? undefined : require('typescript/unstable/ast')
 const typeFlags =
   typescript.TypeFlags ?? require('typescript/unstable/sync').TypeFlags
+const modelPath = resolve(root, 'test/fixtures/consumer-migration/api-model.json')
+const generatedDocumentPath = resolve(root, 'docs/consumer-migration.md')
+const trackedBuildInputs = [
+  'src',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  '.npmrc',
+  'tsconfig.base.json',
+  'tsconfig.release.json',
+]
 const parseArguments = (args) => {
+  if (args.length === 1 && args[0] === '--check') {
+    return { check: true }
+  }
+
   const values = new Map()
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index]
@@ -34,10 +52,169 @@ const parseArguments = (args) => {
   }
 
   return {
+    check: false,
     baseRef: values.get('--base-ref'),
     headRef: values.get('--head-ref'),
     baseDts: values.get('--base-dts'),
     headDts: values.get('--head-dts'),
+  }
+}
+
+const resolveRef = (ref) => {
+  const resolvedRef = execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  if (!/^[\da-f]{40,64}$/iu.test(resolvedRef)) {
+    throw new Error(`Could not resolve ${ref} to a commit`)
+  }
+  return resolvedRef
+}
+
+const listGitBuildInputs = (ref) =>
+  execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', ref, '--', ...trackedBuildInputs], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+    .split('\0')
+    .filter(Boolean)
+    .sort()
+
+const listDirectoryBuildInputs = (projectRoot) => {
+  const files = []
+  const visit = (directory, relativeDirectory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolutePath = resolve(directory, entry.name)
+      const relativePath = `${relativeDirectory}/${entry.name}`
+      if (entry.isDirectory()) {
+        visit(absolutePath, relativePath)
+      } else if (entry.isFile()) {
+        files.push(relativePath)
+      }
+    }
+  }
+  visit(resolve(projectRoot, 'src'), 'src')
+  for (const input of trackedBuildInputs.filter((path) => path !== 'src')) {
+    try {
+      statSync(resolve(projectRoot, input))
+      files.push(input)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error
+      }
+    }
+  }
+  return files.sort()
+}
+
+const buildInputFingerprint = (paths, readContent) => {
+  const hash = createHash('sha256')
+  for (const path of paths) {
+    const content = readContent(path)
+    let declarationRelevantContent = content
+    if (path === 'package.json') {
+      const { name, type, dependencies, devDependencies, peerDependencies, optionalDependencies, exports, types, typesVersions, imports } =
+        JSON.parse(content.toString('utf8'))
+      declarationRelevantContent = JSON.stringify({
+        name,
+        type,
+        dependencies,
+        devDependencies: { typescript: devDependencies?.typescript },
+        peerDependencies,
+        optionalDependencies,
+        exports,
+        types,
+        typesVersions,
+        imports,
+      })
+    }
+    hash.update(path).update('\0').update(declarationRelevantContent).update('\0')
+  }
+  return hash.digest('hex')
+}
+
+const fingerprintGitBuildInputs = (ref) => {
+  const paths = listGitBuildInputs(ref)
+  const required = ['package.json', 'pnpm-lock.yaml', 'tsconfig.base.json', 'tsconfig.release.json']
+  const missing = required.filter((path) => !paths.includes(path))
+  if (missing.length > 0) {
+    throw new Error(`Commit ${ref} is missing declaration build inputs: ${missing.join(', ')}`)
+  }
+  return buildInputFingerprint(paths, (path) =>
+    execFileSync('git', ['show', `${ref}:${path}`], { cwd: root }),
+  )
+}
+
+const fingerprintDirectoryBuildInputs = (projectRoot, ref) => {
+  const expectedPaths = listGitBuildInputs(ref)
+  const actualPaths = listDirectoryBuildInputs(projectRoot)
+  const expectedSet = new Set(expectedPaths)
+  const actualSet = new Set(actualPaths)
+  const missing = expectedPaths.filter((path) => !actualSet.has(path))
+  const extra = actualPaths.filter((path) => !expectedSet.has(path))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `Declaration input tree does not match ${ref}: missing [${missing.join(', ')}], extra [${extra.join(', ')}]`,
+    )
+  }
+  const directoryFingerprint = buildInputFingerprint(expectedPaths, (path) =>
+    readFileSync(resolve(projectRoot, path)),
+  )
+  const refFingerprint = fingerprintGitBuildInputs(ref)
+  if (directoryFingerprint !== refFingerprint) {
+    throw new Error(`Declaration inputs at ${projectRoot} do not match commit ${ref}`)
+  }
+  return directoryFingerprint
+}
+
+const findPackageRoot = (declarationPath) => {
+  const absolutePath = resolve(declarationPath)
+  if (absolutePath.endsWith('/dist/index.d.ts') === false) {
+    throw new Error(`Expected a package dist/index.d.ts path: ${declarationPath}`)
+  }
+  let directory = dirname(dirname(absolutePath))
+  while (directory !== dirname(directory)) {
+    try {
+      const candidate = JSON.parse(readFileSync(resolve(directory, 'package.json'), 'utf8'))
+      if (candidate.name === packageName) {
+        return directory
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+        throw error
+      }
+    }
+    directory = dirname(directory)
+  }
+  throw new Error(`Could not find ${packageName} package root for ${declarationPath}`)
+}
+
+const validateDeclarationInput = (ref, declarationPath, role) => {
+  const resolvedRef = resolveRef(ref)
+  const absolutePath = resolve(declarationPath)
+  readFileSync(absolutePath)
+  const projectRoot = findPackageRoot(absolutePath)
+  const inputFingerprint = fingerprintDirectoryBuildInputs(projectRoot, resolvedRef)
+  if (existsSync(resolve(projectRoot, '.git'))) {
+    const checkoutRoot = execFileSync('git', ['-C', projectRoot, 'rev-parse', '--show-toplevel'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim()
+    if (resolve(checkoutRoot) !== projectRoot) {
+      throw new Error(`${role} declaration path is not at its git checkout root: ${absolutePath}`)
+    }
+    const checkoutRef = resolveRef(execFileSync('git', ['-C', projectRoot, 'rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim())
+    if (checkoutRef !== resolvedRef) {
+      throw new Error(`${role} declaration checkout is ${checkoutRef}, expected ${resolvedRef}`)
+    }
+  }
+  return {
+    ref: resolvedRef,
+    dtsSha256: createHash('sha256').update(readFileSync(absolutePath)).digest('hex'),
+    buildInputsSha256: inputFingerprint,
   }
 }
 
@@ -201,6 +378,149 @@ const readExportsWithSyncApi = (entryPath) => {
   } finally {
     api.close()
   }
+}
+
+const serializeDeclarations = (declarations) => ({
+  exports: [...declarations.exports.entries()],
+  referencedDependencyFields: [...declarations.referencedDependencyFields.entries()],
+  availableBrandFactories: [...declarations.availableBrandFactories].sort((left, right) =>
+    left.name.localeCompare(right.name) || left.brandType.localeCompare(right.brandType),
+  ),
+})
+
+const deserializeDeclarations = (serialized) => ({
+  exports: new Map(serialized.exports),
+  referencedDependencyFields: new Map(serialized.referencedDependencyFields),
+  availableBrandFactories: serialized.availableBrandFactories,
+})
+
+const hashJson = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const hashJsonWords = (value) => hashJson(value).match(/.{8}/gu).map((word) => Number.parseInt(word, 16))
+
+const readGeneratedSection = () => {
+  const document = readFileSync(generatedDocumentPath, 'utf8')
+  const begin = '<!-- BEGIN GENERATED SIGNATURE TABLES -->'
+  const end = '<!-- END GENERATED SIGNATURE TABLES -->'
+  const beginIndex = document.indexOf(begin)
+  const endIndex = document.indexOf(end)
+  if (
+    beginIndex < 0 ||
+    endIndex <= beginIndex ||
+    document.indexOf(begin, beginIndex + begin.length) >= 0 ||
+    document.indexOf(end, endIndex + end.length) >= 0
+  ) {
+    throw new Error(`Expected one ordered marker pair in ${generatedDocumentPath}`)
+  }
+  return document.slice(beginIndex + begin.length, endIndex).trim()
+}
+
+const createDeclarationsFromSource = () => {
+  const temporaryRoot = mkdtempSync(resolve(tmpdir(), 'mc-noise-consumer-migration-'))
+  const outputDirectory = resolve(temporaryRoot, 'dist')
+  mkdirSync(outputDirectory, { recursive: true })
+  symlinkSync(resolve(root, 'node_modules'), resolve(temporaryRoot, 'node_modules'), 'dir')
+  const entryPath = resolve(outputDirectory, 'index.d.ts')
+  try {
+    execFileSync(
+      resolve(root, 'node_modules/.bin/tsc'),
+      [
+        '-p',
+        resolve(root, 'tsconfig.release.json'),
+        '--pretty',
+        'false',
+        '--emitDeclarationOnly',
+        '--outDir',
+        outputDirectory,
+      ],
+      { cwd: root, stdio: 'inherit' },
+    )
+    return readExports(entryPath)
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
+const checkGeneratedSection = () => {
+  const snapshot = JSON.parse(readFileSync(modelPath, 'utf8'))
+  if (snapshot.format !== 1 || snapshot.package !== packageName) {
+    throw new Error(`Unsupported consumer migration API model: ${modelPath}`)
+  }
+  for (const [role, metadata] of [['Base', snapshot.base], ['Candidate', snapshot.head]]) {
+    const ref = resolveRef(metadata.ref)
+    if (ref !== metadata.ref || fingerprintGitBuildInputs(ref) !== metadata.buildInputsSha256) {
+      throw new Error(`${role} API model inputs do not match recorded ref ${metadata.ref}`)
+    }
+  }
+  if (JSON.stringify(hashJsonWords(snapshot.base.declarations)) !== JSON.stringify(snapshot.base.apiDigestWords)) {
+    throw new Error(`Base API model checksum does not match ${modelPath}`)
+  }
+  const baseDeclarations = deserializeDeclarations(snapshot.base.declarations)
+  const currentDeclarations = createDeclarationsFromSource()
+  const actualHead = serializeDeclarations(currentDeclarations)
+  if (JSON.stringify(hashJsonWords(actualHead)) !== JSON.stringify(snapshot.head.apiDigestWords)) {
+    throw new Error(
+      `Current public declarations differ from the recorded candidate API model for ${snapshot.head.ref}; regenerate the migration tables and API model`,
+    )
+  }
+
+  const changedExports = []
+  const addedExports = []
+  const removedExports = []
+  for (const [name, baseExport] of baseDeclarations.exports) {
+    const headExport = currentDeclarations.exports.get(name)
+    if (headExport === undefined) {
+      removedExports.push({ name, baseSignatures: baseExport.signatures })
+    } else if (JSON.stringify(baseExport.signatures) !== JSON.stringify(headExport.signatures)) {
+      changedExports.push({ name, baseSignatures: baseExport.signatures, headSignatures: headExport.signatures })
+    }
+  }
+  for (const [name, headExport] of currentDeclarations.exports) {
+    if (!baseDeclarations.exports.has(name)) {
+      addedExports.push({ name, headSignatures: headExport.signatures })
+    }
+  }
+  const changedByCategory = groupBy(changedExports, ({ name, baseSignatures, headSignatures }) =>
+    classify(name, baseSignatures, headSignatures),
+  )
+  const fieldChanges = findFieldChanges(
+    baseDeclarations.exports,
+    currentDeclarations.exports,
+    baseDeclarations.referencedDependencyFields,
+    currentDeclarations.referencedDependencyFields,
+  )
+  const brandFactories = findNewBrandFactories(
+    baseDeclarations.exports,
+    currentDeclarations.exports,
+    currentDeclarations.availableBrandFactories,
+  )
+  const generatedSection = renderTables({
+    baseRef: snapshot.base.ref,
+    headRef: snapshot.head.ref,
+    changedByCategory,
+    addedExports,
+    removedExports,
+    fieldChanges,
+    brandFactories,
+  })
+  if (readGeneratedSection() !== generatedSection) {
+    throw new Error(
+      `Generated signature tables in ${generatedDocumentPath} are stale; run the documented generation command`,
+    )
+  }
+  console.log(
+    `Consumer migration docs are current for base ${snapshot.base.ref} and candidate ${snapshot.head.ref}.`,
+  )
+}
+
+const writeModelSnapshot = (base, head) => {
+  const snapshot = {
+    format: 1,
+    package: packageName,
+    base: { ...base.metadata, apiDigestWords: hashJsonWords(base.declarations), declarations: base.declarations },
+    head: { ...head.metadata, apiDigestWords: hashJsonWords(head.declarations) },
+  }
+  mkdirSync(dirname(modelPath), { recursive: true })
+  writeFileSync(modelPath, `${JSON.stringify(snapshot, null, 2)}\n`)
 }
 
 const isVariableDeclaration = (node) => {
@@ -613,7 +933,7 @@ const renderTables = ({
   sections.push(renderBrandFactoriesTable(brandFactories))
 
   return [
-    `Compared declarations from base \`${escapeHtml(baseRef)}\` to candidate \`${escapeHtml(headRef)}\`.`,
+    `Compared declarations from the mc-noise 0.4.x base revision \`${escapeHtml(baseRef)}\` to the mc-noise 0.5.0 candidate revision \`${escapeHtml(headRef)}\`.`,
     '',
     ...sections,
   ].join('\n')
@@ -768,77 +1088,86 @@ const writeGeneratedSection = (generatedSection) => {
 }
 
 const argumentsByName = parseArguments(process.argv.slice(2))
-const basePath = resolve(argumentsByName.baseDts)
-const headPath = resolve(argumentsByName.headDts)
-readFileSync(basePath)
-readFileSync(headPath)
+if (argumentsByName.check) {
+  checkGeneratedSection()
+} else {
+  const basePath = resolve(argumentsByName.baseDts)
+  const headPath = resolve(argumentsByName.headDts)
+  const baseMetadata = validateDeclarationInput(argumentsByName.baseRef, basePath, 'Base')
+  const headMetadata = validateDeclarationInput(argumentsByName.headRef, headPath, 'Candidate')
+  const baseDeclarations = readExports(basePath)
+  const headDeclarations = readExports(headPath)
+  const baseModel = serializeDeclarations(baseDeclarations)
+  const headModel = serializeDeclarations(headDeclarations)
+  const baseExports = baseDeclarations.exports
+  const headExports = headDeclarations.exports
+  const changedExports = []
+  const addedExports = []
+  const removedExports = []
 
-const baseDeclarations = readExports(basePath)
-const headDeclarations = readExports(headPath)
-const baseExports = baseDeclarations.exports
-const headExports = headDeclarations.exports
-const changedExports = []
-const addedExports = []
-const removedExports = []
-
-for (const [name, baseExport] of baseExports) {
-  const headExport = headExports.get(name)
-  if (headExport === undefined) {
-    removedExports.push({ name, baseSignatures: baseExport.signatures })
-  } else if (JSON.stringify(baseExport.signatures) !== JSON.stringify(headExport.signatures)) {
-    changedExports.push({
-      name,
-      baseSignatures: baseExport.signatures,
-      headSignatures: headExport.signatures,
-    })
+  for (const [name, baseExport] of baseExports) {
+    const headExport = headExports.get(name)
+    if (headExport === undefined) {
+      removedExports.push({ name, baseSignatures: baseExport.signatures })
+    } else if (JSON.stringify(baseExport.signatures) !== JSON.stringify(headExport.signatures)) {
+      changedExports.push({
+        name,
+        baseSignatures: baseExport.signatures,
+        headSignatures: headExport.signatures,
+      })
+    }
   }
-}
 
-for (const [name, headExport] of headExports) {
-  if (!baseExports.has(name)) {
-    addedExports.push({ name, headSignatures: headExport.signatures })
+  for (const [name, headExport] of headExports) {
+    if (!baseExports.has(name)) {
+      addedExports.push({ name, headSignatures: headExport.signatures })
+    }
   }
-}
 
-const groupedChanges = groupBy(changedExports, ({ name, baseSignatures, headSignatures }) =>
-  classify(name, baseSignatures, headSignatures),
-)
-const fieldChanges = findFieldChanges(
-  baseExports,
-  headExports,
-  baseDeclarations.referencedDependencyFields,
-  headDeclarations.referencedDependencyFields,
-)
-const brandFactories = findNewBrandFactories(
-  baseExports,
-  headExports,
-  headDeclarations.availableBrandFactories,
-)
-const generatedSection = renderTables({
-  baseRef: argumentsByName.baseRef,
-  headRef: argumentsByName.headRef,
-  changedByCategory: groupedChanges,
-  addedExports,
-  removedExports,
-  fieldChanges,
-  brandFactories,
-})
-writeGeneratedSection(generatedSection)
+  const changedByCategory = groupBy(changedExports, ({ name, baseSignatures, headSignatures }) =>
+    classify(name, baseSignatures, headSignatures),
+  )
+  const fieldChanges = findFieldChanges(
+    baseExports,
+    headExports,
+    baseDeclarations.referencedDependencyFields,
+    headDeclarations.referencedDependencyFields,
+  )
+  const brandFactories = findNewBrandFactories(
+    baseExports,
+    headExports,
+    headDeclarations.availableBrandFactories,
+  )
+  const generatedSection = renderTables({
+    baseRef: baseMetadata.ref,
+    headRef: headMetadata.ref,
+    changedByCategory,
+    addedExports,
+    removedExports,
+    fieldChanges,
+    brandFactories,
+  })
+  writeModelSnapshot(
+    { metadata: baseMetadata, declarations: baseModel },
+    { metadata: headMetadata, declarations: headModel },
+  )
+  writeGeneratedSection(generatedSection)
 
-console.log(
-  `Generated consumer migration signatures: ${changedExports.length} changed, ${addedExports.length} added, ${removedExports.length} removed.`,
-)
-const changedExportTypes = new Set(
-  fieldChanges.filter(({ provider }) => provider === packageName).map(({ exportName }) => exportName),
-).size
-const changedDependencyTypes = new Set(
-  fieldChanges
-    .filter(({ provider }) => provider !== packageName)
-    .map(({ provider, exportName }) => `${provider}\0${exportName}`),
-).size
-console.log(
-  `  fields: ${fieldChanges.length} changes across ${changedExportTypes} mc-noise exported types and ${changedDependencyTypes} referenced mc-kernel ${changedDependencyTypes === 1 ? 'type' : 'types'}; new brands: ${brandFactories.length}`,
-)
-for (const category of ['seed', 'coordinates', 'result', 'other']) {
-  console.log(`  ${category}: ${groupedChanges.get(category)?.length ?? 0} changed`)
+  console.log(
+    `Generated consumer migration signatures: ${changedExports.length} changed, ${addedExports.length} added, ${removedExports.length} removed.`,
+  )
+  const changedExportTypes = new Set(
+    fieldChanges.filter(({ provider }) => provider === packageName).map(({ exportName }) => exportName),
+  ).size
+  const changedDependencyTypes = new Set(
+    fieldChanges
+      .filter(({ provider }) => provider !== packageName)
+      .map(({ provider, exportName }) => `${provider}\0${exportName}`),
+  ).size
+  console.log(
+    `  fields: ${fieldChanges.length} changes across ${changedExportTypes} mc-noise exported types and ${changedDependencyTypes} referenced mc-kernel ${changedDependencyTypes === 1 ? 'type' : 'types'}; new brands: ${brandFactories.length}`,
+  )
+  for (const category of ['seed', 'coordinates', 'result', 'other']) {
+    console.log(`  ${category}: ${changedByCategory.get(category)?.length ?? 0} changed`)
+  }
 }

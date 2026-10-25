@@ -161,38 +161,9 @@ provided by mc-kernel.
 Changed declarations are grouped by seed brands, coordinate brands, `Result`
 changes, and other changes.
 
-### Regenerate the tables (maintainers)
-
-Prepare separate worktrees for the base and candidate revisions. The commands
-below assume both worktrees already exist. The `Before` column uses the base
-worktree; the `After` column uses the candidate worktree. In each worktree,
-install dependencies with its lockfile and build the declarations:
-
-```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
-```
-
-Run the generator from the candidate worktree, passing both emitted declaration
-entrypoints:
-
-```sh
-node scripts/generate-consumer-migration.mjs \
-  --base-ref <base-revision> \
-  --head-ref <candidate-revision> \
-  --base-dts <base-worktree>/dist/index.d.ts \
-  --head-dts <candidate-worktree>/dist/index.d.ts
-```
-
-The generator compares declarations and public type fields from the TypeScript
-checker. It follows type references from mc-noise public declarations and
-includes matching exported type fields from each dependency's declared public
-entrypoints. It then replaces the section between its markers. Keep the markers
-in place when editing this guide.
-
 <!-- BEGIN GENERATED SIGNATURE TABLES -->
 
-Compared declarations from base `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to candidate `c121ff83db06a71c29e4cad6fa8c4f09cf8bc64c`.
+Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to the mc-noise 0.5.0 candidate revision `c121ff83db06a71c29e4cad6fa8c4f09cf8bc64c`.
 
 <details>
 <summary>Seed brand changes (12)</summary>
@@ -974,6 +945,42 @@ Call the listed constructor `.result(value)` method and handle its `Result` befo
 </details>
 
 <!-- END GENERATED SIGNATURE TABLES -->
+
+## Maintaining the generated tables
+
+This section is for maintainers; it is not a consumer migration step.
+
+Prepare separate worktrees for the base and candidate revisions. The commands
+below assume both worktrees already exist. The `Before` column uses the base
+worktree; the `After` column uses the candidate worktree. In each worktree,
+install dependencies with its lockfile and build the declarations:
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+```
+
+Run the generator from the candidate worktree, passing both emitted declaration
+entrypoints:
+
+```sh
+node scripts/generate-consumer-migration.mjs \
+  --base-ref <base-revision> \
+  --head-ref <candidate-revision> \
+  --base-dts <base-worktree>/dist/index.d.ts \
+  --head-dts <candidate-worktree>/dist/index.d.ts
+```
+
+The generator extracts declarations and public type fields with the TypeScript
+checker, follows type references from mc-noise's public declarations, and reads
+matching dependency fields from declared public entrypoints. It checks that each
+input's declaration build files match its Git revision. It updates the section
+between the markers and the pinned API model in
+`test/fixtures/consumer-migration/api-model.json`. Keep the markers in place.
+Run `pnpm verify:consumer-migration` to emit declarations from current source
+into a temporary directory and compare them with the pinned candidate API model
+and the generated section. This check does not modify the guide; `pnpm verify`
+runs it as part of CI.
 
 See [public-api.md](./public-api.md) for the full API contract and
 [responsibility.md](./responsibility.md) for dependency boundaries.
