@@ -78,7 +78,7 @@ export const sampleNoise3DChunk = (
 ): Result.Result<Float32Array, RangeError> =>
   Result.gen(function* sampleNoise3DChunkResult() {
     const validHeight = yield* Result.mapError(
-      ChunkHeight(Number(height)),
+      ChunkHeight(height),
       (error) => new RangeError(error.message),
     )
     const validOriginY = yield* Result.mapError(

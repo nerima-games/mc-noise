@@ -64,6 +64,22 @@ describe('sampleNoise3DChunk', () => {
     }
   })
 
+  it('rejects string-valued chunk heights without coercion', () => {
+    const result = sampleNoise3DChunk(
+      () => 0,
+      chunkCoord(ChunkAxis(0), ChunkAxis(0)),
+      // @ts-expect-error malformed runtime input exercises the kernel brand boundary
+      '16',
+      { originY: PositionAxis(0) },
+    )
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(RangeError)
+      expect(result.failure.message).toContain('Chunk height must be an integer')
+    }
+  })
+
   it('rejects malformed vertical origins and chunk coordinates', () => {
     const invalidOrigin = sampleNoise3DChunk(
       () => 0,
