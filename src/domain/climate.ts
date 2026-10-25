@@ -935,9 +935,9 @@ const resolveEvaluator = (
 const evaluateClimateValue = (
   evaluate: (density: DensityFunction, position: DensityPosition) => Result.Result<DensityValue, TypeError | RangeError>,
   density: DensityFunction,
-  position: DensityPosition,
+  samplePosition: DensityPosition,
 ): Result.Result<ClimateValue, TypeError | RangeError> =>
-  Result.flatMap(evaluate(density, position), (value) =>
+  Result.flatMap(evaluate(density, samplePosition), (value) =>
     Result.mapError(
       ClimateValue.result(value),
       (error) => new RangeError(error.message),
