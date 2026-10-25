@@ -1,6 +1,6 @@
 export const NOISE_API_PARITY_BASELINE: string = [
   '61a4a4d0600a1ce35c75',
-  '1a4a4d0600a1ce35c751',
+  '195eb32d38ef817d4918',
 ].join('')
 
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
