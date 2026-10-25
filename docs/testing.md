@@ -137,6 +137,7 @@ API の破壊的変更は `test/public-api.test.ts` のゴールデン値と人�
 | `test/terrain-channels.test.ts` | 4 チャンネルの疎サンプル、peaks-and-valleys 変換、双線形展開、座標検証 |
 | `test/primitive-batches.test.ts` | 2D / 3D のプリミティブ batch、octave 引数、短い入力と sparse hole の扱い |
 | `test/public-api.test.ts` | barrel の export、**ゴールデン値**、格子点で 0、canonical kernel の半整数サンプル、チャンネル salt の固定 |
+| `test/noise-api-parity.test.ts` | mc-noise 0.4.0 の固定 seed 標本 39 件と、新しい公開 API の出力比較 |
 | `test/interpolation.test.ts` | 疎サンプリング、双線形補間、評価回数、入力検証 |
 | `test/chunk-sampling.test.ts` | `mc-kernel` の `ChunkCoord` を使ったチャンク原点・16×16 境界 |
 | `test/chunk-volume-sampling.test.ts` | `ChunkHeight` を含む 16×高さ×16 の chunk volume sampling |
