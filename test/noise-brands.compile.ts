@@ -12,16 +12,21 @@ import { ChunkHeight } from '@nerima-games/mc-kernel/domain/chunk'
 import { Result } from 'effect'
 import {
   ClimateFieldName,
+  LatticeCoordinate,
+  NoiseChannelLabel,
   NoiseFrequency,
   NoiseSeed,
   OctaveAmplitude,
   OctaveCount,
+  channelSeed,
   createNoiseField,
   fbm2D,
+  latticeValue,
   requireClimateParameter,
   sampleNoise2DChunk,
   sampleNoise3DChunk,
   type ValueNoiseFbmSample,
+  valueNoise2D,
 } from '../src/index.js'
 
 const noise2D = (x: number, z: number): number => x + z
@@ -52,6 +57,22 @@ export const rawFbmResult: ReturnType<typeof fbm2D> = Result.succeed(1)
 
 // @ts-expect-error Public seed-taking APIs require the NoiseSeed brand.
 createNoiseField(1)
+
+// @ts-expect-error channelSeed requires the NoiseSeed brand.
+channelSeed(1, NoiseChannelLabel('temperature'))
+
+// @ts-expect-error latticeValue requires the NoiseSeed brand.
+latticeValue(1, LatticeCoordinate(0), LatticeCoordinate(0))
+
+// @ts-expect-error valueNoise2D requires the NoiseSeed brand.
+valueNoise2D(1, 0, 0, NoiseFrequency(1))
+
+// @ts-expect-error fbm2D requires the NoiseSeed brand.
+fbm2D(1, 0, 0, {
+  octaves: OctaveCount(2),
+  frequency: NoiseFrequency(1),
+  persistence: OctaveAmplitude(0.5),
+})
 
 // @ts-expect-error Climate validation diagnostics use a dedicated label brand.
 requireClimateParameter('temperature', {})
