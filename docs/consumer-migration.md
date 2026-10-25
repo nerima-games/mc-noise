@@ -4,7 +4,11 @@ Use this guide when upgrading from mc-noise `0.4.x` to `0.5.0`.
 
 mc-noise 0.5 moves to Effect 4 and mc-kernel 0.9. Several public inputs now use
 domain brands, and APIs that can reject runtime input return typed `Result`
-values. Plan caller updates before upgrading, then change the dependency and its affected call sites in the same update.
+values. Plan caller updates before upgrading. Change the dependency and affected
+call sites in the same pull request.
+
+The generated API tables compare against the exact 0.4.x revision named in their
+heading. Other 0.4.x patches may have different declarations.
 
 ## Seed inputs
 
@@ -26,7 +30,9 @@ const deriveChannelSeedFromUntrustedSeed = (rawSeed: number) => {
   if (Result.isFailure(seed)) {
     return Result.fail(seed.failure)
   }
-  return Result.succeed(channelSeed(seed.success, NoiseChannelLabel('terrain')))
+  return Result.flatMap(NoiseChannelLabel.result('terrain'), (channel) =>
+    Result.succeed(channelSeed(seed.success, channel)),
+  )
 }
 ```
 
@@ -148,8 +154,9 @@ represents absence. An operation that can also fail validation may return a
 nested `Result.Result<Option.Option<Value>, E>`, where `E` is its error type.
 For example, `findSpawnPosition` returns
 `Result.Result<Option.Option<BlockPosition>, TypeError | RangeError>`. Handle
-the outer result first: a failure indicates invalid input, `None` means no
-spawn position was found, and `Some(position)` contains the `BlockPosition`.
+the outer result first: a failure indicates invalid input. Use `Option.isNone`
+to check whether no spawn position was found; when `Option.isSome` is true,
+`option.value` contains the `BlockPosition`.
 
 ## Declaration signature changes
 
@@ -985,10 +992,15 @@ runs it as part of CI.
 During generation, when the base `.d.ts` comes from a Git checkout, the
 script verifies that checkout's `HEAD` matches the base Git ref. It also
 verifies that the tracked declaration build inputs have the same paths and
-contents as that ref. The base `.d.ts` is hashed and recorded, but generation
-does not verify that it was built from those inputs.
-`--check` validates the pinned model metadata and candidate API, but does not
-rebuild or reread the base `.d.ts`.
+contents as that ref. The snapshot records the refs, build-input fingerprints,
+and `.d.ts` hashes after these checks pass. The base `.d.ts` hash is recorded,
+but generation does not verify that it was built from those inputs.
+
+`--check` verifies the pinned base declaration checksum, emits declarations
+from the current source and compares their digest with the candidate API digest
+in the snapshot, then compares the generated tables with the marked section in
+this guide. It does not resolve Git refs, recompute build-input fingerprints,
+or read the base `.d.ts`.
 
 See [public-api.md](./public-api.md) for the full API contract and
 [responsibility.md](./responsibility.md) for dependency boundaries.

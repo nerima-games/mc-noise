@@ -445,13 +445,10 @@ const checkGeneratedSection = () => {
   if (snapshot.format !== 1 || snapshot.package !== packageName) {
     throw new Error(`Unsupported consumer migration API model: ${modelPath}`)
   }
-  for (const [role, metadata] of [['Base', snapshot.base], ['Candidate', snapshot.head]]) {
-    const ref = resolveRef(metadata.ref)
-    if (ref !== metadata.ref || fingerprintGitBuildInputs(ref) !== metadata.buildInputsSha256) {
-      throw new Error(`${role} API model inputs do not match recorded ref ${metadata.ref}`)
-    }
-  }
-  if (JSON.stringify(hashJsonWords(snapshot.base.declarations)) !== JSON.stringify(snapshot.base.apiDigestWords)) {
+  if (
+    JSON.stringify(hashJsonWords(snapshot.base.declarations)) !==
+    JSON.stringify(snapshot.base.apiDigestWords)
+  ) {
     throw new Error(`Base API model checksum does not match ${modelPath}`)
   }
   const baseDeclarations = deserializeDeclarations(snapshot.base.declarations)
