@@ -752,6 +752,23 @@ describe('Climate samplers and spawn search', () => {
     expect(Result.isFailure(api.sampleClimate(sampler, samplePosition, null as never))).toBe(true)
   })
 
+  it('propagates invalid values returned by a density evaluation session', () => {
+    const invalidSession = {
+      evaluate: () => Result.succeed(Number.POSITIVE_INFINITY),
+    } as never
+    const result = api.sampleClimate(
+      makeSampler(),
+      worldPosition(1, 2, 3),
+      invalidSession,
+    )
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(RangeError)
+      expect(result.failure.message).toContain('climate value must be finite')
+    }
+  })
+
   it('matches the official sampler runtime shape', () => {
     const emptySampler = empty()
     expect(Object.isFrozen(emptySampler)).toBe(true)

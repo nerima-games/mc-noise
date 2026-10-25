@@ -938,19 +938,32 @@ const sampleWithEvaluator = (
   evaluate: (density: DensityFunction, position: DensityPosition) => Result.Result<DensityValue, TypeError | RangeError>,
 ): Result.Result<ClimateTargetPoint, TypeError | RangeError> =>
   Result.gen(function* resultGenerator() {
+    const toClimateValue = (
+      value: DensityValue,
+    ): Result.Result<ClimateValue, RangeError> =>
+      Result.mapError(
+        ClimateValue.result(value),
+        (error) => new RangeError(error.message),
+      )
     const temperature = yield* evaluate(sampler.temperature, positionValue)
+    const climateTemperature = yield* toClimateValue(temperature)
     const humidity = yield* evaluate(sampler.humidity, positionValue)
+    const climateHumidity = yield* toClimateValue(humidity)
     const continentalness = yield* evaluate(sampler.continentalness, positionValue)
+    const climateContinentalness = yield* toClimateValue(continentalness)
     const erosion = yield* evaluate(sampler.erosion, positionValue)
+    const climateErosion = yield* toClimateValue(erosion)
     const depth = yield* evaluate(sampler.depth, positionValue)
+    const climateDepth = yield* toClimateValue(depth)
     const weirdness = yield* evaluate(sampler.weirdness, positionValue)
+    const climateWeirdness = yield* toClimateValue(weirdness)
     return yield* climateTarget(
-      ClimateValue(temperature),
-      ClimateValue(humidity),
-      ClimateValue(continentalness),
-      ClimateValue(erosion),
-      ClimateValue(depth),
-      ClimateValue(weirdness),
+      climateTemperature,
+      climateHumidity,
+      climateContinentalness,
+      climateErosion,
+      climateDepth,
+      climateWeirdness,
     )
   })
 
