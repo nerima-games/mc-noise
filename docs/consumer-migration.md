@@ -1,7 +1,7 @@
 # Consumer migration: mc-noise 0.5
 
-This guide targets the `0.5.0` release created by this migration's minor
-changeset. Install it after the release is published.
+This guide targets mc-noise `0.5.0`. Read it when upgrading from `0.4.x` after
+the release is published.
 
 mc-noise 0.5 moves to Effect 4 and mc-kernel 0.9. Several public inputs now use
 domain brands, and APIs that can reject runtime input return typed `Result`
@@ -143,8 +143,6 @@ The failure type identifies the validation error, commonly `TypeError` or
 (see [public-api.md](./public-api.md) for the complete union). `Option`
 represents absence. An operation that can also fail validation may return a
 nested `Result.Result<Option.Option<Value>, E>`, where `E` is its error type.
-Handle invalid input and failed construction through `Result`, rather than
-expecting them to throw.
 
 ## Declaration signature changes
 
@@ -152,16 +150,18 @@ The tables list every named export whose signature changed and every new named
 export in this migration. The changed signatures are grouped by seed brands,
 coordinate brands, `Result` changes, and other changes.
 
-To regenerate the tables, build the base and candidate revisions separately
-with their own lockfiles. In each checkout, run:
+To regenerate the tables, check out the base and candidate revisions into
+separate worktrees. The `Before` column uses the base worktree; the `After`
+column uses the candidate worktree. In each worktree, install dependencies
+with its lockfile and build the declarations:
 
 ```sh
 corepack pnpm install --frozen-lockfile
 corepack pnpm build
 ```
 
-Then run the generator from the candidate checkout, passing the two emitted
-declaration entrypoints:
+Run the generator from the candidate worktree, passing both emitted declaration
+entrypoints:
 
 ```sh
 node scripts/generate-consumer-migration.mjs \

@@ -5,6 +5,10 @@ examples, see [consumer-migration.md](./consumer-migration.md). The generated
 noise mapping is versioned: changing the PRNG, salts, kernel, or octave tuning
 can change existing worlds.
 
+Declaration blocks below are excerpts, not standalone TypeScript files. They
+omit imports and surrounding module declarations; executable examples include
+their imports.
+
 ## Effect 4 and `mc-kernel` 0.9
 
 Import `Result` and `Option` from `effect`. Public operations that can reject
@@ -92,9 +96,6 @@ World-seed APIs use `NoiseSeed`, including `createNoiseField`,
 `latticeValue`, `valueNoise2D`, `fbm2D`, and the Minecraft terrain helpers
 `minecraftContinentalnessAt`, `minecraftSurfaceHeightAt`, `minecraftClimateAt`,
 `minecraftSurfaceBiomeAt`, `minecraftBiomeFor`, and `minecraftTerrainColumnAt`.
-Calling `NoiseSeed(value)` directly throws for invalid input, so use it only for
-values already known to be safe integers. Use `NoiseSeed.result(value)` for
-untrusted input.
 
 ```ts
 export type RandFn = () => number
