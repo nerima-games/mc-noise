@@ -89,4 +89,43 @@ describe('consumer migration generator check', () => {
     },
     20_000,
   )
+
+  it(
+    'rejects stale generated documentation tables',
+    () => {
+      const isolatedRoot = mkdtempSync(resolve(tmpdir(), 'mc-noise-consumer-doc-check-'))
+      try {
+        copyCheckProject(isolatedRoot)
+
+        const documentPath = resolve(isolatedRoot, 'docs/consumer-migration.md')
+        const document = readFileSync(documentPath, 'utf8')
+        const beginMarker = '<!-- BEGIN GENERATED SIGNATURE TABLES -->'
+        const endMarker = '<!-- END GENERATED SIGNATURE TABLES -->'
+        const beginIndex = document.indexOf(beginMarker)
+        const endIndex = document.indexOf(endMarker)
+        expect(beginIndex).toBeGreaterThanOrEqual(0)
+        expect(endIndex).toBeGreaterThan(beginIndex)
+
+        const staleDocument = [
+          document.slice(0, beginIndex + beginMarker.length),
+          '',
+          'Stale generated tables.',
+          '',
+          document.slice(endIndex),
+        ].join('\n')
+        writeFileSync(documentPath, staleDocument)
+
+        const staleDocumentationCheck = runCheck(isolatedRoot)
+        expect(staleDocumentationCheck.error).toBeUndefined()
+        expect(staleDocumentationCheck.status).not.toBe(0)
+        expect(staleDocumentationCheck.stderr).toContain('Generated signature tables')
+        expect(staleDocumentationCheck.stderr).toContain(
+          'are stale; run the documented generation command',
+        )
+      } finally {
+        rmSync(isolatedRoot, { recursive: true, force: true })
+      }
+    },
+    20_000,
+  )
 })
