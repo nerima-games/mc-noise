@@ -1,5 +1,15 @@
 # @nerima-games/mc-noise
 
+## 0.5.0
+
+### Minor Changes
+
+- [#37](https://github.com/nerima-games/mc-noise/pull/37) [`7cec324`](https://github.com/nerima-games/mc-noise/commit/7cec324346c72eb9110d607fb5b093a61ee45584) Thanks [@takeokunn](https://github.com/takeokunn)! - Migrate to Effect 4 and mc-kernel 0.9.0. Fallible operations return typed
+  `Result` values. `Option` represents absence and can be nested in `Result` when
+  validation can also fail. Use brand constructors' `.result` methods for
+  untrusted inputs; direct brand constructor calls throw on invalid values.
+  Consumers must update seed and coordinate brands and handle returned values.
+
 ## 0.4.0
 
 ### Minor Changes
