@@ -1,0 +1,38 @@
+id: no-raw-exported-function-return
+valid:
+  - |
+    export function getCount(id: UserId): Count {
+      return countFor(id)
+    }
+  - |
+    export const getName = (id: UserId): UserName => lookupName(id)
+  - |
+    export function getName(id: UserId): UserName {
+      function localFormat(value: string): UserName {
+        return makeUserName(value)
+      }
+      return localFormat(id)
+    }
+  - |
+    function localLookup(id: UserId): string {
+      return id
+    }
+  - |
+    export function decode(): Result.Result<Count, string> {
+      return Result.succeed(count)
+    }
+invalid:
+  - |
+    export function getCount(id: UserId): number {
+      return countFor(id)
+    }
+  - |
+    export const getName = (id: UserId): string => lookupName(id)
+  - |
+    export function decode(): Result.Result<number, string> {
+      return Result.succeed(1)
+    }
+  - |
+    export function decode(): Result.Result<string, RangeError> {
+      return Result.succeed('raw')
+    }

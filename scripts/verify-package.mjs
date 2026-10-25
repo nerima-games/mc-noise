@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { Option, Result } from 'effect'
 import {
   mkdtempSync,
   readFileSync,
@@ -13,6 +14,13 @@ const root = process.cwd()
 const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'mc-noise-package-'))
 const DEFAULT_COMMAND_TIMEOUT_MS = 120_000
+
+const unwrapResult = (result, operation) => {
+  if (Result.isFailure(result)) {
+    throw new Error(`${operation} failed: ${String(result.failure)}`)
+  }
+  return result.success
+}
 
 const run = (command, args) => {
   const result = spawnSync(command, args, {
@@ -29,6 +37,11 @@ const run = (command, args) => {
 
 try {
   const runtime = await import(pathToFileURL(join(root, 'dist/index.js')).href)
+  const evaluateDensity = (density, ...args) =>
+    unwrapResult(
+      runtime.evaluateDensityFunction(density, ...args),
+      `evaluateDensityFunction(${String(density?.kind)})`,
+    )
   if (typeof runtime.sampleNoise2DChunk !== 'function') {
     throw new Error('dist/index.js does not expose sampleNoise2DChunk')
   }
@@ -67,30 +80,45 @@ try {
     height: 1,
     width: 1,
   })
-  if (!(sample instanceof Float32Array) || sample[0] !== 0) {
+  if (
+    Result.isFailure(sample) ||
+    !(sample.success instanceof Float32Array) ||
+    sample.success[0] !== 0
+  ) {
     throw new Error('dist/index.js 3D sampling API returned an invalid sample')
   }
-  const spline = runtime.createSpline([
+  const spline = unwrapResult(runtime.createSpline([
     [0, 0],
     [1, 1],
-  ])
-  if (runtime.evaluateSpline(spline, 0.25) !== 0.25) {
+  ]), 'createSpline')
+  if (unwrapResult(runtime.evaluateSpline(spline, 0.25), 'evaluateSpline') !== 0.25) {
     throw new Error('dist/index.js spline API returned an invalid interpolation')
   }
-  const simplex = runtime.createSimplexNoise2D(runtime.mulberry32(runtime.NoiseSeed(1)))
+  const simplex = unwrapResult(runtime.createSimplexNoise2D(runtime.mulberry32(runtime.NoiseSeed(1))), 'createSimplexNoise2D')
   if (!Number.isFinite(simplex(0.25, -0.5))) {
     throw new Error('dist/index.js Simplex API returned an invalid sample')
   }
-  const density = runtime.densityConstant(3)
-  if (runtime.evaluateDensityFunction(density, { x: 0, y: 0, z: 0 }) !== 3) {
+  const density = unwrapResult(runtime.densityConstant(3), 'densityConstant')
+  if (evaluateDensity(density, { x: 0, y: 0, z: 0 }) !== 3) {
     throw new Error('dist/index.js DensityFunction API returned an invalid sample')
   }
-  const invertedDensity = runtime.densityInvert(runtime.densityConstant(2))
-  if (runtime.evaluateDensityFunction(invertedDensity, { x: 0, y: 0, z: 0 }) !== 0.5) {
+  const invertedDensity = unwrapResult(
+    runtime.densityInvert(unwrapResult(runtime.densityConstant(2), 'densityConstant')),
+    'densityInvert',
+  )
+  if (evaluateDensity(invertedDensity, { x: 0, y: 0, z: 0 }) !== 0.5) {
     throw new Error('dist/index.js densityInvert returned an invalid sample')
   }
-  const topSurface = runtime.densityFindTopSurface(runtime.densityConstant(1), runtime.densityConstant(4), -4, 4)
-  if (runtime.evaluateDensityFunction(topSurface, { x: 0, y: 0, z: 0 }) !== 4) {
+  const topSurface = unwrapResult(
+    runtime.densityFindTopSurface(
+      unwrapResult(runtime.densityConstant(1), 'densityConstant'),
+      unwrapResult(runtime.densityConstant(4), 'densityConstant'),
+      -4,
+      4,
+    ),
+    'densityFindTopSurface',
+  )
+  if (evaluateDensity(topSurface, { x: 0, y: 0, z: 0 }) !== 4) {
     throw new Error('dist/index.js densityFindTopSurface returned an invalid sample')
   }
   const shiftSource = {
@@ -98,68 +126,107 @@ try {
     minValue: -10,
     sample: (x, y, z) => x + y + z,
   }
-  const shiftA = runtime.densityShiftA(shiftSource)
-  const shiftB = runtime.densityShiftB(shiftSource)
-  const mappedNoise = runtime.densityMappedNoise(shiftSource, -2, 6)
+  const shiftA = unwrapResult(runtime.densityShiftA(shiftSource), 'densityShiftA')
+  const shiftB = unwrapResult(runtime.densityShiftB(shiftSource), 'densityShiftB')
+  const mappedNoise = unwrapResult(runtime.densityMappedNoise(shiftSource, -2, 6), 'densityMappedNoise')
   const shiftPosition = { x: 2, y: 4, z: -3 }
-  if (runtime.evaluateDensityFunction(shiftA, shiftPosition) !== -1 || runtime.evaluateDensityFunction(shiftB, shiftPosition) !== -1) {
+  if (evaluateDensity(shiftA, shiftPosition) !== -1 || evaluateDensity(shiftB, shiftPosition) !== -1) {
     throw new Error('dist/index.js ShiftA/ShiftB returned an invalid sample')
   }
-  if (runtime.evaluateDensityFunction(mappedNoise, shiftPosition) !== 14) {
+  if (evaluateDensity(mappedNoise, shiftPosition) !== 14) {
     throw new Error('dist/index.js mappedNoise returned an invalid sample')
   }
-  const oldBlendedSource = runtime.createDensityOldBlendedNoiseSource(
-    {
-      mainNoise: () => ({ sample: () => 0.25 }),
-      minLimitNoise: () => ({ sample: () => 0.5 }),
-      maxLimitNoise: () => ({ sample: () => 0.75 }),
-    },
-    { minValue: -1, maxValue: 1 },
+  const oldBlendedSource = unwrapResult(
+    runtime.createDensityOldBlendedNoiseSource(
+      {
+        mainNoise: () => ({ sample: () => 0.25 }),
+        minLimitNoise: () => ({ sample: () => 0.5 }),
+        maxLimitNoise: () => ({ sample: () => 0.75 }),
+      },
+      { minValue: -1, maxValue: 1 },
+    ),
+    'createDensityOldBlendedNoiseSource',
   )
-  const oldBlendedDensity = runtime.oldBlendedNoise(oldBlendedSource, {
+  const oldBlendedDensity = unwrapResult(runtime.oldBlendedNoise(oldBlendedSource, {
     smearScaleMultiplier: 4,
     xzFactor: 80,
     xzScale: 0.25,
     yFactor: 160,
     yScale: 0.25,
-  })
-  if (!Number.isFinite(runtime.evaluateDensityFunction(oldBlendedDensity, shiftPosition))) {
+  }), 'oldBlendedNoise')
+  if (!Number.isFinite(evaluateDensity(oldBlendedDensity, shiftPosition))) {
     throw new Error('dist/index.js oldBlendedNoise returned an invalid sample')
   }
-  const beardifierContext = runtime.createDensityEvaluationContext({
-    beardifier: () => 0.75,
-  })
-  if (runtime.evaluateDensityFunction(runtime.beardifier(), shiftPosition, beardifierContext) !== 0.75) {
+  const beardifierContext = unwrapResult(runtime.createDensityEvaluationContext({
+    beardifier: () => Result.succeed(0.75),
+  }), 'createDensityEvaluationContext')
+  if (evaluateDensity(runtime.beardifier(), shiftPosition, beardifierContext) !== 0.75) {
     throw new Error('dist/index.js beardifier returned an invalid sample')
   }
-  const officialDensity = runtime.map(runtime.densityConstant(-2), runtime.DensityMappedType.ABS)
-  const densityRuntime = runtime.createDensityFunctionRuntime(officialDensity)
-  if (densityRuntime.compute({ x: 0, y: 0, z: 0 }) !== 2 || densityRuntime.minValue !== 2 || densityRuntime.maxValue !== 2) {
+  const officialDensity = unwrapResult(
+    runtime.map(
+      unwrapResult(runtime.densityConstant(-2), 'densityConstant'),
+      runtime.DensityMappedType.ABS,
+    ),
+    'map',
+  )
+  const densityRuntime = unwrapResult(runtime.createDensityFunctionRuntime(officialDensity), 'createDensityFunctionRuntime')
+  if (
+    unwrapResult(densityRuntime.compute({ x: 0, y: 0, z: 0 }), 'DensityFunctionRuntime.compute') !== 2 ||
+    densityRuntime.minValue !== 2 ||
+    densityRuntime.maxValue !== 2
+  ) {
     throw new Error('dist/index.js DensityFunction runtime returned an invalid result')
   }
-  const densityNode = runtime.createDensityFunctionNode(officialDensity)
-  if (densityNode.compute({ x: 0, y: 0, z: 0 }) !== 2 || densityNode.minValue() !== 2 || densityNode.maxValue() !== 2 || densityNode.invert().compute({ x: 0, y: 0, z: 0 }) !== 0.5) {
+  const densityNode = unwrapResult(runtime.createDensityFunctionNode(officialDensity), 'createDensityFunctionNode')
+  const invertedNode = unwrapResult(densityNode.invert(), 'DensityFunctionNode.invert')
+  if (
+    unwrapResult(densityNode.compute({ x: 0, y: 0, z: 0 }), 'DensityFunctionNode.compute') !== 2 ||
+    densityNode.minValue() !== 2 ||
+    densityNode.maxValue() !== 2 ||
+    unwrapResult(invertedNode.compute({ x: 0, y: 0, z: 0 }), 'DensityFunctionNode.compute') !== 0.5
+  ) {
     throw new Error('dist/index.js DensityFunction node returned an invalid result')
   }
   const densityValues = [0]
-  runtime.fillDensityFunctionArray(officialDensity, densityValues, () => ({ x: 0, y: 0, z: 0 }))
+  unwrapResult(
+    runtime.fillDensityFunctionArray(officialDensity, densityValues, () => ({ x: 0, y: 0, z: 0 })),
+    'fillDensityFunctionArray',
+  )
   if (densityValues.length !== 1 || densityValues[0] !== 2) {
     throw new Error('dist/index.js DensityFunction fillArray returned an invalid result')
   }
-  const router = runtime.createNoiseRouter(Object.fromEntries(runtime.NOISE_ROUTER_CHANNELS.map((channel) => [channel, runtime.densityConstant(1)])))
-  const routerRuntime = runtime.createNoiseRouterRuntime(router)
-  if (routerRuntime.mapAll((densityValue) => densityValue).finalDensity.minValue !== 1) {
+  const router = unwrapResult(runtime.createNoiseRouter(Object.fromEntries(
+    runtime.NOISE_ROUTER_CHANNELS.map((channel) => [
+      channel,
+      unwrapResult(runtime.densityConstant(1), 'densityConstant'),
+    ]),
+  )), 'createNoiseRouter')
+  const routerRuntime = unwrapResult(runtime.createNoiseRouterRuntime(router), 'createNoiseRouterRuntime')
+  const mappedRouter = unwrapResult(routerRuntime.mapAll((densityValue) => densityValue), 'NoiseRouterRuntime.mapAll')
+  if (mappedRouter.finalDensity.minValue !== 1) {
     throw new Error('dist/index.js NoiseRouter runtime returned an invalid result')
   }
-  if (runtime.evaluateNoiseRouter(router, { x: 0, y: 0, z: 0 }).temperature !== 1) {
+  const routerValues = unwrapResult(runtime.evaluateNoiseRouter(router, { x: 0, y: 0, z: 0 }), 'evaluateNoiseRouter')
+  if (routerValues.temperature !== 1) {
     throw new Error('dist/index.js NoiseRouter evaluation returned an invalid result')
   }
-  const climateRuntime = runtime.createClimateSamplerRuntime(runtime.empty())
-  if (climateRuntime.sample(0, 0, 0).temperature !== 0 || climateRuntime.findSpawnPosition() !== undefined) {
+  const climateSampler = unwrapResult(runtime.empty(), 'empty')
+  const climateRuntime = unwrapResult(runtime.createClimateSamplerRuntime(climateSampler), 'createClimateSamplerRuntime')
+  const climateSample = unwrapResult(climateRuntime.sample({ x: 0, y: 0, z: 0 }), 'ClimateSamplerRuntime.sample')
+  const spawnPosition = unwrapResult(climateRuntime.findSpawnPosition(), 'ClimateSamplerRuntime.findSpawnPosition')
+  if (climateSample.temperature !== 0 || Option.isSome(spawnPosition)) {
     throw new Error('dist/index.js Climate sampler runtime returned an invalid result')
   }
-  const blenderContext = runtime.createDensityEvaluationContextFromBlender(runtime.createBlender())
-  if (runtime.evaluateDensityFunction(runtime.densityConstant(4), { x: 0, y: 0, z: 0 }, blenderContext) !== 4) {
+  const blender = unwrapResult(runtime.createBlender(), 'createBlender')
+  const blenderContext = unwrapResult(runtime.createDensityEvaluationContextFromBlender(blender), 'createDensityEvaluationContextFromBlender')
+  if (
+    evaluateDensity(
+      unwrapResult(runtime.densityConstant(4), 'densityConstant'),
+      { x: 0, y: 0, z: 0 },
+      blenderContext,
+    ) !== 4
+  ) {
     throw new Error('dist/index.js Blender context returned an invalid result')
   }
 

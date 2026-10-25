@@ -1,21 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import {
-  createDensityNoiseSource,
-  createSpline,
-  densityBinary,
   densityBlendAlpha,
   densityBlendDensity,
   densityBlendOffset,
   densityCache2D,
   densityCacheAllInCell,
   densityCacheOnce,
+  densityFlatCache,
+  densityInterpolated,
+  mapAll,
+  mapDensityFunction,
+} from '../src/index.js'
+import * as DensityApi from '../src/index.js'
+import {
+  createDensityNoiseSource,
+  createSpline,
+  densityBinary,
   densityClamp,
   densityConstant,
   densityCoordinate,
   densityEndIslands,
   densityFindTopSurface,
-  densityFlatCache,
-  densityInterpolated,
   densityLinearOperation,
   densityNoise,
   densityRangeChoice,
@@ -27,9 +32,9 @@ import {
   densityUnary,
   densityWeirdScaledSampler,
   densityYClampedGradient,
-  mapAll,
-  mapDensityFunction,
-} from '../src/index.js'
+  expectDensitySuccess,
+  expectResultFailure,
+} from './density-function-test-utils.js'
 
 describe('DensityFunction recursive transformation', () => {
   it('visits every official density node and rebuilds child nodes', () => {
@@ -78,26 +83,34 @@ describe('DensityFunction recursive transformation', () => {
       return density
     }
 
-    const mapped = nodes.map((density) => mapDensityFunction(density, visitor))
+    const mapped = nodes.map((density) =>
+      expectDensitySuccess(mapDensityFunction(density, visitor)),
+    )
 
     expect(mapped).toHaveLength(nodes.length)
     expect(new Set(visited)).toEqual(new Set(nodes.map((density) => density.kind)))
     expect(mapped[0]).toMatchObject({ kind: 'constant', value: 3 })
-    expect(mapAll(nodes[10]!, () => densityConstant(7))).toMatchObject({
+    expect(expectDensitySuccess(mapAll(nodes[10]!, () => densityConstant(7)))).toMatchObject({
       kind: 'constant',
       value: 7,
     })
   })
 
   it('rejects invalid density values, visitors, and visitor results', () => {
-    expect(() => mapDensityFunction(null as never, (density) => density)).toThrow(
-      'density must be a DensityFunction',
-    )
-    expect(() => mapDensityFunction(densityConstant(1), null as never)).toThrow(
-      'visitor must be a function',
-    )
-    expect(() => mapDensityFunction(densityConstant(1), () => null as never)).toThrow(
-      'visitor result must be a DensityFunction',
-    )
+    expect(
+      expectResultFailure(
+        DensityApi.mapDensityFunction(null as never, (density) => density),
+      ).message,
+    ).toContain('density must be a DensityFunction')
+    expect(
+      expectResultFailure(
+        DensityApi.mapDensityFunction(densityConstant(1), null as never),
+      ).message,
+    ).toContain('visitor must be a function')
+    expect(
+      expectResultFailure(
+        DensityApi.mapDensityFunction(densityConstant(1), () => null as never),
+      ).message,
+    ).toContain('visitor result must be a DensityFunction')
   })
 })

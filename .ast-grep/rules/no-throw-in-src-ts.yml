@@ -1,0 +1,10 @@
+id: no-throw-in-src-ts
+language: TypeScript
+severity: error
+files:
+  - src/**/*.ts
+  - src/**/*.mts
+  - src/**/*.cts
+message: Do not throw from shipping source.
+rule:
+  kind: throw_statement

@@ -1,0 +1,76 @@
+id: no-raw-exported-function-return
+snapshots:
+  "export const getName = (id: UserId): string => lookupName(id)\n":
+    labels:
+    - source: string
+      style: primary
+      start: 37
+      end: 43
+    - source: "export const getName = (id: UserId): string => lookupName(id)"
+      style: secondary
+      start: 0
+      end: 61
+    - source: "(id: UserId): string => lookupName(id)"
+      style: secondary
+      start: 23
+      end: 61
+  "export function getCount(id: UserId): number {\n  return countFor(id)\n}\n":
+    labels:
+    - source: number
+      style: primary
+      start: 38
+      end: 44
+    - source: |-
+        export function getCount(id: UserId): number {
+          return countFor(id)
+        }
+      style: secondary
+      start: 0
+      end: 70
+    - source: |-
+        function getCount(id: UserId): number {
+          return countFor(id)
+        }
+      style: secondary
+      start: 7
+      end: 70
+  "export function decode(): Result.Result<number, string> {\n  return Result.succeed(1)\n}\n":
+    labels:
+    - source: Result.Result<number, string>
+      style: primary
+      start: 26
+      end: 55
+    - source: |-
+        export function decode(): Result.Result<number, string> {
+          return Result.succeed(1)
+        }
+      style: secondary
+      start: 0
+      end: 86
+    - source: |-
+        function decode(): Result.Result<number, string> {
+          return Result.succeed(1)
+        }
+      style: secondary
+      start: 7
+      end: 86
+  "export function decode(): Result.Result<string, RangeError> {\n  return Result.succeed('raw')\n}\n":
+    labels:
+    - source: Result.Result<string, RangeError>
+      style: primary
+      start: 26
+      end: 59
+    - source: |-
+        export function decode(): Result.Result<string, RangeError> {
+          return Result.succeed('raw')
+        }
+      style: secondary
+      start: 0
+      end: 94
+    - source: |-
+        function decode(): Result.Result<string, RangeError> {
+          return Result.succeed('raw')
+        }
+      style: secondary
+      start: 7
+      end: 94

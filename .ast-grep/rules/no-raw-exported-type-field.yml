@@ -1,0 +1,93 @@
+id: no-raw-exported-type-field
+language: TypeScript
+severity: error
+message: Use a branded type for exported type fields instead of raw number or string.
+note: >-
+  Only property type annotations within directly exported interfaces and object
+  type aliases are matched. Re-exports are not resolved. Only literal `number`
+  and `string` annotations are matched; replacement types are not checked for
+  a brand.
+files:
+  - '**/src/**/*.ts'
+  - '**/src/**/*.mts'
+  - '**/src/**/*.cts'
+utils:
+  exported-type:
+    any:
+      - all:
+          - kind: interface_declaration
+          - inside:
+              kind: export_statement
+              field: declaration
+              stopBy:
+                any:
+                  - kind: interface_declaration
+                  - kind: type_alias_declaration
+      - all:
+          - kind: type_alias_declaration
+          - inside:
+              kind: export_statement
+              field: declaration
+              stopBy:
+                any:
+                  - kind: interface_declaration
+                  - kind: type_alias_declaration
+  allowed-coordinate-field:
+    all:
+      - regex: '^number$'
+      - inside:
+          kind: property_signature
+          has:
+            field: name
+            regex: '^(x|y|z|originX|originY|originZ)$'
+          stopBy: end
+      - inside:
+          kind: type_alias_declaration
+          has:
+            field: name
+            regex: '^(NoisePoint2D|NoiseGrid2DOptions|NoisePoint3D|NoiseGrid3DOptions|SimplexNoise2DOptions|SimplexNoise3DOptions)$'
+          stopBy: end
+  allowed-density-wire-field:
+    all:
+      - regex: '^string$'
+      - inside:
+          kind: property_signature
+          has:
+            field: name
+            regex: '^(source|seed)$'
+          stopBy: end
+      - inside:
+          kind: type_alias_declaration
+          has:
+            field: name
+            regex: '^DensityFunctionEncoded$'
+          stopBy: end
+rule:
+  all:
+    - kind: predefined_type
+    - regex: '^(number|string)$'
+    - inside:
+        kind: property_signature
+        field: type
+        stopBy: end
+    - inside:
+        matches: exported-type
+        stopBy:
+          any:
+            - kind: interface_declaration
+            - kind: type_alias_declaration
+    - not:
+        inside:
+          any:
+            - kind: function_type
+            - kind: generic_type
+            - kind: union_type
+            - kind: intersection_type
+            - kind: array_type
+            - kind: tuple_type
+          stopBy:
+            kind: property_signature
+    - not:
+        any:
+          - matches: allowed-coordinate-field
+          - matches: allowed-density-wire-field

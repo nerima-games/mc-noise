@@ -1,10 +1,7 @@
 # mc-noise ドキュメント
 
-このリポジトリを実装・検証するために必要な情報を、現行の公開 API、依存境界、
-参照実装の file:line 根拠とともにまとめたもの。
-
-参照実装（`takeokunn/ts-minecraft`）の記述には**すべて file:line の裏付け**を付けてある。
-初期資料の数値のうち再検証で食い違ったものは `porting.md` に訂正として記録した。
+参照実装（`takeokunn/ts-minecraft`）に基づく記述には参照 checkout の file:line を付ける。
+初期資料の数値と再検証の結果が異なる場合は `porting.md` に記録する。
 
 ## 表記
 
@@ -19,11 +16,12 @@
 | --- | --- | --- | --- |
 | 1 | [`architecture.md`](./architecture.md) | 4 階層アーキテクチャ、16 リポジトリの依存グラフ（Mermaid）、このリポジトリの位置、名詞/動詞ルール、kit が devDependency 専用である理由、stage 順序表の所有者、依存ホワイトリスト CI | 最初に。全体像を掴む |
 | 2 | [`responsibility.md`](./responsibility.md) | このリポジトリの責務、**明示的にスコープ外のもの**、親と子 | 「これはここに書くべきか」で迷ったとき |
-| 3 | [`public-api.md`](./public-api.md) | 公開すべき API と、**参照実装の実コードによる検証**。実シグネチャの引用付き | 実装を書く前に |
+| 3 | [`public-api.md`](./public-api.md) | 公開 API の入出力、ブランド型、`Result` / `Option` の契約と利用例 | 実装を書く前に |
 | 4 | [`design-notes.md`](./design-notes.md) | 設計注意を証拠（file:line）付きで展開し、**名前付き回帰テスト**として書き下したもの | 実装中つねに。ソースのコメントからも参照している |
 | 5 | [`porting.md`](./porting.md) | 移植元のパスと**実測 LOC**（`wc -l` で確認）、移植しないものとその理由、移植すべきテスト資産 | 参照実装のどこを見ればいいか探すとき |
-| 6 | [`testing.md`](./testing.md) | 検証コマンド、テスト方針、カバレッジ閾値の扱い、**完成条件** | テストを書くとき／完成判定のとき |
+| 6 | [`testing.md`](./testing.md) | 検証コマンド、テスト方針、AST-grep ルールの fixture test / scan、テスト一覧、カバレッジ閾値、**完成条件** | テストを書くとき／完成判定のとき |
 | 7 | [`versioning.md`](./versioning.md) | 0.x → 1.0.0 の方針、公開手順、**何が破壊的変更か** | バージョンを上げるとき |
+| 8 | [`consumer-migration.md`](./consumer-migration.md) | Consumer migration guide for mc-noise 0.5 and mc-kernel 0.9 | When upgrading to 0.5 |
 
 ## 特に重要な項目への近道
 
@@ -41,6 +39,6 @@
 
 ## 本ドキュメントの方針
 
-- **日本語で書く。** ただし識別子・パス・フラグ・コマンドは英語のまま。
+- **設計・運用文書は日本語で書く。** 公開 API と consumer migration guide は英語で書く。識別子・パス・フラグ・コマンドは英語のまま。
 - **主張には証拠を付ける。** 参照実装の記述には file:line を、LOC には `wc -l` の実測値を。
 - **裏が取れなかったものは、取れなかったと書く。** 推測を事実の顔で書かない。

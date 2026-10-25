@@ -9,6 +9,7 @@ import {
   SIMPLEX_SCALE_3D,
   SIMPLEX_SKEW_2D,
   SIMPLEX_SKEW_3D,
+  SIMPLEX_THREE,
   SIMPLEX_THREE_UNSKEW_3D,
   SIMPLEX_TWO,
   SIMPLEX_TWO_UNSKEW_2D,
@@ -17,67 +18,54 @@ import {
   SIMPLEX_UNSKEW_3D,
   SIMPLEX_ZERO,
 } from './simplex-constants.js'
-import type {
-  SimplexCell2D,
-  SimplexCell3D,
-  SimplexCorner2D,
-  SimplexCorner3D,
-  SimplexCorners2D,
-  SimplexCorners3D,
-  SimplexOffset2D,
-  SimplexOffset3D,
-  SimplexPoint2D,
-  SimplexPoint3D,
+import {
+  type SimplexCell2D,
+  type SimplexCell3D,
+  SimplexCoordinate,
+  type SimplexCorner2D,
+  type SimplexCorner3D,
+  type SimplexCorners2D,
+  type SimplexCorners3D,
+  type SimplexOffset2D,
+  type SimplexOffset3D,
+  type SimplexPoint2D,
+  type SimplexPoint3D,
 } from './simplex-points.js'
 import { gradient2, gradient3 } from './simplex-gradients.js'
-import { requireDefined } from './defined.js'
 
-const ZERO_OFFSET_2D: SimplexPoint2D = { x: SIMPLEX_ZERO, z: SIMPLEX_ZERO }
+const SIMPLEX_FIVE = 5
+const SIMPLEX_3D_OFFSET_STRIDE = 6
+
+const ZERO_OFFSET_2D: SimplexPoint2D = {
+  x: SimplexCoordinate(SIMPLEX_ZERO),
+  z: SimplexCoordinate(SIMPLEX_ZERO),
+}
 const ZERO_OFFSET_3D: SimplexPoint3D = {
-  x: SIMPLEX_ZERO,
-  y: SIMPLEX_ZERO,
-  z: SIMPLEX_ZERO,
+  x: SimplexCoordinate(SIMPLEX_ZERO),
+  y: SimplexCoordinate(SIMPLEX_ZERO),
+  z: SimplexCoordinate(SIMPLEX_ZERO),
 }
 const UNIT_OFFSET_3D: SimplexPoint3D = {
-  x: SIMPLEX_ONE,
-  y: SIMPLEX_ONE,
-  z: SIMPLEX_ONE,
+  x: SimplexCoordinate(SIMPLEX_ONE),
+  y: SimplexCoordinate(SIMPLEX_ONE),
+  z: SimplexCoordinate(SIMPLEX_ONE),
 }
 
-const THREE_D_OFFSETS: ReadonlyArray<SimplexOffset3D> = [
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-    second: { x: SIMPLEX_ZERO, y: SIMPLEX_ONE, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-    second: { x: SIMPLEX_ONE, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-    second: { x: SIMPLEX_ONE, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ONE, y: SIMPLEX_ZERO, z: SIMPLEX_ZERO },
-    second: { x: SIMPLEX_ONE, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ONE, z: SIMPLEX_ZERO },
-    second: { x: SIMPLEX_ZERO, y: SIMPLEX_ONE, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-    second: { x: SIMPLEX_ZERO, y: SIMPLEX_ONE, z: SIMPLEX_ONE },
-  },
-  {
-    first: { x: SIMPLEX_ZERO, y: SIMPLEX_ONE, z: SIMPLEX_ZERO },
-    second: { x: SIMPLEX_ONE, y: SIMPLEX_ONE, z: SIMPLEX_ZERO },
-  },
-  {
-    first: { x: SIMPLEX_ONE, y: SIMPLEX_ZERO, z: SIMPLEX_ZERO },
-    second: { x: SIMPLEX_ONE, y: SIMPLEX_ONE, z: SIMPLEX_ZERO },
-  },
-] as const
+const THREE_D_OFFSETS = new Uint8Array([
+  SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE,
+  SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE,
+  SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE, SIMPLEX_ZERO,
+  SIMPLEX_ONE, SIMPLEX_ZERO, SIMPLEX_ZERO, SIMPLEX_ONE, SIMPLEX_ONE, SIMPLEX_ZERO,
+])
+const THREE_D_OFFSETS_VIEW = new DataView(
+  THREE_D_OFFSETS.buffer,
+  THREE_D_OFFSETS.byteOffset,
+  THREE_D_OFFSETS.byteLength,
+)
 
 const createCell2D = (point: SimplexPoint2D): SimplexCell2D => {
   const skew = (point.x + point.z) * SIMPLEX_SKEW_2D
@@ -85,10 +73,10 @@ const createCell2D = (point: SimplexPoint2D): SimplexCell2D => {
   const cellZ = Math.floor(point.z + skew)
   const unskew = (cellX + cellZ) * SIMPLEX_UNSKEW_2D
   return {
-    cell: { x: cellX, z: cellZ },
+    cell: { x: SimplexCoordinate(cellX), z: SimplexCoordinate(cellZ) },
     local: {
-      x: point.x - (cellX - unskew),
-      z: point.z - (cellZ - unskew),
+      x: SimplexCoordinate(point.x - (cellX - unskew)),
+      z: SimplexCoordinate(point.z - (cellZ - unskew)),
     },
   }
 }
@@ -100,11 +88,15 @@ const createCell3D = (point: SimplexPoint3D): SimplexCell3D => {
   const cellZ = Math.floor(point.z + skew)
   const unskew = (cellX + cellY + cellZ) * SIMPLEX_UNSKEW_3D
   return {
-    cell: { x: cellX, y: cellY, z: cellZ },
+    cell: {
+      x: SimplexCoordinate(cellX),
+      y: SimplexCoordinate(cellY),
+      z: SimplexCoordinate(cellZ),
+    },
     local: {
-      x: point.x - (cellX - unskew),
-      y: point.y - (cellY - unskew),
-      z: point.z - (cellZ - unskew),
+      x: SimplexCoordinate(point.x - (cellX - unskew)),
+      y: SimplexCoordinate(point.y - (cellY - unskew)),
+      z: SimplexCoordinate(point.z - (cellZ - unskew)),
     },
   }
 }
@@ -112,13 +104,25 @@ const createCell3D = (point: SimplexPoint3D): SimplexCell3D => {
 const selectOffsets2D = (local: SimplexPoint2D): SimplexOffset2D => {
   if (local.x > local.z) {
     return {
-      first: { x: SIMPLEX_ONE, z: SIMPLEX_ZERO },
-      second: { x: SIMPLEX_ONE, z: SIMPLEX_ONE },
+      first: {
+        x: SimplexCoordinate(SIMPLEX_ONE),
+        z: SimplexCoordinate(SIMPLEX_ZERO),
+      },
+      second: {
+        x: SimplexCoordinate(SIMPLEX_ONE),
+        z: SimplexCoordinate(SIMPLEX_ONE),
+      },
     }
   }
   return {
-    first: { x: SIMPLEX_ZERO, z: SIMPLEX_ONE },
-    second: { x: SIMPLEX_ONE, z: SIMPLEX_ONE },
+    first: {
+      x: SimplexCoordinate(SIMPLEX_ZERO),
+      z: SimplexCoordinate(SIMPLEX_ONE),
+    },
+    second: {
+      x: SimplexCoordinate(SIMPLEX_ONE),
+      z: SimplexCoordinate(SIMPLEX_ONE),
+    },
   }
 }
 
@@ -133,7 +137,19 @@ const selectOffsets3D = (local: SimplexPoint3D): SimplexOffset3D => {
   if (local.y > local.z) {
     rank |= SIMPLEX_FOUR
   }
-  return requireDefined(THREE_D_OFFSETS[rank & SIMPLEX_RANK_MASK], 'simplex offset')
+  const offsetIndex = (rank & SIMPLEX_RANK_MASK) * SIMPLEX_3D_OFFSET_STRIDE
+  return {
+    first: {
+      x: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex)),
+      y: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex + SIMPLEX_ONE)),
+      z: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex + SIMPLEX_TWO)),
+    },
+    second: {
+      x: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex + SIMPLEX_THREE)),
+      y: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex + SIMPLEX_FOUR)),
+      z: SimplexCoordinate(THREE_D_OFFSETS_VIEW.getUint8(offsetIndex + SIMPLEX_FIVE)),
+    },
+  }
 }
 
 const createCorner2D = (
@@ -143,14 +159,14 @@ const createCorner2D = (
   unskew: number,
 ): SimplexCorner2D => {
   const lattice = {
-    x: cell.x + latticeOffset.x,
-    z: cell.z + latticeOffset.z,
+    x: SimplexCoordinate(cell.x + latticeOffset.x),
+    z: SimplexCoordinate(cell.z + latticeOffset.z),
   }
   return {
     lattice,
     local: {
-      x: local.x - latticeOffset.x + unskew,
-      z: local.z - latticeOffset.z + unskew,
+      x: SimplexCoordinate(local.x - latticeOffset.x + unskew),
+      z: SimplexCoordinate(local.z - latticeOffset.z + unskew),
     },
   }
 }
@@ -162,16 +178,16 @@ const createCorner3D = (
   unskew: number,
 ): SimplexCorner3D => {
   const lattice = {
-    x: cell.x + latticeOffset.x,
-    y: cell.y + latticeOffset.y,
-    z: cell.z + latticeOffset.z,
+    x: SimplexCoordinate(cell.x + latticeOffset.x),
+    y: SimplexCoordinate(cell.y + latticeOffset.y),
+    z: SimplexCoordinate(cell.z + latticeOffset.z),
   }
   return {
     lattice,
     local: {
-      x: local.x - latticeOffset.x + unskew,
-      y: local.y - latticeOffset.y + unskew,
-      z: local.z - latticeOffset.z + unskew,
+      x: SimplexCoordinate(local.x - latticeOffset.x + unskew),
+      y: SimplexCoordinate(local.y - latticeOffset.y + unskew),
+      z: SimplexCoordinate(local.z - latticeOffset.z + unskew),
     },
   }
 }
@@ -189,7 +205,7 @@ const createCorners3D = (cell: SimplexCell3D, offsets: SimplexOffset3D): Simplex
   third: createCorner3D(cell.local, UNIT_OFFSET_3D, cell.cell, SIMPLEX_THREE_UNSKEW_3D),
 })
 
-const contribution2 = (permutation: Uint8Array, corner: SimplexCorner2D): number => {
+const contribution2 = (permutation: DataView, corner: SimplexCorner2D): number => {
   const distance = SIMPLEX_RADIUS_2D - corner.local.x ** SIMPLEX_TWO - corner.local.z ** SIMPLEX_TWO
   if (distance < SIMPLEX_ZERO) {
     return SIMPLEX_ZERO
@@ -197,7 +213,7 @@ const contribution2 = (permutation: Uint8Array, corner: SimplexCorner2D): number
   return distance ** SIMPLEX_CONTRIBUTION_POWER * gradient2(permutation, corner.lattice, corner.local)
 }
 
-const contribution3 = (permutation: Uint8Array, corner: SimplexCorner3D): number => {
+const contribution3 = (permutation: DataView, corner: SimplexCorner3D): number => {
   const distance =
     SIMPLEX_RADIUS_3D - corner.local.x ** SIMPLEX_TWO - corner.local.y ** SIMPLEX_TWO - corner.local.z ** SIMPLEX_TWO
   if (distance < SIMPLEX_ZERO) {
@@ -206,7 +222,7 @@ const contribution3 = (permutation: Uint8Array, corner: SimplexCorner3D): number
   return distance ** SIMPLEX_CONTRIBUTION_POWER * gradient3(permutation, corner.lattice, corner.local)
 }
 
-export const sampleSimplex2D = (permutation: Uint8Array, point: SimplexPoint2D): number => {
+const sampleSimplex2D = (permutation: DataView, point: SimplexPoint2D): number => {
   const cell = createCell2D(point)
   const corners = createCorners2D(cell, selectOffsets2D(cell.local))
   return SIMPLEX_SCALE_2D *
@@ -215,7 +231,7 @@ export const sampleSimplex2D = (permutation: Uint8Array, point: SimplexPoint2D):
       contribution2(permutation, corners.second))
 }
 
-export const sampleSimplex3D = (permutation: Uint8Array, point: SimplexPoint3D): number => {
+const sampleSimplex3D = (permutation: DataView, point: SimplexPoint3D): number => {
   const cell = createCell3D(point)
   const corners = createCorners3D(cell, selectOffsets3D(cell.local))
   return SIMPLEX_SCALE_3D *
@@ -224,3 +240,5 @@ export const sampleSimplex3D = (permutation: Uint8Array, point: SimplexPoint3D):
       contribution3(permutation, corners.second) +
       contribution3(permutation, corners.third))
 }
+
+export { sampleSimplex2D, sampleSimplex3D }

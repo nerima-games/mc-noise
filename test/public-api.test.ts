@@ -9,8 +9,12 @@
  */
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
+import { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import * as noise from '../src/index'
+
+const requireSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value =>
+  Result.getOrThrow(result)
 
 describe('public API surface', () => {
   effectTest('re-exports every value mc-worldgen is expected to import', () =>
@@ -273,80 +277,100 @@ describe('public API surface', () => {
 
   effectTest('supports official DensityFunctions factory names', () =>
     Effect.sync(() => {
-      const source = noise.createDensityNoiseSource(
+      const source = requireSuccess(noise.createDensityNoiseSource(
         () => 0.25,
-        { minValue: -1, maxValue: 1 },
-      )
-      const input = noise.constant(0.5)
-      const oldBlendedSource = noise.createDensityOldBlendedNoiseSource(
+        { minValue: noise.DensityBound(-1), maxValue: noise.DensityBound(1) },
+      ))
+      const input = requireSuccess(noise.constant(noise.DensityValue(0.5)))
+      const oldBlendedSource = requireSuccess(noise.createDensityOldBlendedNoiseSource(
         {
-          mainNoise: () => ({ sample: () => 0.25 }),
-          minLimitNoise: () => ({ sample: () => 0.5 }),
-          maxLimitNoise: () => ({ sample: () => 0.75 }),
+          mainNoise: () => ({ sample: () => noise.DensityValue(0.25) }),
+          minLimitNoise: () => ({ sample: () => noise.DensityValue(0.5) }),
+          maxLimitNoise: () => ({ sample: () => noise.DensityValue(0.75) }),
         },
-        { minValue: -1, maxValue: 1 },
-      )
+        { minValue: noise.DensityBound(-1), maxValue: noise.DensityBound(1) },
+      ))
+      const unit = noise.DensityValue(1)
 
       expect(noise.zero().kind).toBe('constant')
-      expect(noise.constant(1).kind).toBe('constant')
-      expect(noise.noise(source).kind).toBe('noise')
-      expect(noise.noise(source, 2).kind).toBe('noise')
-      expect(noise.noise(source, 2, 3).kind).toBe('noise')
+      expect(requireSuccess(noise.constant(unit)).kind).toBe('constant')
+      expect(requireSuccess(noise.noise(source)).kind).toBe('noise')
+      expect(requireSuccess(noise.noise(source, noise.DensityScale(2))).kind).toBe('noise')
+      expect(requireSuccess(noise.noise(source, noise.DensityScale(2), noise.DensityScale(3))).kind).toBe('noise')
       expect(
-        noise.densityOldBlendedNoise(oldBlendedSource, {
-          smearScaleMultiplier: 4,
-          xzFactor: 80,
-          xzScale: 0.25,
-          yFactor: 160,
-          yScale: 0.25,
-        }).kind,
+        requireSuccess(noise.densityOldBlendedNoise(oldBlendedSource, {
+          smearScaleMultiplier: noise.DensityScale(4),
+          xzFactor: noise.DensityScale(80),
+          xzScale: noise.DensityScale(0.25),
+          yFactor: noise.DensityScale(160),
+          yScale: noise.DensityScale(0.25),
+        })).kind,
       ).toBe('old-blended-noise')
       expect(
-        noise.oldBlendedNoise(oldBlendedSource, {
-          smearScaleMultiplier: 4,
-          xzFactor: 80,
-          xzScale: 0.25,
-          yFactor: 160,
-          yScale: 0.25,
-        }).kind,
+        requireSuccess(noise.oldBlendedNoise(oldBlendedSource, {
+          smearScaleMultiplier: noise.DensityScale(4),
+          xzFactor: noise.DensityScale(80),
+          xzScale: noise.DensityScale(0.25),
+          yFactor: noise.DensityScale(160),
+          yScale: noise.DensityScale(0.25),
+        })).kind,
       ).toBe('old-blended-noise')
       expect(noise.densityBeardifier().kind).toBe('beardifier')
       expect(noise.beardifier().kind).toBe('beardifier')
-      expect(noise.shift(source).kind).toBe('shift')
-      expect(noise.shiftA(source).kind).toBe('shift-a')
-      expect(noise.shiftB(source).kind).toBe('shift-b')
-      expect(noise.add(input, input).kind).toBe('binary')
-      expect(noise.mul(input, input).kind).toBe('binary')
-      expect(noise.min(input, input).kind).toBe('binary')
-      expect(noise.max(input, input).kind).toBe('binary')
+      expect(requireSuccess(noise.shift(source)).kind).toBe('shift')
+      expect(requireSuccess(noise.shiftA(source)).kind).toBe('shift-a')
+      expect(requireSuccess(noise.shiftB(source)).kind).toBe('shift-b')
+      expect(requireSuccess(noise.add(input, input)).kind).toBe('binary')
+      expect(requireSuccess(noise.mul(input, input)).kind).toBe('binary')
+      expect(requireSuccess(noise.min(input, input)).kind).toBe('binary')
+      expect(requireSuccess(noise.max(input, input)).kind).toBe('binary')
       expect(
-        noise.weirdScaledSampler(input, source, 'type-1').kind,
+        requireSuccess(noise.weirdScaledSampler(input, source, 'type-1')).kind,
       ).toBe('weird-scaled-sampler')
-      expect(noise.endIslands(0n).kind).toBe('end-islands')
-      expect(noise.lerp(input, 0, input).kind).toBe('binary')
-      expect(noise.map(input, noise.DensityMappedType.ABS).kind).toBe('unary')
+      expect(requireSuccess(noise.endIslands(0n)).kind).toBe('end-islands')
+      expect(requireSuccess(noise.lerp(input, noise.DensityValue(0), input)).kind).toBe('binary')
+      expect(requireSuccess(noise.map(input, noise.DensityMappedType.ABS)).kind).toBe('unary')
       expect(
-        noise.map(input, noise.DensityMappedType.SQUARE).kind,
+        requireSuccess(noise.map(input, noise.DensityMappedType.SQUARE)).kind,
       ).toBe('unary')
-      expect(() => noise.map(input, 'unsupported' as never)).toThrow(
-        RangeError,
-      )
-      expect(noise.mappedNoise(source, -1, 1).kind).toBe('binary')
+      expect(Result.isFailure(noise.map(input, 'unsupported' as never))).toBe(true)
+      expect(requireSuccess(noise.mappedNoise(source, BlockAxis(-1), BlockAxis(1))).kind).toBe('binary')
       expect(
-        noise.rangeChoice(input, -1, 1, input, noise.zero()).kind,
+        requireSuccess(noise.rangeChoice(
+          input,
+          noise.DensityValue(-1),
+          noise.DensityValue(1),
+          input,
+          noise.zero(),
+        )).kind,
       ).toBe('range-choice')
       expect(
-        noise.findTopSurface(input, noise.constant(16), -32, 4).kind,
+        requireSuccess(noise.findTopSurface(
+          input,
+          requireSuccess(noise.constant(noise.DensityValue(16))),
+          BlockAxis(-32),
+          noise.DensityCellSize(4),
+        )).kind,
       ).toBe('find-top-surface')
       expect(
-        noise.shiftedNoise2d(noise.zero(), noise.zero(), 1, source).kind,
+        requireSuccess(noise.shiftedNoise2d(
+          noise.zero(),
+          noise.zero(),
+          noise.DensityScale(1),
+          source,
+        )).kind,
       ).toBe('shifted-noise')
-      const spline = noise.createDensitySpline(
+      const spline = requireSuccess(noise.createDensitySpline(
         noise.zero(),
-        noise.createSpline([]),
-      )
-      expect(noise.spline(spline).kind).toBe('spline')
-      expect(noise.yClampedGradient(0, 1, 0, 1).kind).toBe(
+        requireSuccess(noise.createSpline([])),
+      ))
+      expect(requireSuccess(noise.spline(spline)).kind).toBe('spline')
+      expect(requireSuccess(noise.yClampedGradient(
+        BlockAxis(0),
+        BlockAxis(1),
+        noise.DensityValue(0),
+        noise.DensityValue(1),
+      )).kind).toBe(
         'y-clamped-gradient',
       )
     }),
@@ -364,7 +388,7 @@ describe('the canonical seed -> value contract', () => {
       expect(field.raw2d(12.37, -7.13)).toMatchInlineSnapshot(`0.15995536869657265`)
       expect(field.noise2d(3.11, 9.87)).toMatchInlineSnapshot(`0.48198515258266483`)
       expect(field.raw3d(1.3, 2.7, -3.1)).toMatchInlineSnapshot(`-0.06349056477267119`)
-      expect(field.octave2d(4.3, -6.9)).toMatchInlineSnapshot(`0.5687633107783282`)
+      expect(requireSuccess(field.octave2d(PositionAxis(4.3), PositionAxis(-6.9)))).toMatchInlineSnapshot(`0.5687633107783282`)
       expect(field.channel('continentalness')(100.37, 200.13)).toMatchInlineSnapshot(`-0.1334556553219605`)
       expect(field.channel('erosion')(100.37, 200.13)).toMatchInlineSnapshot(`0.0028109265851947052`)
       expect(field.channel('weirdness')(100.37, 200.13)).toMatchInlineSnapshot(`0.2952584208943152`)

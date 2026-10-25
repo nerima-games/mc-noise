@@ -1,8 +1,12 @@
-import type {
-  DensityEvaluationContext,
-  DensityEvaluationSession,
-  DensityFunction,
-  DensityFunctionVisitor,
+import {
+  type DensityBound,
+  type DensityEvaluationContext,
+  type DensityEvaluationSession,
+  type DensityFunction,
+  DensityFunctionFieldName,
+  type DensityFunctionResult,
+  type DensityFunctionVisitor,
+  type DensityValue,
 } from './density-function-types.js'
 import {
   type DensityFunctionArrayContextProvider,
@@ -19,55 +23,77 @@ import {
   densitySquare,
   densitySqueeze,
 } from './density-function.js'
+import { Result } from 'effect'
 import { requireDensityFunction } from './density-function-validation.js'
 
 export type DensityFunctionNode = Readonly<{
-  readonly compute: (context: DensityFunctionContext) => number
+  readonly compute: (context: DensityFunctionContext) => DensityFunctionResult<DensityValue>
   readonly fillArray: (
     array: number[] | Float64Array,
     contextProvider: DensityFunctionArrayContextProvider,
-  ) => void
-  readonly mapAll: (visitor: DensityFunctionVisitor) => DensityFunctionNode
-  readonly minValue: () => number
-  readonly maxValue: () => number
-  readonly abs: () => DensityFunctionNode
-  readonly clamp: (min: number, max: number) => DensityFunctionNode
-  readonly cube: () => DensityFunctionNode
-  readonly halfNegative: () => DensityFunctionNode
-  readonly invert: () => DensityFunctionNode
-  readonly quarterNegative: () => DensityFunctionNode
-  readonly square: () => DensityFunctionNode
-  readonly squeeze: () => DensityFunctionNode
+  ) => DensityFunctionResult<void>
+  readonly mapAll: (
+    visitor: DensityFunctionVisitor,
+  ) => DensityFunctionResult<DensityFunctionNode>
+  readonly minValue: () => DensityBound
+  readonly maxValue: () => DensityBound
+  readonly abs: () => DensityFunctionResult<DensityFunctionNode>
+  readonly clamp: (
+    min: DensityValue,
+    max: DensityValue,
+  ) => DensityFunctionResult<DensityFunctionNode>
+  readonly cube: () => DensityFunctionResult<DensityFunctionNode>
+  readonly halfNegative: () => DensityFunctionResult<DensityFunctionNode>
+  readonly invert: () => DensityFunctionResult<DensityFunctionNode>
+  readonly quarterNegative: () => DensityFunctionResult<DensityFunctionNode>
+  readonly square: () => DensityFunctionResult<DensityFunctionNode>
+  readonly squeeze: () => DensityFunctionResult<DensityFunctionNode>
 }>
 
 export const createDensityFunctionNode = (
-  densityValue: DensityFunction,
+  densityValue: unknown,
   contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-): DensityFunctionNode => {
-  const density = requireDensityFunction('density', densityValue)
-  const runtime = createDensityFunctionRuntime(density, contextOrSession)
-  const derive = (nextDensity: DensityFunction): DensityFunctionNode =>
-    createDensityFunctionNode(nextDensity, contextOrSession)
+): DensityFunctionResult<DensityFunctionNode> =>
+  Result.gen(function* createDensityFunctionNodeResult() {
+    const density = yield* requireDensityFunction(DensityFunctionFieldName('density'), densityValue)
+    const runtime = yield* createDensityFunctionRuntime(density, contextOrSession)
+    const derive = (
+      nextDensity: DensityFunctionResult<DensityFunction>,
+    ): DensityFunctionResult<DensityFunctionNode> =>
+      Result.flatMap(nextDensity, (next) =>
+        createDensityFunctionNode(next, contextOrSession),
+      )
 
-  return Object.freeze({
-    abs: (): DensityFunctionNode => derive(densityAbs(density)),
-    clamp: (min: number, max: number): DensityFunctionNode =>
-      derive(densityClamp(density, min, max)),
-    compute: (context: DensityFunctionContext): number => runtime.compute(context),
-    cube: (): DensityFunctionNode => derive(densityCube(density)),
-    fillArray: (
-      array: number[] | Float64Array,
-      contextProvider: DensityFunctionArrayContextProvider,
-    ): void => runtime.fillArray(array, contextProvider),
-    halfNegative: (): DensityFunctionNode => derive(densityHalfNegative(density)),
-    invert: (): DensityFunctionNode => derive(densityInvert(density)),
-    mapAll: (visitor: DensityFunctionVisitor): DensityFunctionNode =>
-      derive(runtime.mapAll(visitor)),
-    maxValue: (): number => runtime.maxValue,
-    minValue: (): number => runtime.minValue,
-    quarterNegative: (): DensityFunctionNode =>
-      derive(densityQuarterNegative(density)),
-    square: (): DensityFunctionNode => derive(densitySquare(density)),
-    squeeze: (): DensityFunctionNode => derive(densitySqueeze(density)),
+    return Object.freeze({
+      abs: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityAbs(density)),
+      clamp: (
+        min: DensityValue,
+        max: DensityValue,
+      ): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityClamp(density, min, max)),
+      compute: (context: DensityFunctionContext): DensityFunctionResult<DensityValue> =>
+        runtime.compute(context),
+      cube: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityCube(density)),
+      fillArray: (
+        array: number[] | Float64Array,
+        contextProvider: DensityFunctionArrayContextProvider,
+      ): DensityFunctionResult<void> => runtime.fillArray(array, contextProvider),
+      halfNegative: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityHalfNegative(density)),
+      invert: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityInvert(density)),
+      mapAll: (
+        visitor: DensityFunctionVisitor,
+      ): DensityFunctionResult<DensityFunctionNode> => derive(runtime.mapAll(visitor)),
+      maxValue: (): DensityBound => runtime.maxValue,
+      minValue: (): DensityBound => runtime.minValue,
+      quarterNegative: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densityQuarterNegative(density)),
+      square: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densitySquare(density)),
+      squeeze: (): DensityFunctionResult<DensityFunctionNode> =>
+        derive(densitySqueeze(density)),
+    })
   })
-}

@@ -1,12 +1,18 @@
+import { Brand } from 'effect'
+
+export type SimplexCoordinate = number & Brand.Brand<'SimplexCoordinate'>
+export const SimplexCoordinate: Brand.Constructor<SimplexCoordinate> =
+  Brand.nominal<SimplexCoordinate>()
+
 export type SimplexPoint2D = Readonly<{
-  readonly x: number
-  readonly z: number
+  readonly x: SimplexCoordinate
+  readonly z: SimplexCoordinate
 }>
 
 export type SimplexPoint3D = Readonly<{
-  readonly x: number
-  readonly y: number
-  readonly z: number
+  readonly x: SimplexCoordinate
+  readonly y: SimplexCoordinate
+  readonly z: SimplexCoordinate
 }>
 
 export type SimplexOffset2D = Readonly<{

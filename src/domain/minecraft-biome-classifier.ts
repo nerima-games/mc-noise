@@ -23,27 +23,50 @@ import {
   MINECRAFT_RIVER_HALF_WIDTH,
   MINECRAFT_TEMP_COLD,
 } from './minecraft-biome-classifier.config.js'
-import { type MinecraftBiome, classifyMinecraftBiome } from './minecraft-biome.js'
+import {
+  type MinecraftBiome,
+  MinecraftClimateValue,
+  classifyMinecraftBiome,
+} from './minecraft-biome.js'
+import { BoundedNoise } from './noise-primitives.js'
+
+const BOUNDED_NOISE_MIN = -1
+const BOUNDED_NOISE_MAX = 1
 
 export type MinecraftClimateSample = Readonly<{
-  temperature: number
-  humidity: number
-  continentalness: number
-  erosion: number
-  pv: number
-  riverNoise: number
+  temperature: MinecraftClimateValue
+  humidity: MinecraftClimateValue
+  continentalness: BoundedNoise
+  erosion: BoundedNoise
+  pv: BoundedNoise
+  riverNoise: MinecraftClimateValue
 }>
 
-export const minecraftPeaksAndValleysFromWeirdness = (weirdness: number): number =>
-  MINECRAFT_PV_BASE -
-  Math.abs(MINECRAFT_PV_WEIRDNESS_SCALE * Math.abs(weirdness) - MINECRAFT_PV_WEIRDNESS_OFFSET)
+export const minecraftPeaksAndValleysFromWeirdness = (
+  weirdness: BoundedNoise,
+): BoundedNoise =>
+  BoundedNoise(
+    Math.max(
+      BOUNDED_NOISE_MIN,
+      Math.min(
+        BOUNDED_NOISE_MAX,
+        MINECRAFT_PV_BASE -
+          Math.abs(
+            MINECRAFT_PV_WEIRDNESS_SCALE * Math.abs(weirdness) -
+              MINECRAFT_PV_WEIRDNESS_OFFSET,
+          ),
+      ),
+    ),
+  )
 
-const stretchClimateValue = (value: number): number =>
-  Math.max(
-    MINECRAFT_CLIMATE_MIN,
-    Math.min(
-      MINECRAFT_CLIMATE_MAX,
-      MINECRAFT_CLIMATE_CENTER + (value - MINECRAFT_CLIMATE_CENTER) * MINECRAFT_CLIMATE_VARIANCE_STRETCH,
+const stretchClimateValue = (value: MinecraftClimateValue): MinecraftClimateValue =>
+  MinecraftClimateValue(
+    Math.max(
+      MINECRAFT_CLIMATE_MIN,
+      Math.min(
+        MINECRAFT_CLIMATE_MAX,
+        MINECRAFT_CLIMATE_CENTER + (value - MINECRAFT_CLIMATE_CENTER) * MINECRAFT_CLIMATE_VARIANCE_STRETCH,
+      ),
     ),
   )
 
@@ -124,7 +147,7 @@ export const classifyMinecraftBiomeFromClimate = (climate: MinecraftClimateSampl
 export const refineMinecraftBeachBiome = (
   biome: MinecraftBiome,
   neighboringBiomes: ReadonlyArray<MinecraftBiome>,
-  continentalness: number,
+  continentalness: MinecraftClimateValue,
 ): MinecraftBiome => {
   if (biome === 'OCEAN' || biome === 'DESERT' || biome === 'SWAMP') {
     return biome

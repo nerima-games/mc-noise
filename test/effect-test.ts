@@ -1,8 +1,8 @@
 import { Effect } from 'effect'
-import { it } from 'vitest'
+import { it } from '@effect/vitest'
 
 type EffectTestBody = () => Effect.Effect<void, never, never>
 
 export const effectTest = (name: string, body: EffectTestBody): void => {
-  it(name, () => Effect.runSync(body()))
+  it.effect(name, body)
 }

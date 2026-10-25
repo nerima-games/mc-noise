@@ -44,12 +44,14 @@
  * Every fixture is seeded and deterministic. `NoiseSeed(20260726)` is a
  * constant, not a clock read.
  */
-import { Array as EffectArray, Effect } from 'effect'
+import { Array as EffectArray, Effect, Result } from 'effect'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   clampSigned,
   createNoiseField,
   DEFAULT_OCTAVE_PARAMS,
   NOISE_CHANNELS,
+  NoiseAccumulator,
   NoiseSeed,
   normalizeNoise,
   octaveNoise2D,
@@ -192,6 +194,9 @@ const validateBenchmarkOctaveParams = (params: OctaveParams): void => {
   }
 }
 
+const normalizeBenchmarkSample = (value: number): number =>
+  normalizeNoise(clampSigned(NoiseAccumulator(value)))
+
 const octaveNoiseFrozenImperative = (
   noiseFn: NoiseFn2D,
   x: number,
@@ -212,7 +217,7 @@ const octaveNoiseFrozenImperative = (
     amplitude *= params.persistence
     frequency *= params.lacunarity
   }
-  return normalizeNoise(clampSigned(total / maxValue))
+  return normalizeBenchmarkSample(total / maxValue)
 }
 
 /** Rewrite 1: `Array.from({length: octaves}).reduce(...)`. */
@@ -240,7 +245,7 @@ const octaveNoiseArrayFromReduce = (
     }),
     { total: 0, amplitude: 1, frequency: 1, maxValue: 0 },
   )
-  return normalizeNoise(clampSigned(folded.total / folded.maxValue))
+  return normalizeBenchmarkSample(folded.total / folded.maxValue)
 }
 
 /** Rewrite 2: `effect`'s own `Array.reduce`, through the module boundary. */
@@ -264,7 +269,7 @@ const octaveNoiseEffectArrayReduce = (
       frequency: accumulator.frequency * params.lacunarity,
     }),
   )
-  return normalizeNoise(clampSigned(folded.total / folded.maxValue))
+  return normalizeBenchmarkSample(folded.total / folded.maxValue)
 }
 
 /** Rewrite 3: `Effect.reduce`, one fiber step per octave. */
@@ -275,8 +280,7 @@ const octaveNoiseEffectReduce = (noiseFn: NoiseFn2D, x: number, z: number, param
   }
   const folded = Effect.runSync(
     Effect.reduce(
-      EffectArray.makeBy(params.octaves, (index) => index),
-      { total: 0, amplitude: 1, frequency: 1, maxValue: 0 },
+      () => ({ total: 0, amplitude: 1, frequency: 1, maxValue: 0 }),
       (accumulator) =>
         Effect.succeed({
           total:
@@ -285,12 +289,15 @@ const octaveNoiseEffectReduce = (noiseFn: NoiseFn2D, x: number, z: number, param
           amplitude: accumulator.amplitude * params.persistence,
           frequency: accumulator.frequency * params.lacunarity,
         }),
-    ),
+    )(EffectArray.makeBy(params.octaves, (index) => index)),
   )
-  return normalizeNoise(clampSigned(folded.total / folded.maxValue))
+  return normalizeBenchmarkSample(folded.total / folded.maxValue)
 }
 
 type OctaveImplementation = (noiseFn: NoiseFn2D, x: number, z: number, params: OctaveParams) => number
+
+const octaveNoiseShipped: OctaveImplementation = (noiseFn, x, z, params) =>
+  Result.getOrThrow(octaveNoise2D(noiseFn, PositionAxis(x), PositionAxis(z), params))
 
 const armOver =
   (implementation: OctaveImplementation) =>
@@ -324,7 +331,7 @@ const octaveEquivalence = (): string => {
   for (let index = 0; index < 1024; index += 1) {
     const x = coordsX[index] ?? 0
     const z = coordsZ[index] ?? 0
-    const expected = octaveNoise2D(BASE_NOISE, x, z, DEFAULT_OCTAVE_PARAMS)
+    const expected = octaveNoiseShipped(BASE_NOISE, x, z, DEFAULT_OCTAVE_PARAMS)
     for (const [label, implementation] of implementations) {
       if (implementation(BASE_NOISE, x, z, DEFAULT_OCTAVE_PARAMS) !== expected) {
         disagreements.push(label)
@@ -371,7 +378,10 @@ const chunkChannelSampling = (): void => {
 const chunkOctaveSampling = (): void => {
   let total = 0
   for (let column = 0; column < COLUMNS_PER_CHUNK; column += 1) {
-    total += FIELD.octave2d((column & 15) * 1.7, (column >> 4) * 1.7)
+    total += Result.getOrThrow(FIELD.octave2d(
+      PositionAxis((column & 15) * 1.7),
+      PositionAxis((column >> 4) * 1.7),
+    ))
   }
   sink += total
 }
@@ -417,7 +427,7 @@ const main = async (): Promise<number> => {
 
   const octaveTimings = measureInterleaved(
     [
-      armOver(octaveNoise2D),
+      armOver(octaveNoiseShipped),
       armOver(octaveNoiseFrozenImperative),
       armOver(octaveNoiseArrayFromReduce),
       armOver(octaveNoiseEffectArrayReduce),

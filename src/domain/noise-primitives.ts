@@ -13,10 +13,13 @@ import {
 } from './perlin.js'
 import { NoiseSeed, mulberry32, toUint32 } from './seed.js'
 import {
+  type NormalizedNoise,
+  OctaveAmplitude,
+  OctaveCount,
+  OctaveFrequency,
   type OctaveNoiseArguments,
   type OctaveParams,
   computeOctaveNoise,
-  normalizeNoise,
   signedFbm2D,
 } from './octaves.js'
 import {
@@ -27,6 +30,9 @@ import {
   type TerrainChannelSamples,
   computeTerrainChannels,
 } from './terrain-channels.js'
+import type { BlockAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { Result } from 'effect'
+export { BoundedNoise } from './octaves.js'
 
 export const WEYL_C = 0x9e3779b1
 export const WEYL_E = 0xbb67ae85
@@ -35,18 +41,26 @@ export const WEYL_J = 0xa54ff53a
 export const WEYL_3D = 0x9e3779b9
 
 const UINT32_COERCION_SHIFT = 0
-const CONTINENTALNESS_BOOST = 1.4
-const EROSION_BOOST = 1.3
+const CONTINENTALNESS_BOOST_VALUE = 1.4
+const EROSION_BOOST_VALUE = 1.3
+const PRIMITIVE_LACUNARITY = 2
+const SIGNED_NOISE_NORMALIZATION_OFFSET = 1
+const SIGNED_NOISE_NORMALIZATION_RANGE = 2
+const CONTINENTALNESS_OCTAVE_COUNT = 4
+const EROSION_OCTAVE_COUNT = 3
+const PRIMITIVE_PERSISTENCE = 0.5
+const CONTINENTALNESS_BOOST = OctaveAmplitude(CONTINENTALNESS_BOOST_VALUE)
+const EROSION_BOOST = OctaveAmplitude(EROSION_BOOST_VALUE)
 
 const CONTINENTALNESS_PARAMS: OctaveParams = {
-  lacunarity: 2,
-  octaves: 4,
-  persistence: 0.5,
+  lacunarity: OctaveFrequency(PRIMITIVE_LACUNARITY),
+  octaves: OctaveCount(CONTINENTALNESS_OCTAVE_COUNT),
+  persistence: OctaveAmplitude(PRIMITIVE_PERSISTENCE),
 }
 const EROSION_PARAMS: OctaveParams = {
-  lacunarity: 2,
-  octaves: 3,
-  persistence: 0.5,
+  lacunarity: OctaveFrequency(PRIMITIVE_LACUNARITY),
+  octaves: OctaveCount(EROSION_OCTAVE_COUNT),
+  persistence: OctaveAmplitude(PRIMITIVE_PERSISTENCE),
 }
 const WEIRDNESS_PARAMS: OctaveParams = EROSION_PARAMS
 
@@ -66,13 +80,13 @@ export type NoisePrimitives = Readonly<{
   weirdness: NoiseFn2D
   jaggedness: NoiseFn2D
   noise2D: NoiseFn2D
-  octaveNoise2D: (...args: OctaveNoiseArguments) => number
+  octaveNoise2D: (...args: OctaveNoiseArguments) => Result.Result<NormalizedNoise, RangeError>
   noise3D: NoiseFn3D
   continentalnessAt: NoiseFn2D
   erosionAt: NoiseFn2D
   weirdnessAt: NoiseFn2D
   jaggednessAt: NoiseFn2D
-  sampleTerrainChannels: (xStart: number, zStart: number) => TerrainChannelSamples
+  sampleTerrainChannels: (xStart: BlockAxis, zStart: BlockAxis) => Result.Result<TerrainChannelSamples, RangeError>
 }>
 
 /** Assemble the deterministic primitive set for one world seed. */
@@ -103,7 +117,8 @@ export const createNoisePrimitives = (seed: NoiseSeed): NoisePrimitives => {
     erosionAt: (x, z) => erosion(x * SCALE_E, z * SCALE_E),
     jaggedness,
     jaggednessAt: (x, z) => jaggedness(x * SCALE_J, z * SCALE_J),
-    noise2D: (x, z) => normalizeNoise(raw2D(x, z)),
+    noise2D: (x, z) =>
+      (raw2D(x, z) + SIGNED_NOISE_NORMALIZATION_OFFSET) / SIGNED_NOISE_NORMALIZATION_RANGE,
     noise3D: raw3D,
     octaveNoise2D: (...args) => computeOctaveNoise(raw2D, ...args),
     raw2D,

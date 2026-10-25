@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
+import { densityBounds, densityZero } from '../src/index.js'
+import * as DensityApi from '../src/index.js'
 import {
   createDensityNoiseSource,
   createSpline,
@@ -18,7 +21,6 @@ import {
   densityMapRange,
   densityMappedNoise,
   densityNoiseInRange,
-  densityBinary,
   densityMax,
   densityMin,
   densityMul,
@@ -36,10 +38,15 @@ import {
   densityUnary,
   densityWeirdScaledSampler,
   densityYClampedGradient,
-  densityZero,
-  densityBounds,
   evaluateDensityFunction,
-} from '../src/index.js'
+  blockAxis,
+  densityBound,
+  densityCellSize,
+  densityValue,
+  densityPosition,
+  expectDensitySuccess,
+  expectResultFailure,
+} from './density-function-test-utils.js'
 
 const position = { x: 2, y: 4, z: -3 }
 
@@ -374,7 +381,10 @@ describe('portable DensityFunction composition', () => {
     const nonFiniteUpperBound = densityFindTopSurface(
       densityZero,
       densityNoise(
-        { sample: () => Number.POSITIVE_INFINITY, minValue: 0, maxValue: 0 },
+        createDensityNoiseSource(() => Number.POSITIVE_INFINITY, {
+          minValue: 0,
+          maxValue: 0,
+        }),
         { xzScale: 1, yScale: 1 },
       ),
       -8,
@@ -384,74 +394,288 @@ describe('portable DensityFunction composition', () => {
   })
 
   it('rejects invalid public inputs at construction and evaluation boundaries', () => {
-    const validSource = { sample: () => 0, minValue: -1, maxValue: 1 }
+    const validSource = createDensityNoiseSource(() => 0, { minValue: -1, maxValue: 1 })
     const invalidSource = { sample: null as never, minValue: -1, maxValue: 1 }
-    expect(() => densityConstant(Number.NaN)).toThrow('value must be finite')
-    expect(() => densityCoordinate('q' as never)).toThrow('axis must be x, y, or z')
-    expect(() => densityCoordinate('x', { scale: Infinity })).toThrow('scale must be finite')
-    expect(() => createDensityNoiseSource(null as never, { minValue: -1, maxValue: 1 })).toThrow(
-      'noise source sample must be a function',
+    expect(expectResultFailure(DensityApi.densityConstant(Number.NaN as never)).message).toContain(
+      'value must be finite',
     )
-    expect(() => createDensityNoiseSource(() => 0, { minValue: Number.NaN, maxValue: 1 })).toThrow(
-      'minValue must not be NaN',
-    )
-    expect(() => createDensityNoiseSource(() => 0, { minValue: 1, maxValue: -1 })).toThrow(
-      'minValue must not exceed maxValue',
-    )
-    expect(() => densityNoise(invalidSource, {})).toThrow('noise source sample must be a function')
+    expect(
+      expectResultFailure(DensityApi.densityCoordinate('q' as never)).message,
+    ).toContain('axis must be x, y, or z')
+    expect(
+      expectResultFailure(
+        DensityApi.densityCoordinate('x', { scale: Number.POSITIVE_INFINITY as never }),
+      ).message,
+    ).toContain('scale must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityCoordinate('x', { offset: Number.POSITIVE_INFINITY as never }),
+      ).message,
+    ).toContain('offset must be finite')
+    expect(
+      expectResultFailure(DensityApi.densityCoordinate('x', null as never)).message,
+    ).toContain('coordinate options must be an object')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityNoiseSource(null as never, {
+          minValue: densityBound(-1),
+          maxValue: densityBound(1),
+        }),
+      ).message,
+    ).toContain('noise source sample must be a function')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityNoiseSource(() => 0, {
+          minValue: Number.NaN as never,
+          maxValue: densityBound(1),
+        }),
+      ).message,
+    ).toContain('minValue must not be NaN')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityNoiseSource(() => 0, {
+          minValue: densityBound(-1),
+          maxValue: Number.NaN as never,
+        }),
+      ).message,
+    ).toContain('maxValue must not be NaN')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityNoiseSource(() => 0, null as never),
+      ).message,
+    ).toContain('noise source bounds must be an object')
+    expect(
+      expectResultFailure(
+        DensityApi.createDensityNoiseSource(() => 0, {
+          minValue: densityBound(1),
+          maxValue: densityBound(-1),
+        }),
+      ).message,
+    ).toContain('minValue must not exceed maxValue')
+    expect(
+      expectResultFailure(DensityApi.densityNoise(invalidSource as never, {})).message,
+    ).toContain('noise source sample must be a function')
+    expect(
+      expectResultFailure(DensityApi.densityNoise(null as never, {})).message,
+    ).toContain('noise source must be an object')
+    expect(
+      expectResultFailure(DensityApi.densityNoise(validSource, null as never)).message,
+    ).toContain('noise options must be an object')
     expect(densityBounds(densityNoise(validSource, { xzScale: 0, yScale: 0 }))).toEqual({
       minValue: -1,
       maxValue: 1,
     })
-    expect(() => densityNoise(validSource, { xzScale: Infinity })).toThrow('xzScale must be finite')
-    expect(() => densityNoise(validSource, { yScale: Infinity })).toThrow('yScale must be finite')
-    expect(() => densityMapRange(densityZero, Number.NaN, 1)).toThrow('min must be finite')
-    expect(() => densityMapRange(densityZero, -1, Number.POSITIVE_INFINITY)).toThrow(
-      'max must be finite',
+    expect(
+      expectResultFailure(
+        DensityApi.densityNoise(validSource as never, {
+          xzScale: Number.POSITIVE_INFINITY as never,
+        }),
+      ).message,
+    ).toContain('xzScale must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityNoise(validSource as never, {
+          yScale: Number.POSITIVE_INFINITY as never,
+        }),
+      ).message,
+    ).toContain('yScale must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityMapRange(densityZero, Number.NaN as never, densityValue(1)),
+      ).message,
+    ).toContain('min must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityMapRange(
+          densityZero,
+          densityValue(-1),
+          Number.POSITIVE_INFINITY as never,
+        ),
+      ).message,
+    ).toContain('max must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityMapRange(
+          densityZero,
+          densityValue(Number.MAX_VALUE),
+          densityValue(Number.MAX_VALUE),
+        ),
+      ).message,
+    ).toContain('map range midpoint must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityMapRange(
+          densityZero,
+          densityValue(-Number.MAX_VALUE),
+          densityValue(Number.MAX_VALUE),
+        ),
+      ).message,
+    ).toContain('map range scale must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityLerp(
+          densityZero,
+          Number.POSITIVE_INFINITY as never,
+          densityZero,
+        ),
+      ).message,
+    ).toContain('min must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityNoiseInRange(validSource as never, {
+          min: densityValue(-1),
+          max: densityValue(1),
+          xzScale: Number.POSITIVE_INFINITY as never,
+        }),
+      ).message,
+    ).toContain('xzScale must be finite')
+    expect(
+      expectResultFailure(
+        DensityApi.densityShiftedNoise2D(
+          validSource as never,
+          { x: densityZero, z: densityZero },
+          { xzScale: Number.POSITIVE_INFINITY as never },
+        ),
+      ).message,
+    ).toContain('xzScale must be finite')
+    expect(
+      densityShiftedNoise(validSource, {
+        x: densityZero,
+        y: densityZero,
+        z: densityZero,
+      }),
+    ).toMatchObject({ kind: 'shifted-noise' })
+    expect(
+      expectResultFailure(DensityApi.densityBinary('bad' as never, densityZero, densityZero))
+        .message,
+    ).toContain('unsupported binary operation')
+    expect(
+      expectResultFailure(DensityApi.densityUnary('bad' as never, densityZero)).message,
+    ).toContain('unsupported unary operation')
+    expect(
+      expectResultFailure(
+        DensityApi.densityLinearOperation('bad' as never, densityZero, densityValue(1)),
+      ).message,
+    ).toContain('unsupported linear operation')
+    expect(
+      expectResultFailure(
+        DensityApi.densityWeirdScaledSampler(densityZero, validSource as never, 'bad' as never),
+      ).message,
+    ).toContain('unsupported rarity value mapper')
+    expect(
+      expectResultFailure(
+        DensityApi.densityClamp(densityZero, densityValue(2), densityValue(1)),
+      ).message,
+    ).toContain('min must not exceed max')
+    expect(
+      expectResultFailure(
+        DensityApi.densityRangeChoice(
+          densityZero,
+          { minInclusive: densityValue(2), maxExclusive: densityValue(1) },
+          densityZero,
+          densityZero,
+        ),
+      ).message,
+    ).toContain('minInclusive must not exceed maxExclusive')
+    expect(
+      expectResultFailure(
+        DensityApi.densityYClampedGradient(
+          blockAxis(1),
+          blockAxis(1),
+          densityValue(0),
+          densityValue(1),
+        ),
+      ).message,
+    ).toContain('fromY and toY must differ')
+    expect(
+      expectResultFailure(
+        DensityApi.densityFindTopSurface(
+          densityZero,
+          densityZero,
+          blockAxis(0),
+          0 as never,
+        ),
+      ).message,
+    ).toContain('cellHeight must be a positive integer')
+    expect(
+      expectResultFailure(
+        DensityApi.densityFindTopSurface(
+          densityZero,
+          densityZero,
+          0.5 as never,
+          densityCellSize(1),
+        ),
+      ).message,
+    ).toContain('lowerBound must be a safe integer')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityZero,
+          { x: Number.NaN, y: 0, z: 0 } as never,
+        ),
+      ).message,
+    ).toContain('position.x PositionAxis must be a finite number of blocks')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityZero,
+          { x: 0, y: Number.POSITIVE_INFINITY, z: 0 } as never,
+        ),
+      ).message,
+    ).toContain('position.y PositionAxis must be a finite number of blocks')
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          densityZero,
+          { x: 0, y: 0, z: Number.NEGATIVE_INFINITY } as never,
+        ),
+      ).message,
+    ).toContain('position.z PositionAxis must be a finite number of blocks')
+  })
+
+  it('fails on finite-but-overflowing evaluations and invalid end-island coordinates', () => {
+    const overflowingSquare = densitySquare(densityConstant(Number.MAX_VALUE))
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(overflowingSquare, densityPosition(position)),
+      ).message,
+    ).toContain('density evaluation result must be finite')
+
+    const overflowingSpline = densitySpline(
+      overflowingSquare,
+      createSpline([[0, 0], [1, 1]]),
     )
-    expect(() => densityLerp(densityZero, Number.POSITIVE_INFINITY, densityZero)).toThrow(
-      'min must be finite',
-    )
-    expect(() => densityNoiseInRange(validSource, { min: -1, max: 1, xzScale: Infinity })).toThrow(
-      'xzScale must be finite',
-    )
-    expect(() =>
-      densityShiftedNoise2D(
-        validSource,
-        { x: densityZero, z: densityZero },
-        { xzScale: Infinity },
-      ),
-    ).toThrow('xzScale must be finite')
-    expect(() => densityShiftedNoise(validSource, { x: densityZero, y: densityZero, z: densityZero })).not.toThrow()
-    expect(() => densityBinary('bad' as never, densityZero, densityZero)).toThrow(
-      'unsupported binary operation',
-    )
-    expect(() => densityUnary('bad' as never, densityZero)).toThrow('unsupported unary operation')
-    expect(() => densityLinearOperation('bad' as never, densityZero, 1)).toThrow(
-      'unsupported linear operation',
-    )
-    expect(() => densityWeirdScaledSampler(densityZero, validSource, 'bad' as never)).toThrow(
-      'unsupported rarity value mapper',
-    )
-    expect(() => densityClamp(densityZero, 2, 1)).toThrow('min must not exceed max')
-    expect(() => densityRangeChoice(densityZero, { minInclusive: 2, maxExclusive: 1 }, densityZero, densityZero)).toThrow(
-      'minInclusive must not exceed maxExclusive',
-    )
-    expect(() => densityYClampedGradient(1, 1, 0, 1)).toThrow('fromY and toY must differ')
-    expect(() => densityFindTopSurface(densityZero, densityZero, 0, 0)).toThrow(
-      'cellHeight must be a positive integer',
-    )
-    expect(() => densityFindTopSurface(densityZero, densityZero, 0.5, 1)).toThrow(
-      'lowerBound must be a safe integer',
-    )
-    expect(() => evaluateDensityFunction(densityZero, { x: Number.NaN, y: 0, z: 0 })).toThrow(
-      'position.x must be finite',
-    )
-    expect(() => evaluateDensityFunction(densityZero, { x: 0, y: Infinity, z: 0 })).toThrow(
-      'position.y must be finite',
-    )
-    expect(() => evaluateDensityFunction(densityZero, { x: 0, y: 0, z: Number.NEGATIVE_INFINITY })).toThrow(
-      'position.z must be finite',
-    )
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(overflowingSpline, densityPosition(position)),
+      ).message,
+    ).toContain('spline input must be finite')
+
+    const blendFailureContext = expectDensitySuccess(DensityApi.createDensityEvaluationContext({
+      blendDensity: () => Result.fail(new RangeError('blend callback failed')),
+    }))
+    const blendNode = DensityApi.densityBlendDensity(densityConstant(1))
+    const failedSurface = densityFindTopSurface(blendNode, densityConstant(16), -4, 4)
+    expect(
+      expectResultFailure(
+        DensityApi.evaluateDensityFunction(
+          failedSurface,
+          densityPosition(position),
+          blendFailureContext,
+        ),
+      ).message,
+    ).toContain('blend callback failed')
+
+    const endIslands = densityEndIslands(0n)
+    for (const invalidPosition of [
+      { x: Number.MAX_VALUE, y: 0, z: 0 },
+      { x: 0, y: 0, z: Number.MAX_VALUE },
+    ]) {
+      expect(
+        expectResultFailure(
+          DensityApi.evaluateDensityFunction(endIslands, densityPosition(invalidPosition)),
+        ).message,
+      ).toContain('safe integer')
+    }
   })
 })

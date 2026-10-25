@@ -1,23 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import * as DensityApi from '../src/index.js'
 import {
-  beardifier,
   createDensityOldBlendedNoiseSource,
   createDensityNoiseSource,
-  decodeDensityFunction,
+  createSpline,
   densityBinary,
-  densityBlendAlpha,
-  densityBlendDensity,
-  densityBlendOffset,
-  densityCache2D,
-  densityCacheAllInCell,
-  densityCacheOnce,
   densityClamp,
   densityConstant,
   densityCoordinate,
   densityEndIslands,
   densityFindTopSurface,
-  densityFlatCache,
-  densityInterpolated,
   densityLinearOperation,
   densityNoise,
   densityOldBlendedNoise,
@@ -30,10 +21,12 @@ import {
   densityUnary,
   densityWeirdScaledSampler,
   densityYClampedGradient,
-  encodeDensityFunction,
-  parseDensityFunction,
-  stringifyDensityFunction,
-} from '../src/index.js'
+  densityValue,
+  expectDensitySuccess,
+  expectResultFailure,
+} from './density-function-test-utils.js'
+import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 
 const noiseSource = createDensityNoiseSource(
   (x, y, z) => x + y * 2 + z * 3,
@@ -42,9 +35,9 @@ const noiseSource = createDensityNoiseSource(
 
 const oldBlendedNoiseSource = createDensityOldBlendedNoiseSource(
   {
-    mainNoise: () => ({ sample: () => 1 }),
-    minLimitNoise: () => ({ sample: () => 2 }),
-    maxLimitNoise: () => ({ sample: () => 3 }),
+    mainNoise: () => ({ sample: () => densityValue(1) }),
+    minLimitNoise: () => ({ sample: () => densityValue(2) }),
+    maxLimitNoise: () => ({ sample: () => densityValue(3) }),
   },
   { minValue: -3, maxValue: 3 },
 )
@@ -62,6 +55,28 @@ const codecOptions = {
   },
 }
 
+const expectFailure = <Value, Failure>(
+  result: Result.Result<Value, Failure>,
+): Failure => {
+  expect(Result.isFailure(result)).toBe(true)
+  return expectResultFailure(result)
+}
+
+const failureMessage = (failure: unknown): string => {
+  if (failure instanceof Error) {
+    return failure.message
+  }
+  return String(failure)
+}
+
+const expectFailureContaining = <Value, Failure>(
+  result: Result.Result<Value, Failure>,
+  message: string,
+): void => {
+  const failure = expectFailure(result)
+  expect(failureMessage(failure)).toContain(message)
+}
+
 describe('DensityFunction codec', () => {
   it('round-trips every density function kind', () => {
     const input = densityConstant(2)
@@ -76,7 +91,7 @@ describe('DensityFunction codec', () => {
         yFactor: 160,
         smearScaleMultiplier: 4,
       }),
-      beardifier(),
+      DensityApi.densityBeardifier(),
       densityShift(noiseSource),
       densityShiftA(noiseSource),
       densityShiftB(noiseSource),
@@ -97,38 +112,46 @@ describe('DensityFunction codec', () => {
       }, densityConstant(4), densityConstant(5)),
       densityFindTopSurface(input, densityConstant(16), -32, 4),
       densityYClampedGradient(0, 10, -1, 1),
-      densitySpline(input, [[0, 1], [1, 3]]),
-      densityInterpolated(input),
-      densityFlatCache(input),
-      densityCache2D(input),
-      densityCacheOnce(input),
-      densityCacheAllInCell(input),
-      densityBlendDensity(input),
-      densityBlendAlpha(),
-      densityBlendOffset(),
+      densitySpline(input, createSpline([[0, 1], [1, 3]])),
+      DensityApi.densityInterpolated(input),
+      DensityApi.densityFlatCache(input),
+      DensityApi.densityCache2D(input),
+      DensityApi.densityCacheOnce(input),
+      DensityApi.densityCacheAllInCell(input),
+      DensityApi.densityBlendDensity(input),
+      DensityApi.densityBlendAlpha(),
+      DensityApi.densityBlendOffset(),
     ]
 
     for (const node of nodes) {
-      const encoded = encodeDensityFunction(node, codecOptions)
+      const encoded = expectDensitySuccess(DensityApi.encodeDensityFunction(node, codecOptions))
       expect(encoded.kind).toBe(node.kind)
-      expect(decodeDensityFunction(encoded, codecOptions).kind).toBe(node.kind)
-      expect(parseDensityFunction(stringifyDensityFunction(node, codecOptions), codecOptions).kind).toBe(node.kind)
+      expect(expectDensitySuccess(DensityApi.decodeDensityFunction(encoded, codecOptions)).kind)
+        .toBe(node.kind)
+      expect(
+        expectDensitySuccess(
+          DensityApi.parseDensityFunction(
+            expectDensitySuccess(DensityApi.stringifyDensityFunction(node, codecOptions)),
+            codecOptions,
+          ),
+        ).kind,
+      ).toBe(node.kind)
     }
   })
 
   it('rejects malformed values and missing source codecs', () => {
     const noise = densityNoise(noiseSource)
 
-    expect(() => encodeDensityFunction(null as never)).toThrow()
-    expect(() => encodeDensityFunction(densityConstant(1), null as never)).toThrow()
-    expect(() => encodeDensityFunction(densityConstant(1), 1 as never)).toThrow()
-    expect(() => encodeDensityFunction(noise)).toThrow()
-    expect(() => encodeDensityFunction(noise, {
+    expectFailure(DensityApi.encodeDensityFunction(null as never))
+    expectFailure(DensityApi.encodeDensityFunction(densityConstant(1), null as never))
+    expectFailure(DensityApi.encodeDensityFunction(densityConstant(1), 1 as never))
+    expectFailure(DensityApi.encodeDensityFunction(noise))
+    expectFailure(DensityApi.encodeDensityFunction(noise, {
       encodeNoiseSource: () => '',
-    })).toThrow()
-    expect(() => encodeDensityFunction(noise, {
+    }))
+    expectFailure(DensityApi.encodeDensityFunction(noise, {
       encodeNoiseSource: () => 1 as never,
-    })).toThrow()
+    }))
     const oldBlendedNoise = densityOldBlendedNoise(oldBlendedNoiseSource, {
       xzScale: 1,
       yScale: 1,
@@ -136,15 +159,16 @@ describe('DensityFunction codec', () => {
       yFactor: 160,
       smearScaleMultiplier: 4,
     })
-    expect(() => encodeDensityFunction(oldBlendedNoise)).toThrow(
+    expectFailureContaining(
+      DensityApi.encodeDensityFunction(oldBlendedNoise),
       'encodeOldBlendedNoiseSource is required for old blended noise functions',
     )
-    expect(() => encodeDensityFunction(oldBlendedNoise, {
+    expectFailure(DensityApi.encodeDensityFunction(oldBlendedNoise, {
       encodeOldBlendedNoiseSource: () => '',
-    })).toThrow()
-    expect(() => encodeDensityFunction(oldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.encodeDensityFunction(oldBlendedNoise, {
       encodeOldBlendedNoiseSource: () => 1 as never,
-    })).toThrow()
+    }))
     let kindReads = 0
     const unsupportedDensity = {
       get kind() {
@@ -157,74 +181,102 @@ describe('DensityFunction codec', () => {
       minValue: 0,
       maxValue: 0,
     }
-    expect(() => encodeDensityFunction(unsupportedDensity as never)).toThrow(
+    expectFailureContaining(
+      DensityApi.encodeDensityFunction(unsupportedDensity as never),
       'unsupported density function kind',
     )
 
-    expect(() => decodeDensityFunction(null as never)).toThrow()
-    expect(() => decodeDensityFunction([] as never)).toThrow()
-    expect(() => decodeDensityFunction(1 as never)).toThrow()
-    expect(() => decodeDensityFunction({ kind: 1 } as never)).toThrow()
-    expect(() => decodeDensityFunction({ kind: 'unknown' } as never)).toThrow()
-    expect(() => decodeDensityFunction({ kind: 'constant', value: 'x' } as never)).toThrow()
-    expect(() => decodeDensityFunction({ kind: 'constant', value: Number.POSITIVE_INFINITY } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    expectFailure(DensityApi.decodeDensityFunction(null as never))
+    expectFailure(DensityApi.decodeDensityFunction([] as never))
+    expectFailure(DensityApi.decodeDensityFunction(1 as never))
+    expectFailure(DensityApi.decodeDensityFunction({ kind: 1 } as never))
+    expectFailure(DensityApi.decodeDensityFunction({ kind: 'unknown' } as never))
+    expectFailure(DensityApi.decodeDensityFunction({ kind: 'constant', value: 'x' } as never))
+    expectFailure(DensityApi.decodeDensityFunction({ kind: 'constant', value: Number.POSITIVE_INFINITY } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'coordinate',
       axis: 'x',
       scale: 1,
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'coordinate',
       axis: 'w',
       offset: 0,
       scale: 1,
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'linear-operation',
       argument: 1,
-      input: encodeDensityFunction(densityConstant(1)),
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       operation: 'div',
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'binary',
-      left: encodeDensityFunction(densityConstant(1)),
+      left: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       operation: 'div',
-      right: encodeDensityFunction(densityConstant(1)),
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+      right: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'unary',
-      input: encodeDensityFunction(densityConstant(1)),
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       operation: 'negate',
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
-      input: encodeDensityFunction(densityConstant(1)),
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       kind: 'weird-scaled-sampler',
       rarityValueMapper: 'type-3',
       source: 'test-source',
-    } as never, codecOptions)).toThrow()
-    expect(() => decodeDensityFunction({ kind: 'end-islands', seed: 'x' } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never, codecOptions))
+    expectFailure(DensityApi.decodeDensityFunction({ kind: 'end-islands', seed: 'x' } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'spline',
-      input: encodeDensityFunction(densityConstant(1)),
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       spline: null,
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'spline',
-      input: encodeDensityFunction(densityConstant(1)),
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       spline: [[0]],
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'spline',
-      input: encodeDensityFunction(densityConstant(1)),
+      input: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
       spline: [['x', 1]],
-    } as never)).toThrow()
-    expect(() => decodeDensityFunction({
+    } as never))
+    expectFailure(DensityApi.decodeDensityFunction({
       kind: 'find-top-surface',
-      density: encodeDensityFunction(densityConstant(1)),
-      upperBound: encodeDensityFunction(densityConstant(16)),
+      density: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(1))),
+      upperBound: expectDensitySuccess(DensityApi.encodeDensityFunction(densityConstant(16))),
       lowerBound: -32,
       cellHeight: 0,
-    } as never)).toThrow()
+    } as never))
+    const encodedSurfaceDensity = expectDensitySuccess(
+      DensityApi.encodeDensityFunction(densityConstant(1)),
+    )
+    const encodedSurfaceUpperBound = expectDensitySuccess(
+      DensityApi.encodeDensityFunction(densityConstant(16)),
+    )
+    expectFailureContaining(DensityApi.decodeDensityFunction({
+      kind: 'find-top-surface',
+      density: encodedSurfaceDensity,
+      upperBound: encodedSurfaceUpperBound,
+      lowerBound: '-32',
+      cellHeight: 4,
+    } as never), 'lowerBound must be a number')
+    expectFailureContaining(DensityApi.decodeDensityFunction({
+      kind: 'find-top-surface',
+      density: encodedSurfaceDensity,
+      upperBound: encodedSurfaceUpperBound,
+      lowerBound: -31.5,
+      cellHeight: 4,
+    } as never), 'lowerBound must be a safe integer')
+    expectFailureContaining(DensityApi.decodeDensityFunction({
+      kind: 'find-top-surface',
+      density: encodedSurfaceDensity,
+      upperBound: encodedSurfaceUpperBound,
+      lowerBound: -32,
+      cellHeight: '4',
+    } as never), 'cellHeight must be a number')
 
     const encodedNoise = {
       kind: 'noise',
@@ -232,31 +284,38 @@ describe('DensityFunction codec', () => {
       xzScale: 1,
       yScale: 1,
     } as const
-    expect(() => decodeDensityFunction({
+    expectFailure(DensityApi.decodeDensityFunction({
       ...encodedNoise,
       source: '',
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedNoise)).toThrow()
-    expect(() => decodeDensityFunction(encodedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedNoise))
+    expectFailure(DensityApi.decodeDensityFunction(encodedNoise, {
       decodeNoiseSource: () => null as never,
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedNoise, {
       decodeNoiseSource: () => ({} as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedNoise, {
       decodeNoiseSource: () => ({
         sample: 1,
         minValue: -1,
         maxValue: 1,
       } as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedNoise, {
       decodeNoiseSource: () => ({
         sample: () => 0,
         minValue: Number.NaN,
         maxValue: 1,
       } as never),
-    })).toThrow()
+    }))
+    expectFailureContaining(DensityApi.decodeDensityFunction(encodedNoise, {
+      decodeNoiseSource: () => ({
+        sample: () => 0,
+        minValue: -1,
+        maxValue: '1',
+      } as never),
+    }), 'maxValue must be a number')
 
     const encodedOldBlendedNoise = {
       kind: 'old-blended-noise',
@@ -267,44 +326,45 @@ describe('DensityFunction codec', () => {
       yFactor: 160,
       smearScaleMultiplier: 4,
     } as const
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise)).toThrow(
+    expectFailureContaining(
+      DensityApi.decodeDensityFunction(encodedOldBlendedNoise),
       'decodeOldBlendedNoiseSource is required for old blended noise functions',
     )
-    expect(() => decodeDensityFunction({
+    expectFailure(DensityApi.decodeDensityFunction({
       ...encodedOldBlendedNoise,
       source: '',
-    }, codecOptions)).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }, codecOptions))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => null as never,
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({} as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({
         maxLimitNoise: () => 0 as never,
         minLimitNoise: () => 0 as never,
         minValue: -1,
         maxValue: 1,
       } as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({
         mainNoise: () => 0 as never,
         maxLimitNoise: () => 0 as never,
         minValue: -1,
         maxValue: 1,
       } as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({
         mainNoise: () => 0 as never,
         minLimitNoise: () => 0 as never,
         minValue: -1,
         maxValue: 1,
       } as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({
         mainNoise: () => 0 as never,
         maxLimitNoise: () => 0 as never,
@@ -312,8 +372,8 @@ describe('DensityFunction codec', () => {
         minValue: Number.NaN,
         maxValue: 1,
       } as never),
-    })).toThrow()
-    expect(() => decodeDensityFunction(encodedOldBlendedNoise, {
+    }))
+    expectFailure(DensityApi.decodeDensityFunction(encodedOldBlendedNoise, {
       decodeOldBlendedNoiseSource: () => ({
         mainNoise: () => 0 as never,
         maxLimitNoise: () => 0 as never,
@@ -321,9 +381,9 @@ describe('DensityFunction codec', () => {
         minValue: -1,
         maxValue: Number.NaN,
       } as never),
-    })).toThrow()
+    }))
 
-    expect(() => parseDensityFunction(1 as never)).toThrow()
-    expect(() => stringifyDensityFunction(densityConstant(1), null as never)).toThrow()
+    expectFailure(DensityApi.parseDensityFunction(1 as never))
+    expectFailure(DensityApi.stringifyDensityFunction(densityConstant(1), null as never))
   })
 })

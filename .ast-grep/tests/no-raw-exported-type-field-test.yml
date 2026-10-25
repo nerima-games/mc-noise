@@ -1,0 +1,87 @@
+id: no-raw-exported-type-field
+valid:
+  - |
+    export interface User {
+      id: UserId
+      name: UserName
+    }
+  - |
+    export type User = {
+      id: UserId
+      name: UserName
+    }
+  - |
+    interface InternalUser {
+      name: string
+    }
+  - |
+    export interface User {
+      id: UserId
+      format: (value: UserName) => UserName
+    }
+  - |
+    export type User = {
+      encode: (value: UserId) => string
+      labels: ReadonlyArray<number>
+    }
+  - |
+    export type NoisePoint2D = Readonly<{
+      x: number
+      z: number
+    }>
+  - |
+    export type NoiseGrid2DOptions = Readonly<{
+      originX: number
+      originZ: number
+    }>
+    export type NoisePoint3D = Readonly<{
+      x: number
+      y: number
+      z: number
+    }>
+    export type NoiseGrid3DOptions = Readonly<{
+      originX: number
+      originY: number
+      originZ: number
+    }>
+    export type SimplexNoise2DOptions = Readonly<{
+      originX: number
+      originZ: number
+    }>
+    export type SimplexNoise3DOptions = Readonly<{
+      originX: number
+      originY: number
+      originZ: number
+    }>
+  - |
+    export type DensityFunctionEncoded =
+      | Readonly<{ kind: 'noise'; source: string }>
+      | Readonly<{ kind: 'end-islands'; seed: string }>
+invalid:
+  - |
+    export interface User {
+      name: string
+    }
+  - |
+    export type User = {
+      id: number
+    }
+  - |
+    export type UnrelatedPoint = Readonly<{
+      x: number
+      z: number
+    }>
+  - |
+    export type DensityFunctionOptions = Readonly<{
+      source: string
+      seed: string
+    }>
+  - |
+    export type NoisePoint2D = Readonly<{
+      x: string
+      z: number
+    }>
+  - |
+    export type DensityFunctionEncoded =
+      | Readonly<{ kind: 'noise'; source: number }>
+      | Readonly<{ kind: 'end-islands'; seed: number }>

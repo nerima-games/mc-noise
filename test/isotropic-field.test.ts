@@ -1,8 +1,16 @@
+import { Effect, Result } from 'effect'
 import { describe, expect } from 'vitest'
 import { effectTest } from './effect-test'
-import { Effect } from 'effect'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import { createNoiseField } from '../src/domain/field'
 import { NOISE_CHANNELS, NoiseSeed, type NoiseChannel } from '../src/domain/seed'
+
+const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 const SAMPLE_COORDINATES = [
   [0.5, 0.5],
@@ -19,7 +27,9 @@ describe('createNoiseField', () => {
       for (const [x, z] of SAMPLE_COORDINATES) {
         expect(first.raw2d(x, z)).toBe(second.raw2d(x, z))
         expect(first.noise2d(x, z)).toBe(second.noise2d(x, z))
-        expect(first.octave2d(x, z)).toBe(second.octave2d(x, z))
+        expect(expectSuccess(first.octave2d(PositionAxis(x), PositionAxis(z)))).toBe(
+          expectSuccess(second.octave2d(PositionAxis(x), PositionAxis(z))),
+        )
         for (const channel of NOISE_CHANNELS) {
           expect(first.channel(channel)(x, z)).toBe(second.channel(channel)(x, z))
         }
@@ -35,7 +45,7 @@ describe('createNoiseField', () => {
           expect(Number.isFinite(field.raw2d(x, z))).toBe(true)
           expect(field.noise2d(x, z)).toBeGreaterThanOrEqual(0)
           expect(field.noise2d(x, z)).toBeLessThanOrEqual(1)
-          expect(Number.isFinite(field.octave2d(x, z))).toBe(true)
+          expect(Number.isFinite(expectSuccess(field.octave2d(PositionAxis(x), PositionAxis(z))))).toBe(true)
           for (const channel of NOISE_CHANNELS) {
             expect(Number.isFinite(field.channel(channel)(x, z))).toBe(true)
           }

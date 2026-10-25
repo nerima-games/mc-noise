@@ -1,4 +1,10 @@
-import type { DensityFunction } from './density-function-types.js'
+import {
+  type DensityFunction,
+  DensityFunctionFieldName,
+  type DensityFunctionFieldName as DensityFunctionFieldNameValue,
+  type DensityFunctionResult,
+} from './density-function-types.js'
+import { Result } from 'effect'
 
 const DENSITY_KINDS: ReadonlySet<DensityFunction['kind']> = new Set([
   'constant',
@@ -66,11 +72,16 @@ export const isDensityFunction = (
 }
 
 export const requireDensityFunction = (
-  name: string,
+  name: DensityFunctionFieldNameValue,
   value: unknown,
-): DensityFunction => {
-  if (!isDensityFunction(value)) {
-    throw new TypeError(`${name} must be a DensityFunction`)
-  }
-  return value
-}
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* requireDensityFunctionResult() {
+    const validatedName = yield* Result.mapError(
+      DensityFunctionFieldName.result(name),
+      () => new RangeError('density function field name must not be empty'),
+    )
+    if (!isDensityFunction(value)) {
+      return yield* Result.fail(new TypeError(`${validatedName} must be a DensityFunction`))
+    }
+    return value
+  })

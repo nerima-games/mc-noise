@@ -5,7 +5,14 @@
  * reach: composite evaluation, interpolation and cell caching, all NoiseRouter
  * channels, Climate's six-dimensional search, and Blender callbacks.
  */
+import { Option, Result } from 'effect'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
+  ClimateValue,
+  DensityBound,
+  DensityCellSize,
+  DensityScale,
+  DensityValue,
   NOISE_ROUTER_CHANNELS,
   climateParameters,
   createBlender,
@@ -44,11 +51,26 @@ const OPTIONS: MeasureOptions = {
   warmupIterations: 1,
 }
 
+const requireSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value =>
+  Result.getOrThrow(result)
+
 let sink = 0
 
 const consume = (value: number): void => {
   sink = (sink + value) % 1_000_000_007
 }
+
+const constant = (value: number): DensityFunction =>
+  requireSuccess(densityConstant(DensityValue(value)))
+
+const coordinate = (axis: 'x' | 'y' | 'z', scale: number): DensityFunction =>
+  requireSuccess(densityCoordinate(axis, { scale: DensityScale(scale) }))
+
+const add = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+  requireSuccess(densityAdd(left, right))
+
+const multiply = (left: DensityFunction, right: DensityFunction): DensityFunction =>
+  requireSuccess(densityMul(left, right))
 
 const samplePositions: ReadonlyArray<DensityPosition> = Object.freeze(
   Array.from(
@@ -57,9 +79,9 @@ const samplePositions: ReadonlyArray<DensityPosition> = Object.freeze(
       const chunk = Math.floor(index / POINTS_PER_CHUNK)
       const local = index % POINTS_PER_CHUNK
       return Object.freeze({
-        x: chunk * 16 + (local % 4) * 4,
-        y: 32 + Math.floor(local / 4) * 16,
-        z: -chunk * 16 + (local % 4) * 4,
+        x: PositionAxis(chunk * 16 + (local % 4) * 4),
+        y: PositionAxis(32 + Math.floor(local / 4) * 16),
+        z: PositionAxis(-chunk * 16 + (local % 4) * 4),
       })
     },
   ),
@@ -80,7 +102,7 @@ const evaluateMany = (
   session.clear()
   let total = 0
   for (const position of positions) {
-    total += session.evaluate(density, position)
+    total += requireSuccess(session.evaluate(density, position))
   }
   consume(total)
 }
@@ -92,7 +114,7 @@ const evaluateRouterMany = (
   session.clear()
   let total = 0
   for (const position of cachedPositions) {
-    const values = evaluateNoiseRouter(router, position, session)
+    const values = requireSuccess(evaluateNoiseRouter(router, position, session))
     for (const channel of NOISE_ROUTER_CHANNELS) {
       total += values[channel]
     }
@@ -105,73 +127,88 @@ const createClimateEntries = () =>
     const axisValue = (offset: number): number =>
       ((index + offset) % 9) / 4 - 1
     return [
-      climateParameters(
-        axisValue(0),
-        axisValue(1),
-        axisValue(2),
-        axisValue(3),
-        axisValue(4),
-        axisValue(5),
-        (index % 7) / 10,
-      ),
+      requireSuccess(climateParameters(
+        ClimateValue(axisValue(0)),
+        ClimateValue(axisValue(1)),
+        ClimateValue(axisValue(2)),
+        ClimateValue(axisValue(3)),
+        ClimateValue(axisValue(4)),
+        ClimateValue(axisValue(5)),
+        ClimateValue((index % 7) / 10),
+      )),
       index,
     ] as const
   })
 
-const source = createDensityNoiseSource(
+const source = requireSuccess(createDensityNoiseSource(
   (x, y, z) =>
     Math.sin(x * 0.01) + Math.cos(y * 0.02) + Math.sin(z * 0.015),
-  { maxValue: 3, minValue: -3 },
-)
-const noise = densityNoise(source, { xzScale: 0.015, yScale: 0.02 })
-const composite = densityMul(
-  densityAdd(noise, densityCoordinate('x', { scale: 0.001 })),
-  densityAdd(densityConstant(0.5), densityCoordinate('y', { scale: 0.002 })),
+  { maxValue: DensityBound(3), minValue: DensityBound(-3) },
+))
+const noise = requireSuccess(densityNoise(source, {
+  xzScale: DensityScale(0.015),
+  yScale: DensityScale(0.02),
+}))
+const composite = multiply(
+  add(noise, coordinate('x', 0.001)),
+  add(constant(0.5), coordinate('y', 0.002)),
 )
 const interpolated = densityCacheAllInCell(densityInterpolated(composite))
 
-const blender = createBlender({
-  blendDensity: (_position, density) => density * 0.9 + 0.25,
-  blendOffsetAndFactor: (x, z) => ({
-    alpha: 0.5 + 0.25 * Math.sin(x * 0.01),
-    blendingOffset: Math.cos(z * 0.01),
+const blender = requireSuccess(createBlender({
+  blendDensity: (_position, density) =>
+    Result.succeed(DensityValue(density * 0.9 + 0.25)),
+  blendOffsetAndFactor: (x, z) => Result.succeed({
+    alpha: DensityValue(0.5 + 0.25 * Math.sin(x * 0.01)),
+    blendingOffset: DensityValue(Math.cos(z * 0.01)),
   }),
-})
-const blenderSession = createDensityEvaluationSession(
-  createDensityEvaluationContextFromBlender(blender),
-)
-const blended = densityAdd(
+}))
+const blenderSession = requireSuccess(createDensityEvaluationSession(
+  requireSuccess(createDensityEvaluationContextFromBlender(blender, {
+    cellHeight: DensityCellSize(16),
+    cellWidth: DensityCellSize(4),
+  })),
+))
+const blended = add(
   densityBlendDensity(composite),
-  densityAdd(densityBlendAlpha(), densityBlendOffset()),
+  add(densityBlendAlpha(), densityBlendOffset()),
 )
 
-const router = createNoiseRouter(
+const router = requireSuccess(createNoiseRouter(
   Object.fromEntries(
     NOISE_ROUTER_CHANNELS.map((channel, index) => [
       channel,
-      densityAdd(composite, densityConstant(index * 0.01)),
+      add(composite, constant(index * 0.01)),
     ]),
   ) as NoiseRouter,
-)
-const climateSampler = createClimateSampler({
-  continentalness: densityCoordinate('x', { scale: 0.01 }),
-  depth: densityConstant(0.25),
-  erosion: densityCoordinate('z', { scale: 0.01 }),
+))
+const climateSampler = requireSuccess(createClimateSampler({
+  continentalness: coordinate('x', 0.01),
+  depth: constant(0.25),
+  erosion: coordinate('z', 0.01),
   humidity: noise,
   temperature: composite,
-  weirdness: densityAdd(noise, densityConstant(0.5)),
-})
-const climateList = createClimateParameterList(createClimateEntries())
-const climateSession = createDensityEvaluationSession(
-  createDensityEvaluationContext(),
-)
+  weirdness: add(noise, constant(0.5)),
+}))
+const climateList = requireSuccess(createClimateParameterList(createClimateEntries()))
+const climateSession = requireSuccess(createDensityEvaluationSession(
+  requireSuccess(createDensityEvaluationContext({
+    cellHeight: DensityCellSize(16),
+    cellWidth: DensityCellSize(4),
+  })),
+))
 
 const evaluateClimateMany = (): void => {
   climateSession.clear()
   let total = 0
   for (const position of cachedPositions) {
-    const target = sampleClimate(climateSampler, position, climateSession)
-    total += findClimateValue(climateList, target) ?? -1
+    const target = requireSuccess(sampleClimate(climateSampler, position, climateSession))
+    const found = requireSuccess(findClimateValue(climateList, target))
+    if (Option.isSome(found)) {
+      total += found.value
+    } else {
+      total -= 1
+    }
   }
   consume(total)
 }

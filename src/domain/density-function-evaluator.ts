@@ -1,3 +1,4 @@
+import { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   DENSITY_FOUR,
   DENSITY_HALF,
@@ -14,51 +15,61 @@ import {
   DENSITY_TWO,
   DENSITY_ZERO,
 } from './density-function-constants.js'
-import type {
-  DensityBeardifier,
-  DensityBinary,
-  DensityBlendAlpha,
-  DensityBlendDensity,
-  DensityBlendOffset,
-  DensityCache2D,
-  DensityCacheAllInCell,
-  DensityCacheOnce,
-  DensityClamp,
-  DensityConstant,
-  DensityCoordinate,
-  DensityCoordinateAxis,
-  DensityEndIslands,
-  DensityEvaluationContext,
-  DensityEvaluationSession,
-  DensityFindTopSurface,
-  DensityFlatCache,
-  DensityFunction,
-  DensityInterpolated,
-  DensityLinearOperation,
-  DensityNoise,
-  DensityOldBlendedNoise,
-  DensityPosition,
-  DensityRangeChoice,
-  DensityRarityValueMapper,
-  DensityShift,
-  DensityShiftA,
-  DensityShiftB,
-  DensityShiftedNoise,
-  DensitySpline,
-  DensityUnary,
-  DensityUnaryOperation,
-  DensityWeirdScaledSampler,
-  DensityYClampedGradient,
+import { DefinedValueName, requireDefined } from './defined.js'
+import {
+  type DensityBeardifier,
+  type DensityBinary,
+  type DensityBlendAlpha,
+  type DensityBlendDensity,
+  type DensityBlendOffset,
+  type DensityCache2D,
+  type DensityCacheAllInCell,
+  type DensityCacheOnce,
+  DensityCellSize,
+  type DensityClamp,
+  type DensityConstant,
+  type DensityCoordinate,
+  type DensityCoordinateAxis,
+  type DensityEndIslands,
+  type DensityEvaluationContext,
+  type DensityEvaluationSession,
+  type DensityFindTopSurface,
+  type DensityFlatCache,
+  type DensityFunction,
+  type DensityFunctionError,
+  DensityFunctionFieldName,
+  type DensityFunctionResult,
+  type DensityInterpolated,
+  type DensityLinearOperation,
+  type DensityNoise,
+  type DensityOldBlendedNoise,
+  type DensityPosition,
+  type DensityRangeChoice,
+  type DensityRarityValueMapper,
+  type DensityShift,
+  type DensityShiftA,
+  type DensityShiftB,
+  type DensityShiftedNoise,
+  type DensitySpline,
+  type DensityUnary,
+  type DensityUnaryOperation,
+  DensityValue,
+  type DensityValue as DensityValueType,
+  type DensityWeirdScaledSampler,
+  type DensityYClampedGradient,
 } from './density-function-types.js'
+import { SplineInput, SplineValue, evaluateSpline } from './spline.js'
+import { BoundedNoise } from './noise-primitives.js'
+import { Result } from 'effect'
 import { evaluateOldBlendedNoise } from './old-blended-noise.js'
-import { evaluateSpline } from './spline.js'
-import { requireDefined } from './defined.js'
 import { requireDensityEvaluationContext } from './density-function-context.js'
+import { requireDensityFunction } from './density-function-validation.js'
 import { requireFiniteNumber } from './number-validation.js'
 
 const DENSITY_INTERPOLATION_LOWER_BOUNDARY = 0
 const DENSITY_INTERPOLATION_UPPER_BOUNDARY = 1
 const DENSITY_SURFACE_THRESHOLD = 0
+const DENSITY_CELL_SIZE_ONE = 1
 
 type DensityLeaf =
   | DensityConstant
@@ -117,6 +128,7 @@ type DensityCache = WeakMap<DensityFunction, Map<string, number>>
 
 type EvaluationState = {
   readonly context: DensityEvaluationContext | undefined
+  failure?: DensityFunctionError
   cacheOnce: WeakMap<DensityFunction, number>
   flatCache: DensityCache
   cache2D: DensityCache
@@ -134,6 +146,33 @@ const createEvaluationState = (
   flatCache: new WeakMap(),
   interpolated: new WeakMap(),
 })
+
+const EMPTY_EVALUATION_CONTEXT: DensityEvaluationContext = Object.freeze({
+  cellHeight: DensityCellSize(DENSITY_CELL_SIZE_ONE),
+  cellWidth: DensityCellSize(DENSITY_CELL_SIZE_ONE),
+})
+
+const captureResult = <Value>(
+  state: EvaluationState,
+  result: Result.Result<Value, DensityFunctionError>,
+  fallback: Value,
+): Value => {
+  if (Result.isFailure(result)) {
+    state.failure ??= result.failure
+    return fallback
+  }
+  return result.success
+}
+
+const requireDensityValue = (
+  state: EvaluationState,
+  value: number,
+): DensityValueType =>
+  captureResult(
+    state,
+    Result.mapError(DensityValue.result(value), (error) => new RangeError(error.message)),
+    DensityValue(DENSITY_ZERO),
+  )
 
 const clearEvaluationState = (state: EvaluationState): void => {
   state.cache2D = new WeakMap()
@@ -287,11 +326,21 @@ const DENSITY_END_ISLANDS_COORDINATE_SCALE = 8
 const evaluateEndIslands = (
   density: DensityEndIslands,
   position: DensityPosition,
-): number =>
-  density.sampler.sample(
-    Math.trunc(position.x / DENSITY_END_ISLANDS_COORDINATE_SCALE),
-    Math.trunc(position.z / DENSITY_END_ISLANDS_COORDINATE_SCALE),
+  state: EvaluationState,
+): number => {
+  const x = Result.mapError(
+    BlockAxis.result(Math.trunc(position.x / DENSITY_END_ISLANDS_COORDINATE_SCALE)),
+    (error) => new RangeError(error.message),
   )
+  const z = Result.mapError(
+    BlockAxis.result(Math.trunc(position.z / DENSITY_END_ISLANDS_COORDINATE_SCALE)),
+    (error) => new RangeError(error.message),
+  )
+  const sample = Result.flatMap(x, (blockX) =>
+    Result.flatMap(z, (blockZ) => density.sampler.sample(blockX, blockZ)),
+  )
+  return captureResult(state, sample, BoundedNoise(DENSITY_ZERO))
+}
 
 type DensityShiftOrGradient =
   | DensityShift
@@ -320,7 +369,8 @@ const requireEvaluationContext = (
   kind: string,
 ): DensityEvaluationContext => {
   if (typeof state.context === 'undefined') {
-    throw new RangeError(`${kind} requires an evaluation context`)
+    state.failure ??= new RangeError(`${kind} requires an evaluation context`)
+    return EMPTY_EVALUATION_CONTEXT
   }
   return state.context
 }
@@ -332,28 +382,43 @@ const evaluateBeardifier = (
 ): number => {
   const context = requireEvaluationContext(state, density.kind)
   if (typeof context.beardifier !== 'function') {
-    throw new RangeError('beardifier requires context.beardifier')
+    state.failure ??= new RangeError('beardifier requires context.beardifier')
+    return DENSITY_ZERO
   }
-  return context.beardifier(position)
+  return captureResult(state, context.beardifier(position), DensityValue(DENSITY_ZERO))
 }
 
-const evaluatePrimaryLeaf = (
-  density: DensityPrimaryLeaf,
-  position: DensityPosition,
-): number => {
-  switch (density.kind) {
-    case 'constant':
-      return density.value
-    case 'coordinate':
-      return evaluateCoordinate(density, position)
-    case 'end-islands':
-      return evaluateEndIslands(density, position)
-    case 'noise':
-      return evaluateNoise(density, position)
-    default:
-      return evaluateOldBlendedNoise(density, position)
-  }
+type DensityPrimaryLeafKind = DensityPrimaryLeaf['kind']
+
+type DensityPrimaryLeafByKind<Kind extends DensityPrimaryLeafKind> =
+  Extract<DensityPrimaryLeaf, { readonly kind: Kind }>
+
+type DensityPrimaryLeafHandlers = {
+  [Kind in DensityPrimaryLeafKind]: (
+    density: DensityPrimaryLeafByKind<Kind>,
+    position: DensityPosition,
+    state: EvaluationState,
+  ) => number
 }
+
+const densityPrimaryLeafHandlers: DensityPrimaryLeafHandlers = {
+  constant: (density) => density.value,
+  coordinate: (density, position) => evaluateCoordinate(density, position),
+  'end-islands': (density, position, state) =>
+    evaluateEndIslands(density, position, state),
+  noise: (density, position) => evaluateNoise(density, position),
+  'old-blended-noise': (density, position, state) =>
+    captureResult(
+      state,
+      evaluateOldBlendedNoise(density, position),
+      DensityValue(DENSITY_ZERO),
+    ),
+}
+const evaluatePrimaryLeaf = <Kind extends DensityPrimaryLeafKind>(
+  density: DensityPrimaryLeafByKind<Kind>,
+  position: DensityPosition,
+  state: EvaluationState,
+): number => densityPrimaryLeafHandlers[density.kind](density, position, state)
 
 const evaluateLeaf = (
   density: DensityLeaf,
@@ -369,7 +434,7 @@ const evaluateLeaf = (
     case 'y-clamped-gradient':
       return evaluateShiftOrGradient(density, position)
     default:
-      return evaluatePrimaryLeaf(density, position)
+      return evaluatePrimaryLeaf(density, position, state)
   }
 }
 
@@ -431,18 +496,53 @@ const evaluateRangeChoice = (
   return evaluate(density.outOfRange, position)
 }
 
-const evaluateFindTopSurface = (
-  density: DensityFindTopSurface,
-  position: DensityPosition,
-  evaluate: DensityEvaluator,
-): number => {
-  const upperBound = evaluate(density.upperBound, position)
-  let y = Math.floor(upperBound / density.cellHeight) * density.cellHeight
-  if (!Number.isFinite(y) || y <= density.lowerBound) {
-    return density.lowerBound
+const requirePosition = (
+  position: Readonly<{ x: number; y: number; z: number }>,
+): DensityFunctionResult<DensityPosition> => {
+  if (position === null || typeof position !== 'object') {
+    return Result.fail(new TypeError('position must be an object'))
   }
+  return Result.gen(function* requirePositionResult() {
+    const x = yield* Result.mapError(
+      PositionAxis.result(position.x),
+      (error) => new RangeError(`position.x ${error.message}`),
+    )
+    const y = yield* Result.mapError(
+      PositionAxis.result(position.y),
+      (error) => new RangeError(`position.y ${error.message}`),
+    )
+    const z = yield* Result.mapError(
+      PositionAxis.result(position.z),
+      (error) => new RangeError(`position.z ${error.message}`),
+    )
+    return Object.freeze({ x, y, z })
+  })
+}
+
+type FindTopSurfaceSearchOptions = Readonly<{
+  readonly density: DensityFindTopSurface
+  readonly evaluate: DensityEvaluator
+  readonly position: DensityPosition
+  readonly state: EvaluationState
+  readonly startY: number
+}>
+
+const searchForDensitySurface = (options: FindTopSurfaceSearchOptions): number => {
+  const { density, evaluate, position, state, startY } = options
+  let y = startY
   while (y >= density.lowerBound) {
-    if (evaluate(density.density, { x: position.x, y, z: position.z }) > DENSITY_SURFACE_THRESHOLD) {
+    const isSurface = captureResult(
+      state,
+      Result.map(
+        requirePosition({ x: position.x, y, z: position.z }),
+        (point) => evaluate(density.density, point) > DENSITY_SURFACE_THRESHOLD,
+      ),
+      false,
+    )
+    if (typeof state.failure !== 'undefined') {
+      return density.lowerBound
+    }
+    if (isSurface) {
       return y
     }
     y -= density.cellHeight
@@ -450,11 +550,36 @@ const evaluateFindTopSurface = (
   return density.lowerBound
 }
 
+const evaluateFindTopSurface = (
+  density: DensityFindTopSurface,
+  position: DensityPosition,
+  evaluate: DensityEvaluator,
+  state: EvaluationState,
+): number => {
+  const upperBound = evaluate(density.upperBound, position)
+  const startY = Math.floor(upperBound / density.cellHeight) * density.cellHeight
+  if (!Number.isFinite(startY) || startY <= density.lowerBound) {
+    return density.lowerBound
+  }
+  return searchForDensitySurface({ density, evaluate, position, startY, state })
+}
+
 const evaluateSplineNode = (
   density: DensitySpline,
   position: DensityPosition,
   evaluate: (node: DensityFunction, point: DensityPosition) => number,
-): number => evaluateSpline(density.spline, evaluate(density.input, position))
+  state: EvaluationState,
+): number => {
+  const splineInput = Result.mapError(
+    SplineInput.result(evaluate(density.input, position)),
+    (error) => new RangeError(error.message),
+  )
+  return captureResult(
+    state,
+    Result.flatMap(splineInput, (input) => evaluateSpline(density.spline, input)),
+    SplineValue(DENSITY_ZERO),
+  )
+}
 
 const positionKey = (position: DensityPosition): string =>
   [position.x, position.y, position.z].join(',')
@@ -473,19 +598,27 @@ const cellPositionKey = (
     positionKey(position),
   ].join('|')
 
-const cachedDensityValue = (
-  cache: DensityCache,
-  density: DensityFunction,
-  key: string,
-  compute: () => number,
-): number => {
+type CachedDensityValueOptions = Readonly<{
+  readonly cache: DensityCache
+  readonly compute: () => number
+  readonly density: DensityFunction
+  readonly key: string
+  readonly state: EvaluationState
+}>
+
+const cachedDensityValue = (options: CachedDensityValueOptions): number => {
+  const { cache, compute, density, key, state } = options
   let values = cache.get(density)
   if (typeof values === 'undefined') {
     values = new Map()
     cache.set(density, values)
   }
   if (values.has(key)) {
-    return requireDefined(values.get(key), 'cached density value')
+    return captureResult(
+      state,
+      requireDefined(values.get(key), DefinedValueName('cached density value')),
+      DENSITY_ZERO,
+    )
   }
   const value = compute()
   values.set(key, value)
@@ -500,7 +633,14 @@ const evaluateCachedOnce = (
 ): number => {
   requireEvaluationContext(state, density.kind)
   if (state.cacheOnce.has(density)) {
-    return requireDefined(state.cacheOnce.get(density), 'cached density value')
+    return captureResult(
+      state,
+      requireDefined(
+        state.cacheOnce.get(density),
+        DefinedValueName('cached density value'),
+      ),
+      DENSITY_ZERO,
+    )
   }
   const value = evaluate(density.input, position)
   state.cacheOnce.set(density, value)
@@ -514,12 +654,13 @@ const evaluateFlatCache = (
   evaluate: DensityEvaluator,
 ): number => {
   requireEvaluationContext(state, density.kind)
-  return cachedDensityValue(
-    state.flatCache,
+  return cachedDensityValue({
+    cache: state.flatCache,
+    compute: () => evaluate(density.input, position),
     density,
-    flatPositionKey(position),
-    () => evaluate(density.input, position),
-  )
+    key: flatPositionKey(position),
+    state,
+  })
 }
 
 const evaluateCache2D = (
@@ -529,12 +670,13 @@ const evaluateCache2D = (
   evaluate: DensityEvaluator,
 ): number => {
   requireEvaluationContext(state, density.kind)
-  return cachedDensityValue(
-    state.cache2D,
+  return cachedDensityValue({
+    cache: state.cache2D,
+    compute: () => evaluate(density.input, position),
     density,
-    flatPositionKey(position),
-    () => evaluate(density.input, position),
-  )
+    key: flatPositionKey(position),
+    state,
+  })
 }
 
 const evaluateCacheAllInCell = (
@@ -544,12 +686,13 @@ const evaluateCacheAllInCell = (
   evaluate: DensityEvaluator,
 ): number => {
   const context = requireEvaluationContext(state, density.kind)
-  return cachedDensityValue(
-    state.cacheAllInCell,
+  return cachedDensityValue({
+    cache: state.cacheAllInCell,
+    compute: () => evaluate(density.input, position),
     density,
-    cellPositionKey(position, context),
-    () => evaluate(density.input, position),
-  )
+    key: cellPositionKey(position, context),
+    state,
+  })
 }
 
 const interpolate = (from: number, to: number, delta: number): number =>
@@ -599,10 +742,29 @@ const createInterpolatedSample = (
   options: InterpolatedSampleOptions,
 ): ((xOffset: number, yOffset: number, zOffset: number) => number) =>
   (xOffset, yOffset, zOffset) =>
-    cachedDensityValue(
-      options.state.interpolated,
-      options.density,
-      [
+    cachedDensityValue({
+      cache: options.state.interpolated,
+      compute: () =>
+        captureResult(
+          options.state,
+          Result.flatMap(
+            requirePosition({
+              x:
+                options.interpolation.originX +
+                xOffset * options.context.cellWidth,
+              y:
+                options.interpolation.originY +
+                yOffset * options.context.cellHeight,
+              z:
+                options.interpolation.originZ +
+                zOffset * options.context.cellWidth,
+            }),
+            (point) => Result.succeed(options.evaluate(options.density.input, point)),
+          ),
+          DENSITY_ZERO,
+        ),
+      density: options.density,
+      key: [
         options.interpolation.originX,
         options.interpolation.originY,
         options.interpolation.originZ,
@@ -610,19 +772,8 @@ const createInterpolatedSample = (
         yOffset,
         zOffset,
       ].join('|'),
-      () =>
-        options.evaluate(options.density.input, {
-          x:
-            options.interpolation.originX +
-            xOffset * options.context.cellWidth,
-          y:
-            options.interpolation.originY +
-            yOffset * options.context.cellHeight,
-          z:
-            options.interpolation.originZ +
-            zOffset * options.context.cellWidth,
-        }),
-    )
+      state: options.state,
+    })
 
 const evaluateInterpolated = (
   density: DensityInterpolated,
@@ -708,9 +859,14 @@ const evaluateBlendDensity = (
 ): number => {
   const context = requireEvaluationContext(state, density.kind)
   if (typeof context.blendDensity === 'undefined') {
-    throw new RangeError('blend-density requires context.blendDensity')
+    state.failure ??= new RangeError('blend-density requires context.blendDensity')
+    return DENSITY_ZERO
   }
-  return context.blendDensity(evaluate(density.input, position), position)
+  return captureResult(
+    state,
+    context.blendDensity(requireDensityValue(state, evaluate(density.input, position)), position),
+    DensityValue(DENSITY_ZERO),
+  )
 }
 
 const evaluateBlendAlpha = (
@@ -720,9 +876,10 @@ const evaluateBlendAlpha = (
 ): number => {
   const context = requireEvaluationContext(state, density.kind)
   if (typeof context.blendAlpha === 'undefined') {
-    throw new RangeError('blend-alpha requires context.blendAlpha')
+    state.failure ??= new RangeError('blend-alpha requires context.blendAlpha')
+    return DENSITY_ZERO
   }
-  return context.blendAlpha(position)
+  return captureResult(state, context.blendAlpha(position), DensityValue(DENSITY_ZERO))
 }
 
 const evaluateBlendOffset = (
@@ -732,9 +889,10 @@ const evaluateBlendOffset = (
 ): number => {
   const context = requireEvaluationContext(state, density.kind)
   if (typeof context.blendOffset === 'undefined') {
-    throw new RangeError('blend-offset requires context.blendOffset')
+    state.failure ??= new RangeError('blend-offset requires context.blendOffset')
+    return DENSITY_ZERO
   }
-  return context.blendOffset(position)
+  return captureResult(state, context.blendOffset(position), DensityValue(DENSITY_ZERO))
 }
 
 const isDensityContextComposite = (
@@ -838,6 +996,7 @@ const evaluateOperationComposite = (
 const evaluateBranchComposite = (
   density: DensityBranchComposite,
   position: DensityPosition,
+  state: EvaluationState,
   evaluate: DensityEvaluator,
 ): number => {
   if (density.kind === 'clamp') {
@@ -847,9 +1006,9 @@ const evaluateBranchComposite = (
     return evaluateRangeChoice(density, position, evaluate)
   }
   if (density.kind === 'find-top-surface') {
-    return evaluateFindTopSurface(density, position, evaluate)
+    return evaluateFindTopSurface(density, position, evaluate, state)
   }
-  return evaluateSplineNode(density, position, evaluate)
+  return evaluateSplineNode(density, position, evaluate, state)
 }
 
 const evaluateComposite = (
@@ -864,7 +1023,7 @@ const evaluateComposite = (
   if (isDensityOperationComposite(density)) {
     return evaluateOperationComposite(density, position, evaluate)
   }
-  return evaluateBranchComposite(density, position, evaluate)
+  return evaluateBranchComposite(density, position, state, evaluate)
 }
 
 const isDensityLeaf = (density: DensityFunction): density is DensityLeaf =>
@@ -892,15 +1051,27 @@ const evaluateNode = (
   return evaluateComposite(density, position, state, evaluate)
 }
 
-const requirePosition = (position: DensityPosition): DensityPosition => {
-  if (position === null || typeof position !== 'object') {
-    throw new TypeError('position must be an object')
-  }
-  return {
-    x: requireFiniteNumber('position.x', position.x),
-    y: requireFiniteNumber('position.y', position.y),
-    z: requireFiniteNumber('position.z', position.z),
-  }
+const evaluateWithState = (
+  densityValue: DensityFunction,
+  position: DensityPosition,
+  state: EvaluationState,
+): DensityFunctionResult<DensityValueType> => {
+  delete state.failure
+  return Result.gen(function* evaluateDensityFunctionWithStateResult() {
+    const density = yield* requireDensityFunction(DensityFunctionFieldName('density'), densityValue)
+    const normalizedPosition = yield* requirePosition(position)
+    const value = evaluateNode(density, normalizedPosition, state)
+    const { failure } = state
+    if (typeof failure !== 'undefined') {
+      clearEvaluationState(state)
+      return yield* Result.fail(failure)
+    }
+    const finiteValue = yield* requireFiniteNumber(
+      value,
+      () => 'density evaluation result must be finite',
+    )
+    return DensityValue(finiteValue)
+  })
 }
 
 const isDensityEvaluationSession = (
@@ -913,31 +1084,34 @@ const isDensityEvaluationSession = (
 
 export const createDensityEvaluationSession = (
   context: DensityEvaluationContext,
-): DensityEvaluationSession => {
-  const normalizedContext = requireDensityEvaluationContext(context)
-  const state = createEvaluationState(normalizedContext)
-  const evaluate = (
-    density: DensityFunction,
-    position: DensityPosition,
-  ): number => evaluateNode(density, requirePosition(position), state)
-  const clear = (): void => clearEvaluationState(state)
-  return Object.freeze({
-    clear,
-    context: normalizedContext,
-    evaluate,
+): DensityFunctionResult<DensityEvaluationSession> =>
+  Result.map(requireDensityEvaluationContext(context), (normalizedContext) => {
+    const state = createEvaluationState(normalizedContext)
+    const evaluate = (
+      density: DensityFunction,
+      position: DensityPosition,
+    ): DensityFunctionResult<DensityValueType> =>
+      evaluateWithState(density, position, state)
+    const clear = (): void => {
+      delete state.failure
+      clearEvaluationState(state)
+    }
+    return Object.freeze({ clear, context: normalizedContext, evaluate })
   })
-}
 
 export const evaluateDensityFunction = (
   density: DensityFunction,
   position: DensityPosition,
   contextOrSession?: DensityEvaluationContext | DensityEvaluationSession,
-): number => {
+): DensityFunctionResult<DensityValueType> => {
   if (typeof contextOrSession === 'undefined') {
-    return evaluateNode(density, requirePosition(position), createEvaluationState())
+    return evaluateWithState(density, position, createEvaluationState())
   }
   if (isDensityEvaluationSession(contextOrSession)) {
     return contextOrSession.evaluate(density, position)
   }
-  return createDensityEvaluationSession(contextOrSession).evaluate(density, position)
+  return Result.flatMap(
+    createDensityEvaluationSession(contextOrSession),
+    (session) => session.evaluate(density, position),
+  )
 }

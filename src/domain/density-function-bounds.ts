@@ -1,3 +1,4 @@
+import type { BlockAxis, PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   DENSITY_FOUR,
   DENSITY_INFINITY,
@@ -8,44 +9,56 @@ import {
   DENSITY_TWO,
   DENSITY_ZERO,
 } from './density-function-constants.js'
-import type {
-  DensityBinaryOperation,
-  DensityBounds,
-  DensityFunction,
-  DensityLinearOperationType,
-  DensityNoiseSource,
-  DensityUnaryOperation,
+import {
+  type DensityBinaryOperation,
+  DensityBound,
+  type DensityBound as DensityBoundValue,
+  type DensityBounds,
+  type DensityFunction,
+  type DensityLinearOperationType,
+  type DensityNoiseSource,
+  type DensityScale,
+  type DensityUnaryOperation,
+  type DensityValue,
 } from './density-function-types.js'
+import { Result } from 'effect'
 import type { Spline } from './spline.js'
-import { requireFiniteNumber } from './number-validation.js'
 
 const UNBOUNDED: DensityBounds = Object.freeze({
-  maxValue: DENSITY_INFINITY,
-  minValue: DENSITY_NEGATIVE_INFINITY,
+  maxValue: DensityBound(DENSITY_INFINITY),
+  minValue: DensityBound(DENSITY_NEGATIVE_INFINITY),
 })
 
-const requireDensityBound = (name: string, value: number): number => {
-  if (Number.isNaN(value)) {
-    throw new RangeError(`${name} must not be NaN`)
-  }
-  return value
-}
+const makeDensityBounds = (minValue: number, maxValue: number): DensityBounds =>
+  Object.freeze({
+    maxValue: DensityBound(maxValue),
+    minValue: DensityBound(minValue),
+  })
 
-export const createDensityBounds = (minValue: number, maxValue: number): DensityBounds => {
-  const lower = requireDensityBound('minValue', minValue)
-  const upper = requireDensityBound('maxValue', maxValue)
-  if (lower > upper) {
-    throw new RangeError(`minValue must not exceed maxValue, received ${lower} and ${upper}`)
+export const createDensityBounds = (
+  minValue: DensityBoundValue,
+  maxValue: DensityBoundValue,
+): Result.Result<DensityBounds, RangeError> => {
+  if (Number.isNaN(minValue)) {
+    return Result.fail(new RangeError('minValue must not be NaN'))
   }
-  return Object.freeze({ maxValue: upper, minValue: lower })
+  if (Number.isNaN(maxValue)) {
+    return Result.fail(new RangeError('maxValue must not be NaN'))
+  }
+  if (minValue > maxValue) {
+    return Result.fail(
+      new RangeError(`minValue must not exceed maxValue, received ${minValue} and ${maxValue}`),
+    )
+  }
+  return Result.succeed(makeDensityBounds(minValue, maxValue))
 }
 
 export const densityBounds = (density: DensityFunction): DensityBounds =>
-  createDensityBounds(density.minValue, density.maxValue)
+  makeDensityBounds(density.minValue, density.maxValue)
 
-export const boundsForCoordinate = (scale: number, offset: number): DensityBounds => {
+export const boundsForCoordinate = (scale: DensityScale, offset: PositionAxis): DensityBounds => {
   if (scale === DENSITY_ZERO) {
-    return createDensityBounds(offset, offset)
+    return makeDensityBounds(offset, offset)
   }
   return UNBOUNDED
 }
@@ -54,12 +67,12 @@ const createBoundsOrUnbounded = (lower: number, upper: number): DensityBounds =>
   if (Number.isNaN(lower) || Number.isNaN(upper)) {
     return UNBOUNDED
   }
-  return createDensityBounds(Math.min(lower, upper), Math.max(lower, upper))
+  return makeDensityBounds(Math.min(lower, upper), Math.max(lower, upper))
 }
 
 const scaleBounds = (bounds: DensityBounds, scale: number): DensityBounds => {
   if (scale === DENSITY_ZERO) {
-    return createDensityBounds(DENSITY_ZERO, DENSITY_ZERO)
+    return makeDensityBounds(DENSITY_ZERO, DENSITY_ZERO)
   }
   const lower = bounds.minValue * scale
   const upper = bounds.maxValue * scale
@@ -70,7 +83,7 @@ export const boundsForNoise = (source: DensityNoiseSource): DensityBounds => sou
 
 export const boundsForScaledNoise = (
   source: DensityNoiseSource,
-  scale: number,
+  scale: DensityScale,
 ): DensityBounds => scaleBounds(source, scale)
 
 const boundsForAddition = (left: DensityBounds, right: DensityBounds): DensityBounds => {
@@ -82,20 +95,20 @@ const boundsForAddition = (left: DensityBounds, right: DensityBounds): DensityBo
 export const boundsForLinearOperation = (
   operation: DensityLinearOperationType,
   input: DensityBounds,
-  argument: number,
+  argument: DensityValue,
 ): DensityBounds => {
   if (operation === 'add') {
-    return boundsForAddition(input, createDensityBounds(argument, argument))
+    return boundsForAddition(input, makeDensityBounds(argument, argument))
   }
   return scaleBounds(input, argument)
 }
 
 export const boundsForWeirdScaledSampler = (
   source: DensityNoiseSource,
-  maxMultiplier: number,
+  maxMultiplier: DensityScale,
 ): DensityBounds => {
   const maxAbs = Math.max(Math.abs(source.minValue), Math.abs(source.maxValue))
-  return createDensityBounds(DENSITY_ZERO, maxAbs * maxMultiplier)
+  return createBoundsOrUnbounded(DENSITY_ZERO, maxAbs * maxMultiplier)
 }
 
 const boundsForMultiplication = (left: DensityBounds, right: DensityBounds): DensityBounds => {
@@ -108,17 +121,17 @@ const boundsForMultiplication = (left: DensityBounds, right: DensityBounds): Den
   if (products.some(Number.isNaN)) {
     return UNBOUNDED
   }
-  return createDensityBounds(Math.min(...products), Math.max(...products))
+  return makeDensityBounds(Math.min(...products), Math.max(...products))
 }
 
 const boundsForMinimum = (left: DensityBounds, right: DensityBounds): DensityBounds =>
-  createDensityBounds(
+  makeDensityBounds(
     Math.min(left.minValue, right.minValue),
     Math.min(left.maxValue, right.maxValue),
   )
 
 const boundsForMaximum = (left: DensityBounds, right: DensityBounds): DensityBounds =>
-  createDensityBounds(
+  makeDensityBounds(
     Math.max(left.minValue, right.minValue),
     Math.max(left.maxValue, right.maxValue),
   )
@@ -183,16 +196,16 @@ const boundsForAbsolute = (input: DensityBounds): DensityBounds => {
   const lower = Math.min(Math.abs(input.minValue), Math.abs(input.maxValue))
   const upper = Math.max(Math.abs(input.minValue), Math.abs(input.maxValue))
   if (containsZero(input)) {
-    return createDensityBounds(DENSITY_ZERO, upper)
+    return makeDensityBounds(DENSITY_ZERO, upper)
   }
-  return createDensityBounds(lower, upper)
+  return makeDensityBounds(lower, upper)
 }
 
 const boundsForSquare = (input: DensityBounds): DensityBounds => {
   const lower = unaryValue('square', input.minValue)
   const upper = unaryValue('square', input.maxValue)
   if (containsZero(input)) {
-    return createDensityBounds(DENSITY_ZERO, Math.max(lower, upper))
+    return makeDensityBounds(DENSITY_ZERO, Math.max(lower, upper))
   }
   return createBoundsOrUnbounded(lower, upper)
 }
@@ -217,48 +230,47 @@ export const boundsForUnary = (
 
 export const boundsForClamp = (
   input: DensityBounds,
-  min: number,
-  max: number,
+  min: DensityValue,
+  max: DensityValue,
 ): DensityBounds => {
   const lower = Math.max(min, Math.min(max, input.minValue))
   const upper = Math.max(min, Math.min(max, input.maxValue))
-  return createDensityBounds(Math.min(lower, upper), Math.max(lower, upper))
+  return makeDensityBounds(Math.min(lower, upper), Math.max(lower, upper))
 }
 
 export const boundsForRangeChoice = (
   inRange: DensityBounds,
   outOfRange: DensityBounds,
-): DensityBounds => createDensityBounds(
+): DensityBounds => makeDensityBounds(
   Math.min(inRange.minValue, outOfRange.minValue),
   Math.max(inRange.maxValue, outOfRange.maxValue),
 )
 
 export const boundsForFindTopSurface = (
   upperBound: DensityBounds,
-  lowerBound: number,
-): DensityBounds => createDensityBounds(
+  lowerBound: BlockAxis,
+): DensityBounds => makeDensityBounds(
   lowerBound,
   Math.max(lowerBound, upperBound.maxValue),
 )
 
 export const boundsForYClampedGradient = (
-  fromValue: number,
-  toValue: number,
-): DensityBounds => createDensityBounds(
+  fromValue: DensityValue,
+  toValue: DensityValue,
+): DensityBounds => makeDensityBounds(
   Math.min(fromValue, toValue),
   Math.max(fromValue, toValue),
 )
 
 export const boundsForSpline = (spline: Spline): DensityBounds => {
   if (spline.length === DENSITY_ZERO) {
-    return createDensityBounds(DENSITY_ZERO, DENSITY_ZERO)
+    return makeDensityBounds(DENSITY_ZERO, DENSITY_ZERO)
   }
   let minValue = DENSITY_INFINITY
   let maxValue = DENSITY_NEGATIVE_INFINITY
   for (const [, value] of spline) {
-    const finiteValue = requireFiniteNumber('spline value', value)
-    minValue = Math.min(minValue, finiteValue)
-    maxValue = Math.max(maxValue, finiteValue)
+    minValue = Math.min(minValue, value)
+    maxValue = Math.max(maxValue, value)
   }
-  return createDensityBounds(minValue, maxValue)
+  return makeDensityBounds(minValue, maxValue)
 }

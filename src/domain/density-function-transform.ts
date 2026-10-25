@@ -1,4 +1,9 @@
-import type { DensityFunction, DensityFunctionVisitor } from './density-function-types.js'
+import {
+  type DensityFunction,
+  DensityFunctionFieldName,
+  type DensityFunctionResult,
+  type DensityFunctionVisitor,
+} from './density-function-types.js'
 import {
   densityBinary,
   densityBlendDensity,
@@ -16,14 +21,17 @@ import {
   densityWeirdScaledSampler,
   densityYClampedGradient,
 } from './density-function.js'
+import { Result } from 'effect'
 import { densityRangeChoice } from './density-function-spatial.js'
 import { requireDensityFunction } from './density-function-validation.js'
 
-const requireVisitor = (visitor: DensityFunctionVisitor): DensityFunctionVisitor => {
-  if (typeof visitor !== 'function') {
-    throw new TypeError('visitor must be a function')
+const requireVisitor = (
+  visitor: DensityFunctionVisitor,
+): Result.Result<DensityFunctionVisitor, TypeError> => {
+  if (typeof visitor === 'function') {
+    return Result.succeed(visitor)
   }
-  return visitor
+  return Result.fail(new TypeError('visitor must be a function'))
 }
 
 type OperationDensityFunction = Extract<
@@ -53,76 +61,77 @@ type ContextDensityFunction = Extract<
   | { readonly kind: 'blend-density' }
 >
 
+type Visit = (child: DensityFunction) => DensityFunctionResult<DensityFunction>
+
 const mapOperationChildren = (
   density: OperationDensityFunction,
-  visit: (child: DensityFunction) => DensityFunction,
-): DensityFunction => {
-  if (density.kind === 'shifted-noise') {
-    return densityShiftedNoise(
-      density.source,
-      {
-        x: visit(density.shiftX),
-        y: visit(density.shiftY),
-        z: visit(density.shiftZ),
-      },
-      { xzScale: density.xzScale, yScale: density.yScale },
-    )
-  }
-  if (density.kind === 'linear-operation') {
-    return densityLinearOperation(
-      density.operation,
-      visit(density.input),
-      density.argument,
-    )
-  }
-  if (density.kind === 'weird-scaled-sampler') {
-    return densityWeirdScaledSampler(
-      visit(density.input),
-      density.source,
-      density.rarityValueMapper,
-    )
-  }
-  if (density.kind === 'binary') {
-    return densityBinary(
-      density.operation,
-      visit(density.left),
-      visit(density.right),
-    )
-  }
-  return densityUnary(density.operation, visit(density.input))
-}
+  visit: Visit,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* mapOperationChildrenResult() {
+    if (density.kind === 'shifted-noise') {
+      return yield* densityShiftedNoise(
+        density.source,
+        {
+          x: yield* visit(density.shiftX),
+          y: yield* visit(density.shiftY),
+          z: yield* visit(density.shiftZ),
+        },
+        { xzScale: density.xzScale, yScale: density.yScale },
+      )
+    }
+    if (density.kind === 'linear-operation') {
+      return yield* densityLinearOperation(
+        density.operation,
+        yield* visit(density.input),
+        density.argument,
+      )
+    }
+    if (density.kind === 'weird-scaled-sampler') {
+      return yield* densityWeirdScaledSampler(
+        yield* visit(density.input),
+        density.source,
+        density.rarityValueMapper,
+      )
+    }
+    if (density.kind === 'binary') {
+      return yield* densityBinary(
+        density.operation,
+        yield* visit(density.left),
+        yield* visit(density.right),
+      )
+    }
+    return yield* densityUnary(density.operation, yield* visit(density.input))
+  })
 
 const mapBranchChildren = (
   density: BranchDensityFunction,
-  visit: (child: DensityFunction) => DensityFunction,
-): DensityFunction => {
-  if (density.kind === 'clamp') {
-    return densityClamp(visit(density.input), density.min, density.max)
-  }
-  if (density.kind === 'range-choice') {
-    return densityRangeChoice(
-      visit(density.input),
-      { maxExclusive: density.maxExclusive, minInclusive: density.minInclusive },
-      visit(density.inRange),
-      visit(density.outOfRange),
-    )
-  }
-  if (density.kind === 'find-top-surface') {
-    return densityFindTopSurface(
-      visit(density.density),
-      visit(density.upperBound),
-      density.lowerBound,
-      density.cellHeight,
-    )
-  }
-  return densitySpline(visit(density.input), density.spline)
-}
+  visit: Visit,
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* mapBranchChildrenResult() {
+    if (density.kind === 'clamp') {
+      return yield* densityClamp(yield* visit(density.input), density.min, density.max)
+    }
+    if (density.kind === 'range-choice') {
+      return yield* densityRangeChoice(
+        yield* visit(density.input),
+        { maxExclusive: density.maxExclusive, minInclusive: density.minInclusive },
+        yield* visit(density.inRange),
+        yield* visit(density.outOfRange),
+      )
+    }
+    if (density.kind === 'find-top-surface') {
+      return yield* densityFindTopSurface(
+        yield* visit(density.density),
+        yield* visit(density.upperBound),
+        density.lowerBound,
+        density.cellHeight,
+      )
+    }
+    return yield* densitySpline(yield* visit(density.input), density.spline)
+  })
 
 const contextChildMappers: Readonly<
-  Record<
-    ContextDensityFunction['kind'],
-    (input: DensityFunction) => DensityFunction
-  >
+  Record<ContextDensityFunction['kind'], (input: DensityFunction) => DensityFunction>
 > = {
   'blend-density': densityBlendDensity,
   'cache-2d': densityCache2D,
@@ -134,10 +143,13 @@ const contextChildMappers: Readonly<
 
 const mapContextChildren = (
   density: ContextDensityFunction,
-  visit: (child: DensityFunction) => DensityFunction,
-): DensityFunction => contextChildMappers[density.kind](visit(density.input))
+  visit: Visit,
+): DensityFunctionResult<DensityFunction> =>
+  Result.map(visit(density.input), (input) => contextChildMappers[density.kind](input))
 
-const mapLeafChildren = (density: DensityFunction): DensityFunction => {
+const mapLeafChildren = (
+  density: DensityFunction,
+): DensityFunctionResult<DensityFunction> => {
   if (density.kind === 'y-clamped-gradient') {
     return densityYClampedGradient(
       density.fromY,
@@ -146,13 +158,13 @@ const mapLeafChildren = (density: DensityFunction): DensityFunction => {
       density.toValue,
     )
   }
-  return density
+  return Result.succeed(density)
 }
 
 const mapChildren = (
   density: DensityFunction,
-  visit: (child: DensityFunction) => DensityFunction,
-): DensityFunction => {
+  visit: Visit,
+): DensityFunctionResult<DensityFunction> => {
   switch (density.kind) {
     case 'shifted-noise':
     case 'linear-operation':
@@ -180,11 +192,17 @@ const mapChildren = (
 export const mapDensityFunction = (
   densityValue: DensityFunction,
   visitor: DensityFunctionVisitor,
-): DensityFunction => {
-  const density = requireDensityFunction('density', densityValue)
-  const mapVisitor = requireVisitor(visitor)
-  const mapped = mapChildren(density, (child) => mapDensityFunction(child, mapVisitor))
-  return requireDensityFunction('visitor result', mapVisitor(mapped))
-}
+): DensityFunctionResult<DensityFunction> =>
+  Result.gen(function* mapContextChildrenResult() {
+    const density = yield* requireDensityFunction(DensityFunctionFieldName('density'), densityValue)
+    const mapVisitor = yield* requireVisitor(visitor)
+    const mapped = yield* mapChildren(density, (child) =>
+      mapDensityFunction(child, mapVisitor),
+    )
+    return yield* requireDensityFunction(
+      DensityFunctionFieldName('visitor result'),
+      mapVisitor(mapped),
+    )
+  })
 
 export const mapAll: typeof mapDensityFunction = mapDensityFunction

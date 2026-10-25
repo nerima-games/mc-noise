@@ -5,17 +5,27 @@ import {
   normalizeNoiseGrid3DOptions,
 } from './sampling-3d-grid.js'
 import type { NoiseFn3D } from './perlin.js'
-import { requireDefined } from './defined.js'
+import { Result } from 'effect'
+import { SampleStride } from './sampling.js'
 import { requirePositiveInteger } from './number-validation.js'
 
-const DEFAULT_SAMPLE_STRIDE = 1
+const DEFAULT_SAMPLE_STRIDE: SampleStride = SampleStride(GRID_LOOP_STEP)
 const POSITIVE_BOUNDARY = 0
+const FLOAT32_BYTES = Float32Array.BYTES_PER_ELEMENT
+const FLOAT32_LITTLE_ENDIAN = true
+
+const strideOrDefault = (value: SampleStride | undefined): SampleStride => {
+  if (typeof value === 'undefined') {
+    return DEFAULT_SAMPLE_STRIDE
+  }
+  return value
+}
 
 export type NoiseInterpolatedGrid3DOptions = Readonly<
   NoiseGrid3DOptions & {
-    readonly sampleStrideX?: number
-    readonly sampleStrideY?: number
-    readonly sampleStrideZ?: number
+    readonly sampleStrideX?: SampleStride
+    readonly sampleStrideY?: SampleStride
+    readonly sampleStrideZ?: SampleStride
   }
 >
 
@@ -26,25 +36,38 @@ type InterpolationAxis = Readonly<{
 }>
 
 type NormalizedInterpolationStrides = Readonly<{
-  readonly sampleStrideX: number
-  readonly sampleStrideY: number
-  readonly sampleStrideZ: number
+  readonly sampleStrideX: SampleStride
+  readonly sampleStrideY: SampleStride
+  readonly sampleStrideZ: SampleStride
 }>
 
 type CoarseNoiseGrid3D = Readonly<{
   readonly depth: number
   readonly height: number
-  readonly samples: Float32Array
+  readonly samples: DataView
   readonly width: number
 }>
 
 const normalizeInterpolationStrides = (
   options: NoiseInterpolatedGrid3DOptions,
-): NormalizedInterpolationStrides => ({
-  sampleStrideX: requirePositiveInteger('sampleStrideX', options.sampleStrideX ?? DEFAULT_SAMPLE_STRIDE),
-  sampleStrideY: requirePositiveInteger('sampleStrideY', options.sampleStrideY ?? DEFAULT_SAMPLE_STRIDE),
-  sampleStrideZ: requirePositiveInteger('sampleStrideZ', options.sampleStrideZ ?? DEFAULT_SAMPLE_STRIDE),
-})
+): Result.Result<NormalizedInterpolationStrides, RangeError> => {
+  const normalizeStride = (value: SampleStride | undefined, name: string) => {
+    const stride = strideOrDefault(value)
+    return Result.map(
+      requirePositiveInteger(
+        stride,
+        () => `${name} must be a positive safe integer, received ${String(stride)}`,
+      ),
+      SampleStride,
+    )
+  }
+  return Result.gen(function* normalizeInterpolationStridesResult() {
+    const sampleStrideX = yield* normalizeStride(options.sampleStrideX, 'sampleStrideX')
+    const sampleStrideY = yield* normalizeStride(options.sampleStrideY, 'sampleStrideY')
+    const sampleStrideZ = yield* normalizeStride(options.sampleStrideZ, 'sampleStrideZ')
+    return { sampleStrideX, sampleStrideY, sampleStrideZ }
+  })
+}
 
 const coarseGridLength = (length: number, stride: number): number =>
   Math.ceil((length - GRID_LOOP_STEP) / stride) + GRID_LOOP_STEP
@@ -93,12 +116,12 @@ const sampleCoarseNoiseAt = (
   return { index, value: context.noise(x, y, z) }
 }
 
-const fillCoarseNoiseGrid = (samples: Float32Array, context: CoarseSamplingContext): void => {
+const fillCoarseNoiseGrid = (samples: DataView, context: CoarseSamplingContext): void => {
   for (let xIndex = 0; xIndex < context.width; xIndex += GRID_LOOP_STEP) {
     for (let zIndex = 0; zIndex < context.depth; zIndex += GRID_LOOP_STEP) {
       for (let yIndex = 0; yIndex < context.height; yIndex += GRID_LOOP_STEP) {
         const sample = sampleCoarseNoiseAt(context, xIndex, zIndex, yIndex)
-        samples[sample.index] = sample.value
+        samples.setFloat32(sample.index * FLOAT32_BYTES, sample.value, FLOAT32_LITTLE_ENDIAN)
       }
     }
   }
@@ -112,7 +135,7 @@ const sampleCoarseNoiseGrid3D = (
   const width = coarseGridLength(options.width, strides.sampleStrideX)
   const depth = coarseGridLength(options.depth, strides.sampleStrideZ)
   const height = coarseGridLength(options.height, strides.sampleStrideY)
-  const samples = new Float32Array(width * depth * height)
+  const samples = new DataView(new ArrayBuffer(width * depth * height * FLOAT32_BYTES))
   const context = {
     depth,
     dimensions: { depth, height },
@@ -145,23 +168,26 @@ const createInterpolationAxis = (index: number, maxIndex: number, stride: number
 const interpolate = (lower: number, upper: number, amount: number): number =>
   lower + (upper - lower) * amount
 
-const readCoarseSample = (grid: CoarseNoiseGrid3D, xIndex: number, zIndex: number, yIndex: number): number =>
-  requireDefined(
-    grid.samples[coarseSampleIndex(xIndex, zIndex, yIndex, { depth: grid.depth, height: grid.height })],
-    'coarse sample',
-  )
+const readCoarseSample = (
+  grid: CoarseNoiseGrid3D,
+  xIndex: number,
+  zIndex: number,
+  yIndex: number,
+): number => grid.samples.getFloat32(
+  coarseSampleIndex(xIndex, zIndex, yIndex, { depth: grid.depth, height: grid.height }) * FLOAT32_BYTES,
+  FLOAT32_LITTLE_ENDIAN,
+)
 
 const interpolateAtY = (
   grid: CoarseNoiseGrid3D,
   xIndex: number,
   zIndex: number,
   yAxis: InterpolationAxis,
-): number =>
-  interpolate(
-    readCoarseSample(grid, xIndex, zIndex, yAxis.lowerIndex),
-    readCoarseSample(grid, xIndex, zIndex, yAxis.upperIndex),
-    yAxis.amount,
-  )
+): number => {
+  const lower = readCoarseSample(grid, xIndex, zIndex, yAxis.lowerIndex)
+  const upper = readCoarseSample(grid, xIndex, zIndex, yAxis.upperIndex)
+  return interpolate(lower, upper, yAxis.amount)
+}
 
 type CellInterpolationContext = Readonly<{
   readonly grid: CoarseNoiseGrid3D
@@ -183,7 +209,6 @@ const interpolateAtZ = (context: CellInterpolationContext, xIndex: number): numb
     context.zAxis.upperIndex,
     context.yAxis,
   )
-
   return interpolate(lowerYAtLowerZ, lowerYAtUpperZ, context.zAxis.amount)
 }
 
@@ -196,7 +221,6 @@ const interpolateNoiseCell3D = (
   const context = { grid, xAxis, yAxis, zAxis }
   const lowerZAtLowerX = interpolateAtZ(context, xAxis.lowerIndex)
   const lowerZAtUpperX = interpolateAtZ(context, xAxis.upperIndex)
-
   return interpolate(lowerZAtLowerX, lowerZAtUpperX, xAxis.amount)
 }
 
@@ -221,7 +245,9 @@ const interpolateNoiseAt = (
   return interpolateNoiseCell3D(context.coarseGrid, xAxis, yAxis, zAxis)
 }
 
-const fillInterpolatedNoiseGrid = (context: InterpolatedSamplingContext): void => {
+const fillInterpolatedNoiseGrid = (
+  context: InterpolatedSamplingContext,
+): void => {
   for (let xIndex = 0; xIndex < context.options.width; xIndex += GRID_LOOP_STEP) {
     for (let zIndex = 0; zIndex < context.options.depth; zIndex += GRID_LOOP_STEP) {
       for (let yIndex = 0; yIndex < context.options.height; yIndex += GRID_LOOP_STEP) {
@@ -235,19 +261,22 @@ const fillInterpolatedNoiseGrid = (context: InterpolatedSamplingContext): void =
 export const sampleNoise3DInterpolatedGrid = (
   noise: NoiseFn3D,
   options: NoiseInterpolatedGrid3DOptions,
-): Float32Array => {
-  const normalizedOptions = normalizeNoiseGrid3DOptions(options)
-  const strides = normalizeInterpolationStrides(options)
-  const coarseGrid = sampleCoarseNoiseGrid3D(noise, normalizedOptions, strides)
-  const samples = new Float32Array(normalizedOptions.width * normalizedOptions.depth * normalizedOptions.height)
-  const context = {
-    coarseGrid,
-    dimensions: { depth: normalizedOptions.depth, height: normalizedOptions.height },
-    options: normalizedOptions,
-    samples,
-    strides,
-  }
-
-  fillInterpolatedNoiseGrid(context)
-  return samples
-}
+): Result.Result<Float32Array, RangeError> =>
+  Result.gen(function* sampleNoise3DInterpolatedGridResult() {
+    const normalizedOptions = yield* normalizeNoiseGrid3DOptions(options)
+    const strides = yield* normalizeInterpolationStrides(options)
+    const coarseGrid = sampleCoarseNoiseGrid3D(noise, normalizedOptions, strides)
+    const samples = new Float32Array(normalizedOptions.width * normalizedOptions.depth * normalizedOptions.height)
+    const context = {
+      coarseGrid,
+      dimensions: {
+        depth: normalizedOptions.depth,
+        height: normalizedOptions.height,
+      },
+      options: normalizedOptions,
+      samples,
+      strides,
+    }
+    fillInterpolatedNoiseGrid(context)
+    return samples
+  })

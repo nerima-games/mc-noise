@@ -1,9 +1,18 @@
+import { Result } from 'effect'
+import { BlockAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import { describe, expect, it } from 'vitest'
 import {
   END_ISLANDS_MAX_VALUE,
   END_ISLANDS_MIN_VALUE,
   createEndIslandsSampler,
 } from '../src/domain/end-islands.js'
+
+const unwrap = <Value, ErrorValue>(result: Result.Result<Value, ErrorValue>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 const SAMPLE_COORDINATES = [
   [-257, 193],
@@ -15,50 +24,75 @@ const SAMPLE_COORDINATES = [
 ] as const
 
 describe('End island density sampler', () => {
+  it('preserves the fixed-seed simplex value mapping', () => {
+    const sampler = unwrap(createEndIslandsSampler(0n))
+    const values = SAMPLE_COORDINATES.map(([x, z]) =>
+      unwrap(sampler.sample(BlockAxis(x), BlockAxis(z))),
+    )
+
+    expect(values).toEqual([
+      -0.6181237697601318,
+      -0.84375,
+      0.5625,
+      0.5625,
+      -0.84375,
+      0.2493494153022766,
+    ])
+  })
+
   it('is deterministic for a seed and changes with the seed', () => {
-    const samples = createEndIslandsSampler(0n)
-    const sameSamples = createEndIslandsSampler(0n)
-    const otherSamples = createEndIslandsSampler(1n)
-    const values = SAMPLE_COORDINATES.map(([x, z]) => samples.sample(x, z))
+    const samples = unwrap(createEndIslandsSampler(0n))
+    const sameSamples = unwrap(createEndIslandsSampler(0n))
+    const otherSamples = unwrap(createEndIslandsSampler(1n))
+    const values = SAMPLE_COORDINATES.map(([x, z]) =>
+      unwrap(samples.sample(BlockAxis(x), BlockAxis(z))),
+    )
 
     expect(values).toEqual(
-      SAMPLE_COORDINATES.map(([x, z]) => sameSamples.sample(x, z)),
+      SAMPLE_COORDINATES.map(([x, z]) => unwrap(sameSamples.sample(BlockAxis(x), BlockAxis(z)))),
     )
     expect(values).not.toEqual(
-      SAMPLE_COORDINATES.map(([x, z]) => otherSamples.sample(x, z)),
+      SAMPLE_COORDINATES.map(([x, z]) => unwrap(otherSamples.sample(BlockAxis(x), BlockAxis(z)))),
     )
   })
 
   it('keeps the official normalized range across negative and positive coordinates', () => {
-    const sampler = createEndIslandsSampler(42n)
+    const sampler = unwrap(createEndIslandsSampler(42n))
     const values = SAMPLE_COORDINATES.flatMap(([x, z]) => [
-      sampler.sample(x, z),
-      sampler.sample(z, x),
+      unwrap(sampler.sample(BlockAxis(x), BlockAxis(z))),
+      unwrap(sampler.sample(BlockAxis(z), BlockAxis(x))),
     ])
 
     expect(values.every(Number.isFinite)).toBe(true)
-    expect(values.every(value => value >= END_ISLANDS_MIN_VALUE)).toBe(true)
-    expect(values.every(value => value <= END_ISLANDS_MAX_VALUE)).toBe(true)
-    expect(values.some(value => value > END_ISLANDS_MIN_VALUE)).toBe(true)
+    expect(values.every((value) => value >= END_ISLANDS_MIN_VALUE)).toBe(true)
+    expect(values.every((value) => value <= END_ISLANDS_MAX_VALUE)).toBe(true)
+    expect(values.some((value) => value > END_ISLANDS_MIN_VALUE)).toBe(true)
   })
 
-  it('rejects non-bigint seeds and non-integral sample coordinates', () => {
-    expect(() => createEndIslandsSampler(0 as never)).toThrow(
-      'seed must be a bigint',
-    )
+  it('reports invalid seeds and block coordinates as Result failures', () => {
+    expect(Result.isFailure(createEndIslandsSampler(0 as never))).toBe(true)
 
-    const sampler = createEndIslandsSampler(0n)
-    expect(() => sampler.sample(0.5, 0)).toThrow(
-      'x must be a safe integer',
-    )
-    expect(() => sampler.sample(0, Number.POSITIVE_INFINITY)).toThrow(
-      'z must be a safe integer',
-    )
-    expect(() => sampler.sample(2147483648, 0)).toThrow(
-      'x must be a signed 32-bit integer',
-    )
-    expect(() => sampler.sample(0, -2147483649)).toThrow(
-      'z must be a signed 32-bit integer',
-    )
+    const sampler = unwrap(createEndIslandsSampler(0n))
+    expect(Result.isFailure(sampler.sample('0' as never, BlockAxis(0)))).toBe(true)
+    expect(Result.isFailure(sampler.sample(0.5 as never, BlockAxis(0)))).toBe(true)
+    expect(Result.isFailure(sampler.sample(BlockAxis(0), Number.POSITIVE_INFINITY as never))).toBe(true)
+    expect(Result.isFailure(sampler.sample(Number.MAX_SAFE_INTEGER + 1 as never, BlockAxis(0)))).toBe(true)
+  })
+
+  it('rejects block coordinates outside the signed 32-bit range', () => {
+    const sampler = unwrap(createEndIslandsSampler(0n))
+    const tooLarge = sampler.sample(2_147_483_648 as never, BlockAxis(0))
+    const tooSmall = sampler.sample(BlockAxis(0), -2_147_483_649 as never)
+
+    expect(Result.isFailure(tooLarge)).toBe(true)
+    if (Result.isFailure(tooLarge)) {
+      expect(tooLarge.failure).toBeInstanceOf(RangeError)
+      expect(tooLarge.failure.message).toContain('x must be a signed 32-bit integer')
+    }
+    expect(Result.isFailure(tooSmall)).toBe(true)
+    if (Result.isFailure(tooSmall)) {
+      expect(tooSmall.failure).toBeInstanceOf(RangeError)
+      expect(tooSmall.failure.message).toContain('z must be a signed 32-bit integer')
+    }
   })
 })

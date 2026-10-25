@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import { createSimplexNoise2D, createSimplexNoise3D } from '../src/domain/simplex.js'
 import { NoiseSeed, mulberry32 } from '../src/domain/seed.js'
+
+const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 describe('simplex noise primitives', () => {
   it('is deterministic for the same seed and changes with the seed', () => {
@@ -14,12 +22,12 @@ describe('simplex noise primitives', () => {
       [1.25, 2.5, -3.75],
       [-3.75, 4.125, 2.25],
     ] as const
-    const noise2D = createSimplexNoise2D(mulberry32(NoiseSeed(42)))
-    const sameNoise2D = createSimplexNoise2D(mulberry32(NoiseSeed(42)))
-    const otherNoise2D = createSimplexNoise2D(mulberry32(NoiseSeed(43)))
-    const noise3D = createSimplexNoise3D(mulberry32(NoiseSeed(42)))
-    const sameNoise3D = createSimplexNoise3D(mulberry32(NoiseSeed(42)))
-    const otherNoise3D = createSimplexNoise3D(mulberry32(NoiseSeed(43)))
+    const noise2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(42))))
+    const sameNoise2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(42))))
+    const otherNoise2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(43))))
+    const noise3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(42))))
+    const sameNoise3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(42))))
+    const otherNoise3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(43))))
 
     expect(samples2D.map(([x, z]) => noise2D(x, z))).toEqual(
       samples2D.map(([x, z]) => sameNoise2D(x, z)),
@@ -36,8 +44,8 @@ describe('simplex noise primitives', () => {
   })
 
   it('covers simplex cells, rank orderings, and finite tails', () => {
-    const noise2D = createSimplexNoise2D(mulberry32(NoiseSeed(7)))
-    const noise3D = createSimplexNoise3D(mulberry32(NoiseSeed(7)))
+    const noise2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(7))))
+    const noise3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(7))))
     const values2D = ([
       [0.1, 0.2],
       [0.2, 0.1],
@@ -66,33 +74,42 @@ describe('simplex noise primitives', () => {
   })
 
   it('applies finite origins and rejects non-finite origins', () => {
-    const base2D = createSimplexNoise2D(mulberry32(NoiseSeed(9)), {
+    const base2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(9)), {
       originX: 0,
       originZ: 0,
-    })
-    const shifted2D = createSimplexNoise2D(mulberry32(NoiseSeed(9)), {
+    }))
+    const shifted2D = expectSuccess(createSimplexNoise2D(mulberry32(NoiseSeed(9)), {
       originX: 0.25,
       originZ: -0.5,
-    })
-    const base3D = createSimplexNoise3D(mulberry32(NoiseSeed(9)), {
+    }))
+    const base3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(9)), {
       originX: 0,
       originY: 0,
       originZ: 0,
-    })
-    const shifted3D = createSimplexNoise3D(mulberry32(NoiseSeed(9)), {
+    }))
+    const shifted3D = expectSuccess(createSimplexNoise3D(mulberry32(NoiseSeed(9)), {
       originX: 0.25,
       originY: -0.5,
       originZ: 0.75,
-    })
+    }))
 
     expect(shifted2D(0.4, -0.7)).toBe(base2D(0.65, -1.2))
     expect(shifted3D(0.4, -0.7, 0.9)).toBe(base3D(0.65, -1.2, 1.65))
-    expect(() => createSimplexNoise2D(mulberry32(NoiseSeed(9)), { originX: Number.NaN })).toThrow(
-      'originX must be finite',
-    )
-    expect(() => createSimplexNoise3D(mulberry32(NoiseSeed(9)), { originY: Infinity })).toThrow(
-      'originY must be finite',
-    )
+    const invalid2D = createSimplexNoise2D(mulberry32(NoiseSeed(9)), { originX: Number.NaN })
+    expect(Result.isFailure(invalid2D)).toBe(true)
+    if (Result.isFailure(invalid2D)) {
+      expect(invalid2D.failure.message).toBe('originX must be finite')
+    }
+    const invalid3D = createSimplexNoise3D(mulberry32(NoiseSeed(9)), { originY: Infinity })
+    expect(Result.isFailure(invalid3D)).toBe(true)
+    if (Result.isFailure(invalid3D)) {
+      expect(invalid3D.failure.message).toBe('originY must be finite')
+    }
+    const invalidZ = createSimplexNoise2D(mulberry32(NoiseSeed(9)), { originZ: Number.NaN })
+    expect(Result.isFailure(invalidZ)).toBe(true)
+    if (Result.isFailure(invalidZ)) {
+      expect(invalidZ.failure.message).toBe('originZ must be finite')
+    }
   })
 
   it('uses randomized origins before building the permutation', () => {
@@ -108,11 +125,11 @@ describe('simplex noise primitives', () => {
       }
     }
 
-    const randomizedOrigins = createSimplexNoise2D(createSequenceRandom())
-    const explicitOrigins = createSimplexNoise2D(createSequenceRandom(), {
+    const randomizedOrigins = expectSuccess(createSimplexNoise2D(createSequenceRandom()))
+    const explicitOrigins = expectSuccess(createSimplexNoise2D(createSequenceRandom(), {
       originX: 64,
       originZ: 64,
-    })
+    }))
 
     expect(randomizedOrigins(0.4, -0.7)).toBe(explicitOrigins(0.4, -0.7))
   })
