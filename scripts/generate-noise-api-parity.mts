@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   NOISE_API_PARITY_BASELINE,
+  NOISE_API_PARITY_SAMPLE_COUNT,
   captureNoiseApiParitySamples,
 } from '../test/noise-api-parity-support.js'
 
@@ -37,8 +38,10 @@ const baselineApi: object = await import(
   schemaVersion: 1,
 }
 
-if (fixture.samples.length !== 39) {
-  throw new Error(`expected 39 parity samples, received ${fixture.samples.length}`)
+if (fixture.samples.length !== NOISE_API_PARITY_SAMPLE_COUNT) {
+  throw new Error(
+    `expected ${NOISE_API_PARITY_SAMPLE_COUNT} parity samples, received ${fixture.samples.length}`,
+  )
 }
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..'),

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as api from '../src/index.js'
 import {
   NOISE_API_PARITY_BASELINE,
+  NOISE_API_PARITY_SAMPLE_COUNT,
   captureNoiseApiParitySamples,
 } from './noise-api-parity-support.js'
 
@@ -11,10 +12,10 @@ const fixture: unknown = JSON.parse(
 )
 
 describe('fixed-seed public API parity', () => {
-  it('matches all 46 outputs captured from origin/main', () => {
+  it('matches all outputs captured from origin/main', () => {
     const samples = captureNoiseApiParitySamples(api)
 
-    expect(samples).toHaveLength(46)
+    expect(samples).toHaveLength(NOISE_API_PARITY_SAMPLE_COUNT)
     expect(samples.some((sample) => sample.id === 'density.end-islands.seed-42')).toBe(true)
     expect(samples.some((sample) => sample.id === 'noise.simplex.2d')).toBe(true)
     expect(samples.some((sample) => sample.id === 'noise.simplex.3d')).toBe(true)

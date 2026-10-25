@@ -535,5 +535,7 @@ const definitions: readonly SampleDefinition[] = [
   },
 ]
 
+export const NOISE_API_PARITY_SAMPLE_COUNT: number = definitions.length
+
 export const captureNoiseApiParitySamples = (api: object): readonly NoiseApiParitySample[] =>
   definitions.map((definition) => defineSample(definition, api))
