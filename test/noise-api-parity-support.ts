@@ -21,6 +21,8 @@ const NOISE_SEED = 20_260_726
 const VALUE_NOISE_SEED = 42
 const SAMPLE_X = 12.25
 const SAMPLE_Z = -9.5
+const MINECRAFT_WORLD_X = 1037
+const MINECRAFT_WORLD_Z = -829
 
 const invoke = (target: object, name: string, arguments_: readonly unknown[] = []): unknown => {
   const member: unknown = Reflect.get(target, name)
@@ -62,6 +64,9 @@ const unwrap = (value: unknown): unknown => {
 }
 
 const normalize = (value: unknown): JsonValue => {
+  if (typeof value === 'undefined') {
+    return null
+  }
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return value
   }
@@ -78,6 +83,13 @@ const normalize = (value: unknown): JsonValue => {
     return Array.from(value, normalize)
   }
   if (value !== null && typeof value === 'object') {
+    const optionTag: unknown = Reflect.get(value, '_tag')
+    if (optionTag === 'None') {
+      return null
+    }
+    if (optionTag === 'Some') {
+      return normalize(Reflect.get(value, 'value'))
+    }
     return Object.fromEntries(
       Object.entries(value)
         .sort(([left], [right]) => left.localeCompare(right))
@@ -155,7 +167,7 @@ const definitions: readonly SampleDefinition[] = [
     id: 'noise.field.noise3d',
     input: { seed: NOISE_SEED, x: SAMPLE_X, y: 64.5, z: SAMPLE_Z },
   },
-  ...(['base2d', 'continentalness', 'erosion', 'weirdness'] as const).map((channel) => ({
+  ...(['base2d', 'base3d', 'continentalness', 'erosion', 'jaggedness', 'weirdness'] as const).map((channel) => ({
     api: 'createNoiseField().channel()',
     evaluate: (api: object) => {
       const field = asObject(invoke(api, 'createNoiseField', [NOISE_SEED]), 'createNoiseField')
@@ -169,6 +181,41 @@ const definitions: readonly SampleDefinition[] = [
     id: `noise.field.channel.${channel}`,
     input: { channel, seed: NOISE_SEED, x: SAMPLE_X, z: SAMPLE_Z },
   })),
+  {
+    api: 'minecraftClimateAt()',
+    evaluate: (api) => invoke(api, 'minecraftClimateAt', [NOISE_SEED, MINECRAFT_WORLD_X, MINECRAFT_WORLD_Z]),
+    family: 'climate',
+    id: 'climate.minecraft-climate-at.world-1037-minus-829',
+    input: { seed: NOISE_SEED, wx: MINECRAFT_WORLD_X, wz: MINECRAFT_WORLD_Z },
+  },
+  {
+    api: 'minecraftContinentalnessAt()',
+    evaluate: (api) => invoke(api, 'minecraftContinentalnessAt', [NOISE_SEED, MINECRAFT_WORLD_X, MINECRAFT_WORLD_Z]),
+    family: 'climate',
+    id: 'climate.minecraft-continentalness-at.world-1037-minus-829',
+    input: { seed: NOISE_SEED, wx: MINECRAFT_WORLD_X, wz: MINECRAFT_WORLD_Z },
+  },
+  {
+    api: 'minecraftSurfaceHeightAt()',
+    evaluate: (api) => invoke(api, 'minecraftSurfaceHeightAt', [NOISE_SEED, MINECRAFT_WORLD_X, MINECRAFT_WORLD_Z]),
+    family: 'climate',
+    id: 'climate.minecraft-surface-height-at.world-1037-minus-829',
+    input: { seed: NOISE_SEED, wx: MINECRAFT_WORLD_X, wz: MINECRAFT_WORLD_Z },
+  },
+  {
+    api: 'minecraftSurfaceBiomeAt()',
+    evaluate: (api) => invoke(api, 'minecraftSurfaceBiomeAt', [NOISE_SEED, MINECRAFT_WORLD_X, MINECRAFT_WORLD_Z]),
+    family: 'climate',
+    id: 'climate.minecraft-surface-biome-at.world-1037-minus-829',
+    input: { seed: NOISE_SEED, wx: MINECRAFT_WORLD_X, wz: MINECRAFT_WORLD_Z },
+  },
+  {
+    api: 'minecraftTerrainColumnAt()',
+    evaluate: (api) => invoke(api, 'minecraftTerrainColumnAt', [NOISE_SEED, MINECRAFT_WORLD_X, MINECRAFT_WORLD_Z]),
+    family: 'climate',
+    id: 'climate.minecraft-terrain-column-at.world-1037-minus-829',
+    input: { seed: NOISE_SEED, wx: MINECRAFT_WORLD_X, wz: MINECRAFT_WORLD_Z },
+  },
   {
     api: 'mulberry32()',
     evaluate: (api) => {

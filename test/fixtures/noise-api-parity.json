@@ -73,6 +73,18 @@
     {
       "api": "createNoiseField().channel()",
       "family": "noise",
+      "id": "noise.field.channel.base3d",
+      "input": {
+        "channel": "base3d",
+        "seed": 20260726,
+        "x": 12.25,
+        "z": -9.5
+      },
+      "output": -0.1597777815609964
+    },
+    {
+      "api": "createNoiseField().channel()",
+      "family": "noise",
       "id": "noise.field.channel.continentalness",
       "input": {
         "channel": "continentalness",
@@ -97,6 +109,18 @@
     {
       "api": "createNoiseField().channel()",
       "family": "noise",
+      "id": "noise.field.channel.jaggedness",
+      "input": {
+        "channel": "jaggedness",
+        "seed": 20260726,
+        "x": 12.25,
+        "z": -9.5
+      },
+      "output": 0.42458334042686824
+    },
+    {
+      "api": "createNoiseField().channel()",
+      "family": "noise",
       "id": "noise.field.channel.weirdness",
       "input": {
         "channel": "weirdness",
@@ -105,6 +129,84 @@
         "z": -9.5
       },
       "output": -0.22655170983049325
+    },
+    {
+      "api": "minecraftClimateAt()",
+      "family": "climate",
+      "id": "climate.minecraft-climate-at.world-1037-minus-829",
+      "input": {
+        "seed": 20260726,
+        "wx": 1037,
+        "wz": -829
+      },
+      "output": {
+        "continentalness": -0.5042915772166008,
+        "erosion": -0.9252701862988277,
+        "humidity": 0.2849211875674333,
+        "pv": -0.4715009759152782,
+        "riverNoise": 0.39254681797484686,
+        "temperature": 0.3859643926976391
+      }
+    },
+    {
+      "api": "minecraftContinentalnessAt()",
+      "family": "climate",
+      "id": "climate.minecraft-continentalness-at.world-1037-minus-829",
+      "input": {
+        "seed": 20260726,
+        "wx": 1037,
+        "wz": -829
+      },
+      "output": 0.24785421139169964
+    },
+    {
+      "api": "minecraftSurfaceHeightAt()",
+      "family": "climate",
+      "id": "climate.minecraft-surface-height-at.world-1037-minus-829",
+      "input": {
+        "seed": 20260726,
+        "wx": 1037,
+        "wz": -829
+      },
+      "output": 49
+    },
+    {
+      "api": "minecraftSurfaceBiomeAt()",
+      "family": "climate",
+      "id": "climate.minecraft-surface-biome-at.world-1037-minus-829",
+      "input": {
+        "seed": 20260726,
+        "wx": 1037,
+        "wz": -829
+      },
+      "output": {
+        "biome": "OCEAN",
+        "surfaceY": 49
+      }
+    },
+    {
+      "api": "minecraftTerrainColumnAt()",
+      "family": "climate",
+      "id": "climate.minecraft-terrain-column-at.world-1037-minus-829",
+      "input": {
+        "seed": 20260726,
+        "wx": 1037,
+        "wz": -829
+      },
+      "output": {
+        "biome": "OCEAN",
+        "initialSurfaceY": 49,
+        "lakeBasinY": null,
+        "surface": {
+          "filler": 5,
+          "fillerDepth": 4,
+          "submerged": true,
+          "top": 5
+        },
+        "surfaceY": 49,
+        "temperature": 0.3859643926976391,
+        "waterLevel": 63
+      }
     },
     {
       "api": "mulberry32()",
