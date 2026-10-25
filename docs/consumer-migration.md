@@ -4,7 +4,11 @@ Use this guide when upgrading from mc-noise `0.4.x` to `0.5.0`.
 
 mc-noise 0.5 moves to Effect 4 and mc-kernel 0.9. Several public inputs now use
 domain brands, and APIs that can reject runtime input return typed `Result`
-values. Plan caller updates before upgrading, then change the dependency and its affected call sites in the same update.
+values. Plan caller updates before upgrading. Change the dependency and affected
+call sites in the same pull request.
+
+The generated API tables compare against the exact 0.4.x revision named in their
+heading. Other 0.4.x patches may have different declarations.
 
 ## Seed inputs
 
@@ -26,7 +30,9 @@ const deriveChannelSeedFromUntrustedSeed = (rawSeed: number) => {
   if (Result.isFailure(seed)) {
     return Result.fail(seed.failure)
   }
-  return Result.succeed(channelSeed(seed.success, NoiseChannelLabel('terrain')))
+  return Result.flatMap(NoiseChannelLabel.result('terrain'), (channel) =>
+    Result.succeed(channelSeed(seed.success, channel)),
+  )
 }
 ```
 
@@ -148,8 +154,9 @@ represents absence. An operation that can also fail validation may return a
 nested `Result.Result<Option.Option<Value>, E>`, where `E` is its error type.
 For example, `findSpawnPosition` returns
 `Result.Result<Option.Option<BlockPosition>, TypeError | RangeError>`. Handle
-the outer result first: a failure indicates invalid input, `None` means no
-spawn position was found, and `Some(position)` contains the `BlockPosition`.
+the outer result first: a failure indicates invalid input. Use `Option.isNone`
+to check whether no spawn position was found; when `Option.isSome` is true,
+`option.value` contains the `BlockPosition`.
 
 ## Declaration signature changes
 
