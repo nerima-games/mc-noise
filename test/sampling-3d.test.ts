@@ -15,6 +15,14 @@ const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): V
   return result.success
 }
 
+const expectRangeError = <Success>(result: Result.Result<Success, RangeError>, message: string): void => {
+  expect(Result.isFailure(result)).toBe(true)
+  if (Result.isFailure(result)) {
+    expect(result.failure).toBeInstanceOf(RangeError)
+    expect(result.failure.message).toBe(message)
+  }
+}
+
 describe('sampleNoise3DBatch', () => {
   it('preserves point order in a typed result', () => {
     const samples = expectSuccess(sampleNoise3DBatch((x, y, z) => x * 100 + y * 10 + z, [
@@ -27,10 +35,13 @@ describe('sampleNoise3DBatch', () => {
   })
 
   it('rejects non-finite coordinates and sparse points', () => {
-    const invalidCoordinate = sampleNoise3DBatch(() => 0, [{ x: Number.NaN, y: 0, z: 0 }])
-    expect(Result.isFailure(invalidCoordinate)).toBe(true)
-    expect(Result.isFailure(sampleNoise3DBatch(() => 0, [{ x: 0, y: Number.NaN, z: 0 }]))).toBe(true)
-    expect(Result.isFailure(sampleNoise3DBatch(() => 0, [{ x: 0, y: 0, z: Number.NaN }]))).toBe(true)
+    const invalidX = sampleNoise3DBatch(() => 0, [{ x: Number.NaN, y: 0, z: 0 }])
+    const invalidY = sampleNoise3DBatch(() => 0, [{ x: 0, y: Number.NaN, z: 0 }])
+    const invalidZ = sampleNoise3DBatch(() => 0, [{ x: 0, y: 0, z: Number.NaN }])
+
+    expectRangeError(invalidX, 'point.x must be finite, received NaN')
+    expectRangeError(invalidY, 'point.y must be finite, received NaN')
+    expectRangeError(invalidZ, 'point.z must be finite, received NaN')
 
     const points: Array<NoisePoint3D> = [{ x: 0, y: 0, z: 0 }]
     points.length = 2

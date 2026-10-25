@@ -9,6 +9,14 @@ const expectSuccess = <Value, Failure>(result: Result.Result<Value, Failure>): V
   return result.success
 }
 
+const expectRangeError = <Success>(result: Result.Result<Success, RangeError>, message: string): void => {
+  expect(Result.isFailure(result)).toBe(true)
+  if (Result.isFailure(result)) {
+    expect(result.failure).toBeInstanceOf(RangeError)
+    expect(result.failure.message).toBe(message)
+  }
+}
+
 describe('sampleNoise2DBatch', () => {
   it('preserves point order in a typed result', () => {
     const samples = expectSuccess(sampleNoise2DBatch((x, z) => x * 10 + z, [
@@ -21,9 +29,11 @@ describe('sampleNoise2DBatch', () => {
   })
 
   it('rejects non-finite coordinates', () => {
-    const result = sampleNoise2DBatch(() => 0, [{ x: Number.NaN, z: 0 }])
-    expect(Result.isFailure(result)).toBe(true)
-    expect(Result.isFailure(sampleNoise2DBatch(() => 0, [{ x: 0, z: Number.NaN }]))).toBe(true)
+    const invalidX = sampleNoise2DBatch(() => 0, [{ x: Number.NaN, z: 0 }])
+    const invalidZ = sampleNoise2DBatch(() => 0, [{ x: 0, z: Number.NaN }])
+
+    expectRangeError(invalidX, 'point.x must be finite, received NaN')
+    expectRangeError(invalidZ, 'point.z must be finite, received NaN')
   })
 
   it('rejects a sparse array whose length outruns its elements', () => {
