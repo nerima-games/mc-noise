@@ -9,25 +9,33 @@ values. Update callers at those boundaries before upgrading.
 
 ## Seed inputs
 
-`createNoiseField` now requires `NoiseSeed`. Validate untrusted values with the
-brand's `result` constructor and pass the checked value onward:
+`createNoiseField` already accepted `NoiseSeed` before 0.5. In 0.5, the
+value-noise APIs `channelSeed`, `latticeValue`, `valueNoise2D`, and `fbm2D` now
+require that brand for their seed argument. Validate untrusted numbers with
+`NoiseSeed.result` and pass the checked value onward:
 
 ```ts
 import { Result } from 'effect'
-import { createNoiseField, NoiseSeed } from '@nerima-games/mc-noise'
+import {
+  channelSeed,
+  NoiseChannelLabel,
+  NoiseSeed,
+} from '@nerima-games/mc-noise'
 
-const createFieldFromUntrustedSeed = (rawSeed: number) => {
+const deriveChannelSeedFromUntrustedSeed = (rawSeed: number) => {
   const seed = NoiseSeed.result(rawSeed)
   if (Result.isFailure(seed)) {
     return Result.fail(seed.failure)
   }
-  return Result.succeed(createNoiseField(seed.success))
+  return Result.succeed(channelSeed(seed.success, NoiseChannelLabel('terrain')))
 }
 ```
 
-`NoiseSeed.result` accepts only safe integers. Seed normalization to a uint32
-bit pattern remains in the existing PRNG and derived-seed path, so equivalent
-bit patterns continue to produce the same field.
+`NoiseSeed.result` accepts only safe integers. Calling `NoiseSeed(value)`
+directly throws for invalid input, so use it only when the value is already
+validated. Seed normalization to a uint32 bit pattern remains in the PRNG and
+derived-seed paths, so equivalent bit patterns continue to produce the same
+field.
 
 ## mc-kernel 0.9 coordinate brands
 
