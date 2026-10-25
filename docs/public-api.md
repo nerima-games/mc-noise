@@ -23,8 +23,8 @@ and `PositionAxis` are separate coordinate domains. Import `BlockType` from
 For untrusted numeric input, use a brand constructor's `.result` method and
 check its failure before passing the branded value onward. `ChunkHeight` is a
 kernel function that already returns `Result`. Calling a brand constructor
-directly is appropriate only when the input is already known to satisfy its
-domain.
+directly throws when its input is invalid, so call it only when the input is
+already known to satisfy its domain.
 
 ```ts
 import { Option, Result } from 'effect'
@@ -72,6 +72,7 @@ untrusted input; it returns a typed failure instead of throwing.
 ```ts
 export type NoiseSeed = number & Brand.Brand<'NoiseSeed'>
 export const NoiseSeed: Brand.Constructor<NoiseSeed>
+export const toUint32 = (seed: NoiseSeed): NoiseSeed
 export const deriveSeed = (seed: NoiseSeed, channel: NoiseChannel): NoiseSeed
 export const mulberry32 = (seed: NoiseSeed): RandFn
 ```
@@ -85,6 +86,15 @@ returns `Result`.
 `NoiseField.channel`. `NoiseChannelLabel` is an open string brand for deriving
 independent seeds with `channelSeed`; it does not add names to the field's
 published channel set.
+
+World-seed APIs use `NoiseSeed`, including `createNoiseField`,
+`createNoisePrimitives`, `toUint32`, `deriveSeed`, `mulberry32`, `channelSeed`,
+`latticeValue`, `valueNoise2D`, `fbm2D`, and the Minecraft terrain helpers
+`minecraftContinentalnessAt`, `minecraftSurfaceHeightAt`, `minecraftClimateAt`,
+`minecraftSurfaceBiomeAt`, `minecraftBiomeFor`, and `minecraftTerrainColumnAt`.
+Calling `NoiseSeed(value)` directly throws for invalid input, so use it only for
+values already known to be safe integers. Use `NoiseSeed.result(value)` for
+untrusted input.
 
 ```ts
 export type RandFn = () => number
@@ -273,10 +283,17 @@ export const findClimateSpawnPosition = (
 
 Density values, bounds, scales, cell sizes, and field names are branded.
 Positions use `PositionAxis`, and discrete block coordinates use `BlockAxis`.
-Fallible node construction, evaluation, codec operations, and router validation
-return `Result` with `TypeError` or `RangeError` failures.
+Fallible node construction, evaluation, blender construction, and router
+validation return `Result` with `TypeError` or `RangeError` failures.
 
 ```ts
+export type DensityFunctionResult<Value> = Result.Result<Value, TypeError | RangeError>
+export const createBlender = (
+  options?: BlenderOptions,
+): DensityFunctionResult<Blender>
+export const requireBlender = (
+  value: unknown,
+): DensityFunctionResult<Blender>
 export const densityConstant = (
   value: DensityValue,
 ): DensityFunctionResult<DensityFunction>
@@ -287,13 +304,42 @@ export const evaluateDensityFunction = (
 ): Result.Result<DensityValue, TypeError | RangeError>
 ```
 
+`BlenderOptions` callbacks return `DensityFunctionResult`. `createBlender`
+checks the options, and the resulting callbacks validate each returned `Result`
+when invoked. `requireBlender` accepts an unknown value and returns a validated
+`Blender` inside `Result`.
+
 `encodeDensityFunction` and `decodeDensityFunction` convert between density
 values and the JSON-shaped `DensityFunctionEncoded` representation.
 `stringifyDensityFunction` and `parseDensityFunction` serialize and parse that
-representation as text. All four operations return `Result`, and decoding
-validates wire data before creating domain values. The encoded `source` and
-`seed` fields are serialized strings; they remain wire fields rather than domain
-scalar brands.
+representation as text. The codec error union includes `SchemaError` for JSON
+schema decoding, plus `TypeError` and `RangeError` for other invalid inputs.
+Decoding validates wire data before creating domain values. The encoded `source`
+and `seed` fields are serialized strings; they remain wire fields rather than
+domain scalar brands.
+
+```ts
+import type { SchemaError } from 'effect/Schema'
+
+export type DensityFunctionCodecError = SchemaError | TypeError | RangeError
+export type DensityFunctionCodecResult<Value> = Result.Result<Value, DensityFunctionCodecError>
+export const encodeDensityFunction = (
+  density: DensityFunction,
+  options?: DensityFunctionCodecOptions,
+): DensityFunctionCodecResult<DensityFunctionEncoded>
+export const decodeDensityFunction = (
+  value: unknown,
+  options?: DensityFunctionCodecOptions,
+): DensityFunctionCodecResult<DensityFunction>
+export const stringifyDensityFunction = (
+  density: DensityFunction,
+  options?: DensityFunctionCodecOptions,
+): DensityFunctionCodecResult<string>
+export const parseDensityFunction = (
+  serialized: string,
+  options?: DensityFunctionCodecOptions,
+): DensityFunctionCodecResult<DensityFunction>
+```
 
 `mc-noise` owns portable noise, climate, biome, terrain-column, lake, surface,
 and DensityFunction definitions. World-specific terrain equations, control
