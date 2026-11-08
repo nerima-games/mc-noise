@@ -1,0 +1,86 @@
+[
+  {
+    "count": 1,
+    "file": "scripts/bench-noise.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runSync( Effect.reduce( () => ({ total: 0, amplitude: 1, frequency: 1, maxValue: 0 }), (accumulator) => Effect.succeed({ total: accumulator.total + noiseFn(x * accumulator.frequency, z * accumulator.frequency) * accumulator.amplitude, maxValue: accumulator.maxValue + accumulator.amplitude, amplitude: accumulator.amplitude * params.persistence, frequency: accumulator.frequency * params.lacunarity, }), )(EffectArray.makeBy(params.octaves, (index) => index)), )"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/density-function-codec.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/density-function-runtime.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 4,
+    "file": "src/domain/number-validation.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "string"
+  },
+  {
+    "count": 4,
+    "file": "src/domain/value-noise.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/density-function-codec.ts",
+    "ruleId": "no-raw-exported-function-return",
+    "text": "string"
+  },
+  {
+    "count": 5,
+    "file": "src/domain/primitive-batches.ts",
+    "ruleId": "no-raw-exported-function-return",
+    "text": "number"
+  },
+  {
+    "count": 12,
+    "file": "src/domain/density-function-codec.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/density-function-node.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/density-function-runtime.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/domain/sampling-3d-grid.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/domain/sampling-3d.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 4,
+    "file": "src/domain/sampling.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 5,
+    "file": "src/domain/simplex.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  }
+]
