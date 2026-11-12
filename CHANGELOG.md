@@ -1,5 +1,11 @@
 # @nerima-games/mc-noise
 
+## 0.7.0
+
+### Minor Changes
+
+- Align the `@nerima-games/mc-kernel` dependency with 0.17.0 to keep branded types consistent across the release train.
+
 ## 0.6.0
 
 ### Minor Changes
