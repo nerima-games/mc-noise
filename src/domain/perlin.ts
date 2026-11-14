@@ -104,7 +104,6 @@ const lerp = (from: number, to: number, t: number): number => from + t * (to - f
  */
 export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
   const permutation = buildPermutationTable(rand).values
-  const at = (index: number): number => permutation.getUint8(index & PERMUTATION_MASK)
 
   return (x, z) => {
     const floorX = Math.floor(x),
@@ -116,22 +115,23 @@ export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
     const easedX = fade(fracX),
       easedZ = fade(fracZ)
 
-    const rowA = (at(cellX) + cellZ) & PERMUTATION_MASK
-    const rowB = (at(cellX + LATTICE_NEIGHBOR_OFFSET) + cellZ) & PERMUTATION_MASK
+    const rowA = (permutation.getUint8(cellX) + cellZ) & PERMUTATION_MASK
+    const rowB =
+      (permutation.getUint8((cellX + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK) + cellZ) & PERMUTATION_MASK
 
     const bottom = lerp(
-      gradient2d(at(rowA), fracX, fracZ),
-      gradient2d(at(rowB), fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
+      gradient2d(permutation.getUint8(rowA), fracX, fracZ),
+      gradient2d(permutation.getUint8(rowB), fracX - LATTICE_NEIGHBOR_OFFSET, fracZ),
       easedX,
     )
     const top = lerp(
       gradient2d(
-        at(rowA + LATTICE_NEIGHBOR_OFFSET),
+        permutation.getUint8((rowA + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
         fracX,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
       ),
       gradient2d(
-        at(rowB + LATTICE_NEIGHBOR_OFFSET),
+        permutation.getUint8((rowB + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
         fracX - LATTICE_NEIGHBOR_OFFSET,
         fracZ - LATTICE_NEIGHBOR_OFFSET,
       ),
@@ -145,7 +145,6 @@ export const createPerlinNoise2D = (rand: RandFn): NoiseFn2D => {
 /** A 3D Perlin sampler. Same contract: `createPerlinNoise2D`. */
 export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {
   const permutation = buildPermutationTable(rand).values
-  const at = (index: number): number => permutation.getUint8(index & PERMUTATION_MASK)
 
   return (x, y, z) => {
     const floorX = Math.floor(x),
@@ -161,32 +160,52 @@ export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {
       easedY = fade(fracY),
       easedZ = fade(fracZ)
 
-    const a = at(cellX) + cellY,
-      b = at(cellX + LATTICE_NEIGHBOR_OFFSET) + cellY
-    const aa = at(a) + cellZ,
-      ab = at(a + LATTICE_NEIGHBOR_OFFSET) + cellZ,
-      ba = at(b) + cellZ,
-      bb = at(b + LATTICE_NEIGHBOR_OFFSET) + cellZ
+    const a = permutation.getUint8(cellX) + cellY,
+      b = permutation.getUint8((cellX + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK) + cellY
+    const aa = permutation.getUint8(a & PERMUTATION_MASK) + cellZ,
+      ab = permutation.getUint8((a + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK) + cellZ,
+      ba = permutation.getUint8(b & PERMUTATION_MASK) + cellZ,
+      bb = permutation.getUint8((b + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK) + cellZ
 
     const value = lerp(
       lerp(
         lerp(
-          gradient3d(at(aa), fracX, fracY, fracZ),
-          gradient3d(at(ba), fracX - LATTICE_NEIGHBOR_OFFSET, fracY, fracZ),
+          gradient3d(permutation.getUint8(aa & PERMUTATION_MASK), fracX, fracY, fracZ),
+          gradient3d(
+            permutation.getUint8(ba & PERMUTATION_MASK),
+            fracX - LATTICE_NEIGHBOR_OFFSET,
+            fracY,
+            fracZ,
+          ),
           easedX,
         ),
         lerp(
-          gradient3d(at(ab), fracX, fracY - LATTICE_NEIGHBOR_OFFSET, fracZ),
-          gradient3d(at(bb), fracX - LATTICE_NEIGHBOR_OFFSET, fracY - LATTICE_NEIGHBOR_OFFSET, fracZ),
+          gradient3d(
+            permutation.getUint8(ab & PERMUTATION_MASK),
+            fracX,
+            fracY - LATTICE_NEIGHBOR_OFFSET,
+            fracZ,
+          ),
+          gradient3d(
+            permutation.getUint8(bb & PERMUTATION_MASK),
+            fracX - LATTICE_NEIGHBOR_OFFSET,
+            fracY - LATTICE_NEIGHBOR_OFFSET,
+            fracZ,
+          ),
           easedX,
         ),
         easedY,
       ),
       lerp(
         lerp(
-          gradient3d(at(aa + LATTICE_NEIGHBOR_OFFSET), fracX, fracY, fracZ - LATTICE_NEIGHBOR_OFFSET),
           gradient3d(
-            at(ba + LATTICE_NEIGHBOR_OFFSET),
+            permutation.getUint8((aa + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
+            fracX,
+            fracY,
+            fracZ - LATTICE_NEIGHBOR_OFFSET,
+          ),
+          gradient3d(
+            permutation.getUint8((ba + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
             fracX - LATTICE_NEIGHBOR_OFFSET,
             fracY,
             fracZ - LATTICE_NEIGHBOR_OFFSET,
@@ -195,13 +214,13 @@ export const createPerlinNoise3D = (rand: RandFn): NoiseFn3D => {
         ),
         lerp(
           gradient3d(
-            at(ab + LATTICE_NEIGHBOR_OFFSET),
+            permutation.getUint8((ab + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
             fracX,
             fracY - LATTICE_NEIGHBOR_OFFSET,
             fracZ - LATTICE_NEIGHBOR_OFFSET,
           ),
           gradient3d(
-            at(bb + LATTICE_NEIGHBOR_OFFSET),
+            permutation.getUint8((bb + LATTICE_NEIGHBOR_OFFSET) & PERMUTATION_MASK),
             fracX - LATTICE_NEIGHBOR_OFFSET,
             fracY - LATTICE_NEIGHBOR_OFFSET,
             fracZ - LATTICE_NEIGHBOR_OFFSET,

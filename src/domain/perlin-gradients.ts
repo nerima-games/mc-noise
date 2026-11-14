@@ -34,48 +34,51 @@ const gradient2d = (hash: number, x: number, z: number): number => {
 
 /** `gradient3d`'s hash decomposition: 4 bits select among the 12 edge-midpoint vectors of a cube. */
 const GRADIENT_3D_MASK = 15
-/** Below this, `u` takes the x axis; at or above it, `u` takes the y axis. */
-const GRADIENT_3D_U_SPLIT = 8
-/** Below this, `v` takes the y axis; the two named exceptions above it take x instead of the default z. */
-const GRADIENT_3D_V_SPLIT = 4
-const GRADIENT_3D_V_EXCEPTION_A = 12
-const GRADIENT_3D_V_EXCEPTION_B = 14
-/** Low bit of `h` selects the sign combination; the next bit selects the magnitude combination. */
-const GRADIENT_3D_SIGN_BIT = 1
-const GRADIENT_3D_MAGNITUDE_BIT = 2
-/** The value an AND-masked bit takes when it is not set. */
-const BIT_UNSET = 0
-
-const selectGradient3DU = (h: number, x: number, y: number): number => {
-  if (h < GRADIENT_3D_U_SPLIT) {
-    return x
-  }
-  return y
-}
-
-const selectGradient3DV = (h: number, x: number, y: number, z: number): number => {
-  if (h < GRADIENT_3D_V_SPLIT) {
-    return y
-  }
-  if (h === GRADIENT_3D_V_EXCEPTION_A || h === GRADIENT_3D_V_EXCEPTION_B) {
-    return x
-  }
-  return z
-}
+const HASH_X_PLUS_Y_A = 0
+const HASH_X_PLUS_Y_B = 2
+const HASH_X_MINUS_Y = 1
+const HASH_NEGATIVE_X_MINUS_Y = 3
+const HASH_X_PLUS_Z_A = 4
+const HASH_X_PLUS_Z_B = 6
+const HASH_X_MINUS_Z = 5
+const HASH_NEGATIVE_X_MINUS_Z = 7
+const HASH_Y_PLUS_Z_A = 8
+const HASH_Y_PLUS_Z_B = 10
+const HASH_Y_MINUS_Z_A = 9
+const HASH_Y_MINUS_Z_B = 13
+const HASH_Y_PLUS_X_A = 12
+const HASH_Y_PLUS_X_B = 14
 
 /** 3D gradient dot product over the 12 edge-midpoint vectors of a cube. */
 const gradient3d = (hash: number, x: number, y: number, z: number): number => {
-  const h = hash & GRADIENT_3D_MASK
-  const u = selectGradient3DU(h, x, y)
-  const v = selectGradient3DV(h, x, y, z)
-
-  if ((h & GRADIENT_3D_SIGN_BIT) === BIT_UNSET) {
-    return u + v
+  // Keep the historical sign choices and operand order, including signed zero.
+  switch (hash & GRADIENT_3D_MASK) {
+    case HASH_X_PLUS_Y_A:
+    case HASH_X_PLUS_Y_B:
+      return x + y
+    case HASH_X_MINUS_Y:
+      return x - y
+    case HASH_NEGATIVE_X_MINUS_Y:
+      return -x - y
+    case HASH_X_PLUS_Z_A:
+    case HASH_X_PLUS_Z_B:
+      return x + z
+    case HASH_X_MINUS_Z:
+      return x - z
+    case HASH_NEGATIVE_X_MINUS_Z:
+      return -x - z
+    case HASH_Y_PLUS_Z_A:
+    case HASH_Y_PLUS_Z_B:
+      return y + z
+    case HASH_Y_MINUS_Z_A:
+    case HASH_Y_MINUS_Z_B:
+      return y - z
+    case HASH_Y_PLUS_X_A:
+    case HASH_Y_PLUS_X_B:
+      return y + x
+    default:
+      return -y - z
   }
-  if ((h & GRADIENT_3D_MAGNITUDE_BIT) !== BIT_UNSET) {
-    return -u - v
-  }
-  return u - v
 }
 
 export { gradient2d, gradient3d }

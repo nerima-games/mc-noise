@@ -18,11 +18,15 @@ const float64Bits = (value: number): string => {
 }
 
 describe('Perlin output bits captured before the hot path change', () => {
+  it('keeps all captured seeds and input points in the comparison', () => {
+    expect(fixture.seeds.map(({ seed }) => seed)).toEqual([0, 1, 20260726, 4294967295])
+    expect(fixture.points).toHaveLength(1024)
+  })
+
   for (const sample of fixture.seeds) {
     it(`preserves 2D and 3D samples for seed ${sample.seed}`, () => {
       const noise2d = createPerlinNoise2D(mulberry32(NoiseSeed(sample.seed)))
       const noise3d = createPerlinNoise3D(mulberry32(NoiseSeed(sample.seed)))
-      expect(fixture.points).toHaveLength(1024)
       const actual = fixture.points.map(([x, y, z]) => [
         float64Bits(noise2d(x, z)),
         float64Bits(noise3d(x, y, z)),
