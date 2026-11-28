@@ -359,8 +359,8 @@ versioning decision. See [versioning.md](./versioning.md) and
 
 `classifyMinecraftCaveBiome(climate, depth)` returns `{ kind: 'cave', biome }`
 for a matching cave interval or `{ kind: 'none' }`. The caller supplies the
-climate depth, including any conversion from Y and surface height. It leaves
-existing surface classification unchanged. The humidity input uses the existing
+climate depth as a finite `ClimateValue`, including any conversion from Y and
+surface height. It leaves existing surface classification unchanged. The humidity input uses the existing
 `MinecraftClimateSample` range of 0 to 1.
 
 This classifier tests the vanilla target intervals directly instead of comparing

@@ -28,6 +28,7 @@ import {
   MinecraftClimateValue,
   classifyMinecraftBiome,
 } from './minecraft-biome.js'
+import type { ClimateValue } from './climate.js'
 import { BoundedNoise } from './noise-primitives.js'
 
 const BOUNDED_NOISE_MIN = -1
@@ -179,18 +180,18 @@ const DRIPSTONE_CONTINENTALNESS_MIN = 0.8
 
 export const classifyMinecraftCaveBiome = (
   climate: MinecraftClimateSample,
-  depth: number,
+  depth: ClimateValue,
 ): MinecraftCaveBiomeMatch => {
   if (depth === DEEP_DARK_DEPTH && climate.erosion <= DEEP_DARK_EROSION_MAX) {
-    return { kind: 'cave', biome: 'DEEP_DARK' }
+    return { biome: 'DEEP_DARK', kind: 'cave' }
   }
   if (depth >= CAVE_DEPTH_MIN && depth <= CAVE_DEPTH_MAX) {
     // MinecraftClimateSample humidity is [0, 1]; vanilla's 0.7 maps to 0.85.
     if (climate.humidity >= LUSH_HUMIDITY_MIN) {
-      return { kind: 'cave', biome: 'LUSH_CAVES' }
+      return { biome: 'LUSH_CAVES', kind: 'cave' }
     }
     if (climate.continentalness >= DRIPSTONE_CONTINENTALNESS_MIN) {
-      return { kind: 'cave', biome: 'DRIPSTONE_CAVES' }
+      return { biome: 'DRIPSTONE_CAVES', kind: 'cave' }
     }
   }
   return { kind: 'none' }
