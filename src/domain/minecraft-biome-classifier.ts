@@ -1,4 +1,3 @@
-import type { ClimateValue } from './climate.js'
 import {
   MINECRAFT_BEACH_CONTINENTALNESS_MAX,
   MINECRAFT_CLIMATE_CENTER,
@@ -30,6 +29,7 @@ import {
   classifyMinecraftBiome,
 } from './minecraft-biome.js'
 import { BoundedNoise } from './noise-primitives.js'
+import type { ClimateValue } from './climate.js'
 
 const BOUNDED_NOISE_MIN = -1
 const BOUNDED_NOISE_MAX = 1
