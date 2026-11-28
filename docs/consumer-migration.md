@@ -170,7 +170,7 @@ provided by mc-kernel.
 
 <!-- BEGIN GENERATED SIGNATURE TABLES -->
 
-Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to the mc-noise 0.5.0 candidate revision `84b22224df8de403772e41c6e05cad275a933327`.
+Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c75195eb32d38ef817d4918` to the mc-noise 0.5.0 candidate revision `fb67b2aa62482b5b7566d5ad8e49fa4f3d2190d3`.
 
 <details>
 <summary>Seed brand changes (12)</summary>
@@ -412,11 +412,12 @@ Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c7
 
 </details>
 <details>
-<summary>Added exports (37)</summary>
+<summary>Added exports (40)</summary>
 
 | Export | Before | After |
 | --- | --- | --- |
 | `BoundedNoise` | Not exported | <code>export declare const BoundedNoise: Brand.Constructor&lt;BoundedNoise&gt;;</code><br><code>export type BoundedNoise = number &amp; Brand.Brand&lt;'BoundedNoise'&gt;;</code> |
+| `classifyMinecraftCaveBiome` | Not exported | <code>export declare const classifyMinecraftCaveBiome: (climate: MinecraftClimateSample, depth: ClimateValue) =&gt; MinecraftCaveBiomeMatch;</code> |
 | `ClimateDistance` | Not exported | <code>export declare const ClimateDistance: Brand.Constructor&lt;ClimateDistance&gt;;</code><br><code>export type ClimateDistance = number &amp; Brand.Brand&lt;'ClimateDistance'&gt;;</code> |
 | `ClimateFieldName` | Not exported | <code>export declare const ClimateFieldName: Brand.Constructor&lt;ClimateFieldName&gt;;</code><br><code>export type ClimateFieldName = string &amp; Brand.Brand&lt;'ClimateFieldName'&gt;;</code> |
 | `ClimateFitness` | Not exported | <code>export declare const ClimateFitness: Brand.Constructor&lt;ClimateFitness&gt;;</code><br><code>export type ClimateFitness = number &amp; Brand.Brand&lt;'ClimateFitness'&gt;;</code> |
@@ -439,6 +440,8 @@ Compared declarations from the mc-noise 0.4.x base revision `61a4a4d0600a1ce35c7
 | `GridDimension` | Not exported | <code>export declare const GridDimension: Brand.Constructor&lt;GridDimension&gt;;</code><br><code>export type GridDimension = number &amp; Brand.Brand&lt;'GridDimension'&gt;;</code> |
 | `GridStep` | Not exported | <code>export declare const GridStep: Brand.Constructor&lt;GridStep&gt;;</code><br><code>export type GridStep = number &amp; Brand.Brand&lt;'GridStep'&gt;;</code> |
 | `LatticeCoordinate` | Not exported | <code>export declare const LatticeCoordinate: Brand.Constructor&lt;LatticeCoordinate&gt;;</code><br><code>export type LatticeCoordinate = number &amp; Brand.Brand&lt;'LatticeCoordinate'&gt;;</code> |
+| `MinecraftCaveBiome` | Not exported | <code>export type MinecraftCaveBiome = 'DEEP_DARK' &#124; 'LUSH_CAVES' &#124; 'DRIPSTONE_CAVES';</code> |
+| `MinecraftCaveBiomeMatch` | Not exported | <code>export type MinecraftCaveBiomeMatch = Readonly&lt;{ kind: 'cave'; biome: MinecraftCaveBiome; }&gt; &#124; Readonly&lt;{ kind: 'none'; }&gt;;</code> |
 | `MinecraftClimateValue` | Not exported | <code>export declare const MinecraftClimateValue: Brand.Constructor&lt;MinecraftClimateValue&gt;;</code><br><code>export type MinecraftClimateValue = number &amp; Brand.Brand&lt;'MinecraftClimateValue'&gt;;</code> |
 | `MinecraftSurfaceFillerDepth` | Not exported | <code>export declare const MinecraftSurfaceFillerDepth: Brand.Constructor&lt;MinecraftSurfaceFillerDepth&gt;;</code><br><code>export type MinecraftSurfaceFillerDepth = number &amp; Brand.Brand&lt;'MinecraftSurfaceFillerDepth'&gt;;</code> |
 | `NoiseAccumulator` | Not exported | <code>export declare const NoiseAccumulator: Brand.Constructor&lt;NoiseAccumulator&gt;;</code><br><code>export type NoiseAccumulator = number &amp; Brand.Brand&lt;'NoiseAccumulator'&gt;;</code> |
@@ -462,7 +465,7 @@ No removed exports.
 
 </details>
 <details>
-<summary>Public type and interface field changes (439)</summary>
+<summary>Public type and interface field changes (442)</summary>
 
 | Provider | Type | Variant | Field before | Field after |
 | --- | --- | --- | --- | --- |
@@ -849,6 +852,9 @@ No removed exports.
 | `@nerima-games/mc-noise` | `MinecraftBiomeSurface` | All variants | <code>filler: BlockId;</code> (required) | <code>filler: Option.Option&lt;BlockId&gt;;</code> (required) |
 | `@nerima-games/mc-noise` | `MinecraftBiomeSurface` | All variants | <code>top: BlockId;</code> (required) | <code>top: Option.Option&lt;BlockId&gt;;</code> (required) |
 | `@nerima-games/mc-noise` | `MinecraftBiomeSurface` | All variants | <code>underwaterTop: BlockId;</code> (required) | <code>underwaterTop: Option.Option&lt;BlockId&gt;;</code> (required) |
+| `@nerima-games/mc-noise` | `MinecraftCaveBiomeMatch` | <code>kind="cave"</code> | Not present | <code>biome: MinecraftCaveBiome;</code> (required) |
+| `@nerima-games/mc-noise` | `MinecraftCaveBiomeMatch` | <code>kind="cave"</code> | Not present | <code>kind: 'cave';</code> (required) |
+| `@nerima-games/mc-noise` | `MinecraftCaveBiomeMatch` | <code>kind="none"</code> | Not present | <code>kind: 'none';</code> (required) |
 | `@nerima-games/mc-noise` | `MinecraftClimateSample` | All variants | <code>continentalness: number;</code> (required) | <code>continentalness: BoundedNoise;</code> (required) |
 | `@nerima-games/mc-noise` | `MinecraftClimateSample` | All variants | <code>erosion: number;</code> (required) | <code>erosion: BoundedNoise;</code> (required) |
 | `@nerima-games/mc-noise` | `MinecraftClimateSample` | All variants | <code>humidity: number;</code> (required) | <code>humidity: MinecraftClimateValue;</code> (required) |

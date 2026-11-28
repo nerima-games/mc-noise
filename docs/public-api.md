@@ -358,10 +358,11 @@ versioning decision. See [versioning.md](./versioning.md) and
 ## Cave biome interval classification
 
 `classifyMinecraftCaveBiome(climate, depth)` returns `{ kind: 'cave', biome }`
-for a matching cave interval or `{ kind: 'none' }`. The caller supplies the
-climate depth as a finite `ClimateValue`, including any conversion from Y and
-surface height. It leaves existing surface classification unchanged. The humidity input uses the existing
-`MinecraftClimateSample` range of 0 to 1.
+for a matching cave interval or `{ kind: 'none' }`. The caller defines and
+calculates climate depth, then supplies it as a finite `ClimateValue`. This API
+does not define a formula for converting Y to depth. It leaves existing surface
+classification unchanged. Humidity uses the `MinecraftClimateSample` range of
+0 to 1.
 
 This classifier uses vanilla target intervals as inputs to project-defined rules
 instead of comparing all biome candidates by distance. Deep dark requires depth
