@@ -372,7 +372,7 @@ surface. Lush caves require depth 0.2 through 0.9 and humidity at least 0.85;
 dripstone caves use the same depth interval and continentalness at least 0.8.
 These cave interval bounds are inclusive. The humidity bound converts vanilla’s
 signed value of 0.7 using `(value + 1) / 2`. Lush caves take priority over dripstone caves
-when both match. Deep dark has a separate depth and cannot overlap those ranges.
+when both match.
 Depths 0 and 1 return no cave match. These results are not vanilla biome parity.
 The package's climate samplers do not promise the same values or distribution as
 vanilla at a given coordinate.
