@@ -29,6 +29,7 @@ import {
   classifyMinecraftBiome,
 } from './minecraft-biome.js'
 import { BoundedNoise } from './noise-primitives.js'
+import type { ClimateValue } from './climate.js'
 
 const BOUNDED_NOISE_MIN = -1
 const BOUNDED_NOISE_MAX = 1
@@ -159,4 +160,42 @@ export const refineMinecraftBeachBiome = (
   }
 
   return biome
+}
+
+export type MinecraftCaveBiome = 'DEEP_DARK' | 'LUSH_CAVES' | 'DRIPSTONE_CAVES'
+
+export type MinecraftCaveBiomeMatch =
+  | Readonly<{ kind: 'cave'; biome: MinecraftCaveBiome }>
+  | Readonly<{ kind: 'none' }>
+
+// A third-party mirror of the generated vanilla overworld biome parameter report:
+// https://raw.githubusercontent.com/Arcensoth/mcdata/master/generated/reports/biome_parameters/minecraft/overworld.json
+// The report pairs mushroom_fields at depths 0.0 and 1.0 with the other axes equal.
+// The project cutoff is the midpoint (1.0 + 1.1) / 2 of the surface and deep-dark targets.
+// Ties go to the surface. Lush wins overlaps with dripstone.
+// These are project decisions, not vanilla distance matching.
+const DEEP_DARK_DEPTH_MIN = 1.05
+const DEEP_DARK_EROSION_MAX = -0.375
+const CAVE_DEPTH_MIN = 0.2
+const CAVE_DEPTH_MAX = 0.9
+const LUSH_HUMIDITY_MIN = 0.85
+const DRIPSTONE_CONTINENTALNESS_MIN = 0.8
+
+export const classifyMinecraftCaveBiome = (
+  climate: MinecraftClimateSample,
+  depth: ClimateValue,
+): MinecraftCaveBiomeMatch => {
+  if (depth > DEEP_DARK_DEPTH_MIN && climate.erosion <= DEEP_DARK_EROSION_MAX) {
+    return { biome: 'DEEP_DARK', kind: 'cave' }
+  }
+  if (depth >= CAVE_DEPTH_MIN && depth <= CAVE_DEPTH_MAX) {
+    // MinecraftClimateSample humidity is [0, 1]; vanilla's 0.7 maps to 0.85.
+    if (climate.humidity >= LUSH_HUMIDITY_MIN) {
+      return { biome: 'LUSH_CAVES', kind: 'cave' }
+    }
+    if (climate.continentalness >= DRIPSTONE_CONTINENTALNESS_MIN) {
+      return { biome: 'DRIPSTONE_CAVES', kind: 'cave' }
+    }
+  }
+  return { kind: 'none' }
 }
