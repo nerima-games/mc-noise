@@ -160,3 +160,38 @@ export const refineMinecraftBeachBiome = (
 
   return biome
 }
+
+export type MinecraftCaveBiome = 'DEEP_DARK' | 'LUSH_CAVES' | 'DRIPSTONE_CAVES'
+
+export type MinecraftCaveBiomeMatch =
+  | Readonly<{ kind: 'cave'; biome: MinecraftCaveBiome }>
+  | Readonly<{ kind: 'none' }>
+
+// Intervals come from the vanilla overworld biome parameter report:
+// https://raw.githubusercontent.com/Arcensoth/mcdata/master/generated/reports/biome_parameters/minecraft/overworld.json
+// Overlap priority (deep dark, lush, dripstone) is a project decision, not vanilla distance matching.
+const DEEP_DARK_DEPTH = 1.1
+const DEEP_DARK_EROSION_MAX = -0.375
+const CAVE_DEPTH_MIN = 0.2
+const CAVE_DEPTH_MAX = 0.9
+const LUSH_HUMIDITY_MIN = 0.85
+const DRIPSTONE_CONTINENTALNESS_MIN = 0.8
+
+export const classifyMinecraftCaveBiome = (
+  climate: MinecraftClimateSample,
+  depth: number,
+): MinecraftCaveBiomeMatch => {
+  if (depth === DEEP_DARK_DEPTH && climate.erosion <= DEEP_DARK_EROSION_MAX) {
+    return { kind: 'cave', biome: 'DEEP_DARK' }
+  }
+  if (depth >= CAVE_DEPTH_MIN && depth <= CAVE_DEPTH_MAX) {
+    // MinecraftClimateSample humidity is [0, 1]; vanilla's 0.7 maps to 0.85.
+    if (climate.humidity >= LUSH_HUMIDITY_MIN) {
+      return { kind: 'cave', biome: 'LUSH_CAVES' }
+    }
+    if (climate.continentalness >= DRIPSTONE_CONTINENTALNESS_MIN) {
+      return { kind: 'cave', biome: 'DRIPSTONE_CAVES' }
+    }
+  }
+  return { kind: 'none' }
+}

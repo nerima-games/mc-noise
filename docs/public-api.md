@@ -354,3 +354,22 @@ PRNG, channel salts, permutation shuffle, fade curve, gradients, amplitudes, or
 channel octave parameters can alter generated terrain and require an explicit
 versioning decision. See [versioning.md](./versioning.md) and
 [design-notes.md](./design-notes.md).
+
+## Cave biome interval classification
+
+`classifyMinecraftCaveBiome(climate, depth)` returns `{ kind: 'cave', biome }`
+for a matching cave interval or `{ kind: 'none' }`. The caller supplies the
+climate depth, including any conversion from Y and surface height. It leaves
+existing surface classification unchanged. The humidity input uses the existing
+`MinecraftClimateSample` range of 0 to 1.
+
+This classifier tests the vanilla target intervals directly instead of comparing
+all biome candidates by distance. Deep dark requires depth exactly 1.1 and erosion
+at most -0.375. Lush caves require depth 0.2 through 0.9 and humidity at least
+0.85; dripstone caves use the same depth interval and continentalness at least
+0.8. Bounds are inclusive. The humidity bound converts vanilla’s signed value
+of 0.7 using `(value + 1) / 2`. Lush caves take priority over dripstone caves
+when both match. Deep dark has a separate depth and cannot overlap those ranges.
+These results are not vanilla biome parity.
+The package's climate samplers do not promise the same values or distribution as
+vanilla at a given coordinate.
