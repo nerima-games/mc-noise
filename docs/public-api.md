@@ -366,13 +366,13 @@ classification unchanged. Humidity uses the `MinecraftClimateSample` range of
 
 This classifier uses vanilla target intervals as inputs to project-defined rules
 instead of comparing all biome candidates by distance. Deep dark requires depth
-at least 1.0 and erosion at most -0.375. The depth cutoff is the midpoint between
-the cave interval upper bound 0.9 and the deep dark target 1.1. Lush caves
-require depth 0.2 through 0.9 and humidity at least 0.85; dripstone caves use the same depth interval and continentalness at least
-0.8. Bounds are inclusive. The humidity bound converts vanilla’s signed value
-of 0.7 using `(value + 1) / 2`. Lush caves take priority over dripstone caves
+greater than 1.05 and erosion at most -0.375. The depth cutoff is the midpoint
+between the surface target 1.0 and the deep dark target 1.1; ties go to the
+surface. Lush caves require depth 0.2 through 0.9 and humidity at least 0.85;
+dripstone caves use the same depth interval and continentalness at least 0.8.
+These cave interval bounds are inclusive. The humidity bound converts vanilla’s
+signed value of 0.7 using `(value + 1) / 2`. Lush caves take priority over dripstone caves
 when both match. Deep dark has a separate depth and cannot overlap those ranges.
-Depth 1.0 can select deep dark; callers decide whether to apply the result to a
-surface location. These results are not vanilla biome parity.
+Depths 0 and 1 return no cave match. These results are not vanilla biome parity.
 The package's climate samplers do not promise the same values or distribution as
 vanilla at a given coordinate.

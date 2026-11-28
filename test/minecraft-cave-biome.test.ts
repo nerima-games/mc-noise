@@ -14,7 +14,7 @@ const climate = (overrides: Partial<MinecraftClimateSample> = {}): MinecraftClim
 
 describe('cave biome classification', () => {
   it('recognizes each cave and its inclusive climate boundaries', () => {
-    for (const depth of [1, 1.0001, 1.1, 1.5]) {
+    for (const depth of [1.0501, 1.1, 1.5]) {
       expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-0.375) }), ClimateValue(depth)))
         .toEqual({ kind: 'cave', biome: 'DEEP_DARK' })
     }
@@ -28,7 +28,9 @@ describe('cave biome classification', () => {
 
   it('returns no match outside the target intervals', () => {
     expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-0.3749) }), ClimateValue(1.1))).toEqual({ kind: 'none' })
-    expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-1) }), ClimateValue(0.9999))).toEqual({ kind: 'none' })
+    for (const depth of [1.0499, 1.05]) {
+      expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-1) }), ClimateValue(depth))).toEqual({ kind: 'none' })
+    }
     expect(classifyMinecraftCaveBiome(climate({ humidity: MinecraftClimateValue(0.8499), continentalness: BoundedNoise(0.7999) }), ClimateValue(0.5)))
       .toEqual({ kind: 'none' })
     for (const depth of [0.1999, 0.9001]) {
@@ -48,11 +50,13 @@ describe('cave biome classification', () => {
       fc.double({ min: -1, max: 1, noNaN: true }),
       fc.double({ min: 0, max: 1, noNaN: true }),
       (continentalness, erosion, humidity) => {
-        expect(classifyMinecraftCaveBiome(climate({
-          continentalness: BoundedNoise(continentalness),
-          erosion: BoundedNoise(erosion),
-          humidity: MinecraftClimateValue(humidity),
-        }), ClimateValue(0))).toEqual({ kind: 'none' })
+        for (const depth of [0, 1]) {
+          expect(classifyMinecraftCaveBiome(climate({
+            continentalness: BoundedNoise(continentalness),
+            erosion: BoundedNoise(erosion),
+            humidity: MinecraftClimateValue(humidity),
+          }), ClimateValue(depth))).toEqual({ kind: 'none' })
+        }
       },
     ))
   })
