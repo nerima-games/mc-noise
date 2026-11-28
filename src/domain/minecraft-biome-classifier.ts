@@ -171,7 +171,8 @@ export type MinecraftCaveBiomeMatch =
 // Intervals come from the vanilla overworld biome parameter report:
 // https://raw.githubusercontent.com/Arcensoth/mcdata/master/generated/reports/biome_parameters/minecraft/overworld.json
 // Overlap priority (deep dark, lush, dripstone) is a project decision, not vanilla distance matching.
-const DEEP_DARK_DEPTH = 1.1
+// The project chooses the midpoint (0.9 + 1.1) / 2 as the inclusive deep-dark cutoff.
+const DEEP_DARK_DEPTH_MIN = 1.0
 const DEEP_DARK_EROSION_MAX = -0.375
 const CAVE_DEPTH_MIN = 0.2
 const CAVE_DEPTH_MAX = 0.9
@@ -182,7 +183,7 @@ export const classifyMinecraftCaveBiome = (
   climate: MinecraftClimateSample,
   depth: ClimateValue,
 ): MinecraftCaveBiomeMatch => {
-  if (depth === DEEP_DARK_DEPTH && climate.erosion <= DEEP_DARK_EROSION_MAX) {
+  if (depth >= DEEP_DARK_DEPTH_MIN && climate.erosion <= DEEP_DARK_EROSION_MAX) {
     return { biome: 'DEEP_DARK', kind: 'cave' }
   }
   if (depth >= CAVE_DEPTH_MIN && depth <= CAVE_DEPTH_MAX) {

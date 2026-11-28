@@ -14,8 +14,10 @@ const climate = (overrides: Partial<MinecraftClimateSample> = {}): MinecraftClim
 
 describe('cave biome classification', () => {
   it('recognizes each cave and its inclusive climate boundaries', () => {
-    expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-0.375) }), ClimateValue(1.1)))
-      .toEqual({ kind: 'cave', biome: 'DEEP_DARK' })
+    for (const depth of [1, 1.0001, 1.1, 1.5]) {
+      expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-0.375) }), ClimateValue(depth)))
+        .toEqual({ kind: 'cave', biome: 'DEEP_DARK' })
+    }
     for (const depth of [0.2, 0.9]) {
       expect(classifyMinecraftCaveBiome(climate({ humidity: MinecraftClimateValue(0.85) }), ClimateValue(depth)))
         .toEqual({ kind: 'cave', biome: 'LUSH_CAVES' })
@@ -26,7 +28,7 @@ describe('cave biome classification', () => {
 
   it('returns no match outside the target intervals', () => {
     expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-0.3749) }), ClimateValue(1.1))).toEqual({ kind: 'none' })
-    expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-1) }), ClimateValue(1.1001))).toEqual({ kind: 'none' })
+    expect(classifyMinecraftCaveBiome(climate({ erosion: BoundedNoise(-1) }), ClimateValue(0.9999))).toEqual({ kind: 'none' })
     expect(classifyMinecraftCaveBiome(climate({ humidity: MinecraftClimateValue(0.8499), continentalness: BoundedNoise(0.7999) }), ClimateValue(0.5)))
       .toEqual({ kind: 'none' })
     for (const depth of [0.1999, 0.9001]) {
@@ -46,13 +48,11 @@ describe('cave biome classification', () => {
       fc.double({ min: -1, max: 1, noNaN: true }),
       fc.double({ min: 0, max: 1, noNaN: true }),
       (continentalness, erosion, humidity) => {
-        for (const depth of [0, 1]) {
-          expect(classifyMinecraftCaveBiome(climate({
-            continentalness: BoundedNoise(continentalness),
-            erosion: BoundedNoise(erosion),
-            humidity: MinecraftClimateValue(humidity),
-          }), ClimateValue(depth))).toEqual({ kind: 'none' })
-        }
+        expect(classifyMinecraftCaveBiome(climate({
+          continentalness: BoundedNoise(continentalness),
+          erosion: BoundedNoise(erosion),
+          humidity: MinecraftClimateValue(humidity),
+        }), ClimateValue(0))).toEqual({ kind: 'none' })
       },
     ))
   })
